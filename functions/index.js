@@ -12,11 +12,13 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
-const fetch = require("node-fetch");
 const admin = require("firebase-admin");
 const { defineSecret } = require("firebase-functions/params");
 
-admin.initializeApp();
+// Initialize Admin SDK safely
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 const db = admin.firestore();
 
 // Define the secret parameter. This tells the function which secret to access from Secret Manager.
@@ -27,7 +29,8 @@ exports.callGeminiApi = onCall(
   {
     timeoutSeconds: 300,
     secrets: [geminiApiKey],
-    cors: true, 
+    cors: true,
+    region: "us-central1",
   },
   async (request) => {
     // ... (existing callGeminiApi code remains the same) ...
@@ -68,6 +71,7 @@ exports.guardianSentry = onSchedule(
         schedule: "every 24 hours",
         timeoutSeconds: 540,
         secrets: [],
+        region: "us-central1",
     },
     async (event) => {
         logger.info("Guardian Sentry (SIMULATION MODE) running: Checking for events in the last 6 months.");
@@ -83,11 +87,19 @@ exports.guardianSentry = onSchedule(
         // --- SIMULATION CHANGE ---
         // Calculate the start time as 6 months ago instead of 24 hours.
         const now = new Date();
-        const sixMonthsAgo = new Date(now.setMonth(now.getMonth() - 6));
+        const sixMonthsAgo = new Date(now);
+        sixMonthsAgo.setMonth(now.getMonth() - 6);
         const startTime = sixMonthsAgo.toISOString();
         // --- END SIMULATION CHANGE ---
         
         const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${startTime}&minmagnitude=${SEISMIC_ALERT_THRESHOLD_MAG}`;
+        
+        // Log the 6-month window explicitly for visibility
+        logger.info("Guardian Sentry (SIMULATION MODE): 6-month window", {
+            startTime: startTime,
+            usgsUrl: usgsUrl,
+            windowMonths: 6
+        });
         
         let events;
         try {
@@ -114,6 +126,12 @@ exports.guardianSentry = onSchedule(
 
             if (coords?.latitude && coords?.longitude) {
                 events.forEach(event => {
+                    // Add null check for event geometry
+                    if (!event.geometry || !event.geometry.coordinates) {
+                        logger.warn("Skipping event with missing geometry:", event.id);
+                        return;
+                    }
+                    
                     const eventCoords = event.geometry.coordinates;
                     const distance = haversineDistance(
                         { lat: coords.latitude, lon: coords.longitude },

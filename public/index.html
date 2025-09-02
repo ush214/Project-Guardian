@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Project Guardian: AI Wreck Assessment Agent</title>
 
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+
   <!-- TailwindCSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -436,13 +439,24 @@
     async function callGemini(prompt) {
       try {
         const result = await callGeminiFunction({ prompt });
-        const payload = result?.data ?? result;
+        
+        // Handle httpsCallable shape { data: { success, data } }
+        let payload;
+        if (result?.data?.success && result?.data?.data) {
+          payload = result.data;
+        } else {
+          payload = result?.data ?? result;
+        }
+        
+        // Extract raw string from either payload.data or payload.text
         const raw = payload?.data ?? payload?.text ?? payload;
 
         if (typeof raw !== "string") {
+          console.error("Unexpected response format. Received:", payload);
           throw new Error("Unexpected response format from server.");
         }
 
+        // Strip optional code fences (``` or ```json) before JSON.parse
         const cleaned = raw.trim()
           .replace(/^```(?:json)?/i, "")
           .replace(/```$/, "")
@@ -451,8 +465,10 @@
         try {
           return JSON.parse(cleaned);
         } catch (parseErr) {
-          console.error("Failed to parse model JSON. Raw:", raw);
-          throw new Error("Model returned invalid JSON. See console for details.");
+          console.error("Failed to parse model JSON. Raw response:", raw);
+          console.error("Cleaned response:", cleaned);
+          console.error("Parse error:", parseErr.message);
+          throw new Error("Model returned invalid JSON. Check console for details.");
         }
       } catch (error) {
         console.error("callGemini Error:", error);
