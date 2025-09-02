@@ -27,7 +27,7 @@
   <!-- Chart.js for Spider Chart -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- App styles (moved from inline <style>) -->
+  <!-- App styles -->
   <link rel="stylesheet" href="styles.css" />
 
   <!-- Theme controller -->
@@ -144,8 +144,6 @@
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
     // --- Firebase Config & Global Variables ---
-    // CRITICAL STEP: PASTE YOUR FIREBASE CONFIG OBJECT HERE.
-    // This object is public by design and is used only to identify your Firebase project.
     const firebaseConfig = {
       apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
       authDomain: "project-guardian-agent.firebaseapp.com",
@@ -160,10 +158,10 @@
     if (firebaseConfig.apiKey.startsWith("PASTE_YOUR")) {
       const errorMsg = "CONFIGURATION ERROR: The Firebase API Key is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig' in index.html.";
       console.error(errorMsg);
-      document.body.innerHTML = \`<div style="padding: 2rem; margin: 2rem; text-align: center; font-family: sans-serif; background-color: #fff1f2; color: #b91c1c; border-radius: 8px; border: 1px solid #fecaca;">
+      document.body.innerHTML = `<div style="padding: 2rem; margin: 2rem; text-align: center; font-family: sans-serif; background-color: #fff1f2; color: #b91c1c; border-radius: 8px; border: 1px solid #fecaca;">
         <h1>Configuration Required</h1>
-        <p>\${errorMsg}</p>
-      </div>\`;
+        <p>${errorMsg}</p>
+      </div>`;
       throw new Error("Firebase Configuration Error");
     }
 
@@ -171,9 +169,10 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
-    const functions = getFunctions(app);
+    // Pin region to where your functions deploy (adjust if needed)
+    const functions = getFunctions(app, 'us-central1');
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
-    const assessmentsCollection = collection(db, \`artifacts/\${appId}/public/data/werpassessments\`);
+    const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
 
     let map;
     const markers = {};
@@ -257,7 +256,7 @@
 
       const li = document.createElement('li');
       li.className = 'wreck-list-item p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition duration-200';
-      li.innerHTML = \`<span>\${data.vesselName}</span> \${hasAlert ? '<span class="alert-icon">🚨</span>' : ''}\`;
+      li.innerHTML = `<span>${data.vesselName}</span> ${hasAlert ? '<span class="alert-icon">🚨</span>' : ''}`;
       li.dataset.id = docId;
       li.addEventListener('click', () => handleWreckSelection(docId));
       listElement.append(li);
@@ -270,7 +269,7 @@
         const popupContent = createPopupContent(data, risk);
         const marker = L.marker([coords.latitude, coords.longitude], {
           icon: L.icon({
-            iconUrl: \`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-\${risk.color}.png\`,
+            iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${risk.color}.png`,
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
             iconSize: [25, 41],
             iconAnchor: [12, 41],
@@ -286,12 +285,12 @@
     function addAlertToList(alert, vesselName, docId) {
       const li = document.createElement('li');
       li.className = 'p-3 bg-red-50 border-l-4 border-red-500 rounded-r-md';
-      li.innerHTML = \`
-        <p class="font-semibold text-red-800">\${vesselName}</p>
-        <p class="text-sm text-gray-700">\${alert.details}</p>
-        <p class="text-xs text-gray-500 mt-1">\${new Date(alert.timestamp).toLocaleString()}</p>
-        <button data-doc-id="\${docId}" class="view-report-btn text-xs text-blue-600 hover:underline mt-1">View Report</button>
-      \`;
+      li.innerHTML = `
+        <p class="font-semibold text-red-800">${vesselName}</p>
+        <p class="text-sm text-gray-700">${alert.details}</p>
+        <p class="text-xs text-gray-500 mt-1">${new Date(alert.timestamp).toLocaleString()}</p>
+        <button data-doc-id="${docId}" class="view-report-btn text-xs text-blue-600 hover:underline mt-1">View Report</button>
+      `;
       ui.alertList.prepend(li);
     }
 
@@ -304,18 +303,18 @@
 
     async function handleWreckSelection(docId) {
       document.querySelectorAll('.wreck-list-item').forEach(item => item.classList.remove('active'));
-      document.querySelector(\`.wreck-list-item[data-id="\${docId}"]\`)?.classList.add('active');
+      document.querySelector(`.wreck-list-item[data-id="${docId}"]`)?.classList.add('active');
 
       updateStatus('Fetching report...');
       ui.reportContainer.classList.add('hidden');
 
       try {
-        const docRef = doc(db, \`artifacts/\${appId}/public/data/werpassessments\`, docId);
+        const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
           renderReport(data, docId);
-          updateStatus(\`Report for \${data.vesselName} loaded.\`);
+          updateStatus(`Report for ${data.vesselName} loaded.`);
           ui.reportContainer.scrollIntoView({ behavior: 'smooth' });
 
           const coords = data.phase1?.screening?.coordinates;
@@ -347,26 +346,26 @@
 
       try {
         const docId = vesselName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        const docRef = doc(db, \`artifacts/\${appId}/public/data/werpassessments\`, docId);
+        const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
           renderReport(docSnap.data(), docId);
-          updateStatus(\`Report for \${vesselName} loaded from database.\`);
+          updateStatus(`Report for ${vesselName} loaded from database.`);
         } else {
           const newReportData = await performNewAnalysis(vesselName);
           await saveToDatabase(docRef, newReportData, { status: "initial" });
           renderReport(newReportData, docId);
-          updateStatus(\`Analysis complete for \${vesselName}.\`);
+          updateStatus(`Analysis complete for ${vesselName}.`);
         }
 
         document.querySelectorAll('.wreck-list-item').forEach(item => item.classList.remove('active'));
-        document.querySelector(\`.wreck-list-item[data-id="\${docId}"]\`)?.classList.add('active');
+        document.querySelector(`.wreck-list-item[data-id="${docId}"]`)?.classList.add('active');
 
         setRateLimit();
       } catch (error) {
         console.error(error);
-        updateStatus(\`An error occurred: \${error.message}\`, true);
+        updateStatus(`An error occurred: ${error.message}`, true);
       } finally {
         setLoading(false);
       }
@@ -420,14 +419,14 @@
           status: "completed"
         };
 
-        const docRef = doc(db, \`artifacts/\${appId}/public/data/werpassessments\`, docId);
+        const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
         await updateDoc(docRef, finalUpdate);
 
         updateStatus("Enhancement complete. Report updated.");
         handleWreckSelection(docId);
       } catch (error) {
         console.error("Enhancement failed:", error);
-        updateStatus(\`Enhancement failed: \${error.message}\`, true);
+        updateStatus(`Enhancement failed: ${error.message}`, true);
       } finally {
         setLoading(false);
       }
@@ -437,10 +436,23 @@
     async function callGemini(prompt) {
       try {
         const result = await callGeminiFunction({ prompt });
-        if (result.data.success) {
-          return JSON.parse(result.data.data);
-        } else {
-          throw new Error("Cloud function returned an error.");
+        const payload = result?.data ?? result;
+        const raw = payload?.data ?? payload?.text ?? payload;
+
+        if (typeof raw !== "string") {
+          throw new Error("Unexpected response format from server.");
+        }
+
+        const cleaned = raw.trim()
+          .replace(/^```(?:json)?/i, "")
+          .replace(/```$/, "")
+          .trim();
+
+        try {
+          return JSON.parse(cleaned);
+        } catch (parseErr) {
+          console.error("Failed to parse model JSON. Raw:", raw);
+          throw new Error("Model returned invalid JSON. See console for details.");
         }
       } catch (error) {
         console.error("callGemini Error:", error);
@@ -574,7 +586,7 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
     function renderReport(data, docId) {
       if (!data || !data.phase1) return;
 
-      ui.reportTitle.textContent = \`WERP Assessment: \${data.vesselName}\`;
+      ui.reportTitle.textContent = `WERP Assessment: ${data.vesselName}`;
 
       // Alerts banner if present
       if (data.alerts && data.alerts.some(a => !a.acknowledged)) {
@@ -610,11 +622,11 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
       // Helper to build simple tables
       function createTable(rows, headers, keys) {
         let table = '<table><thead><tr>';
-        headers.forEach(h => table += \`<th>\${h}</th>\`);
+        headers.forEach(h => table += `<th>${h}</th>`);
         table += '</tr></thead><tbody>';
         rows.forEach(row => {
           table += '<tr>';
-          keys.forEach(k => table += \`<td>\${row[k] ?? ''}</td>\`);
+          keys.forEach(k => table += `<td>${row[k] ?? ''}</td>`);
           table += '</tr>';
         });
         table += '</tbody></table>';
