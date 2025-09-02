@@ -156,7 +156,7 @@
 
     // This check prevents the app from running with placeholder credentials.
     if (firebaseConfig.apiKey.startsWith("PASTE_YOUR")) {
-      const errorMsg = "CONFIGURATION ERROR: The Firebase API Key is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig' in index.html.";
+      const errorMsg = "CONFIGURATION ERROR: The Firebase API Key is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig'.";
       console.error(errorMsg);
       document.body.innerHTML = `<div style="padding: 2rem; margin: 2rem; text-align: center; font-family: sans-serif; background-color: #fff1f2; color: #b91c1c; border-radius: 8px; border: 1px solid #fecaca;">
         <h1>Configuration Required</h1>
@@ -583,6 +583,7 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
       setTimeout(() => { isRateLimited = false; updateStatus(""); }, 30000);
     }
 
+    // UPDATED: Phase 2 appears before Phase 3, and note hidden when completed
     function renderReport(data, docId) {
       if (!data || !data.phase1) return;
 
@@ -633,6 +634,7 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
         return table;
       }
 
+      // Phase order: Background -> Phase 1 -> Phase 2 -> Phase 3 (WCS, PHS, ESI, RPM) -> Synthesis -> Summary -> Remediation
       ui.reportContent.innerHTML = `
         <section>
           <h3>Case Study Background</h3>
@@ -651,6 +653,8 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
             <li><strong>Coordinates:</strong> ${data.phase1.screening.coordinates?.latitude ?? '—'}, ${data.phase1.screening.coordinates?.longitude ?? '—'}</li>
           </ul>
         </section>
+
+        ${phase2HTML}
 
         <section>
           <h3>Phase 3: WCS (Hull & Structure)</h3>
@@ -692,13 +696,12 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
           <p class="mt-2"><strong>Final Multiplier:</strong> ${data.rpm?.finalMultiplier ?? '—'}×</p>
         </section>
 
-        ${phase2HTML}
-
         <section>
           <h3>${data.status === 'completed' ? 'Final' : 'Preliminary'} Risk Synthesis & Classification</h3>
-          <p class="italic text-gray-600">
-            Note: This analysis is based on available information. On-site verification may change the final classification.
-          </p>
+          ${data.status === 'completed' ? '' : `
+            <p class="italic text-gray-600">
+              Note: This analysis is based on available information. On-site verification may change the final classification.
+            </p>`}
         </section>
 
         <section>
