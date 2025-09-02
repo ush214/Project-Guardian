@@ -121,6 +121,7 @@
         const appId = 'guardian-agent-default';
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app); // <-- THIS LINE WAS MISSING AND IS NOW CORRECTED
         const functions = getFunctions(app);
         const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
         const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
@@ -291,15 +292,17 @@
             let fullReportData = { vesselName };
             updateStatus("Phase 1: Researching...");
             fullReportData.phase1 = await callGemini(getPhase1Prompt(vesselName));
-            updateStatus("Analyzing WCS...");
+            updateStatus("Phase 2: In-Situ Assessment (Recommended)...");
+            // No Gemini call for Phase 2, it's a placeholder in the report
+            updateStatus("Phase 3: Analyzing WCS...");
             fullReportData.wcs = await callGemini(getWcsPrompt(vesselName, fullReportData.phase1.summary.background));
-            updateStatus("Analyzing PHS...");
+            updateStatus("Phase 3: Analyzing PHS...");
             fullReportData.phs = await callGemini(getPhsPrompt(vesselName, fullReportData.phase1.summary.background));
-            updateStatus("Analyzing ESI...");
+            updateStatus("Phase 3: Analyzing ESI...");
             fullReportData.esi = await callGemini(getEsiPrompt(vesselName, fullReportData.phase1.summary.location));
-            updateStatus("Analyzing RPM...");
+            updateStatus("Phase 3: Analyzing RPM...");
             fullReportData.rpm = await callGemini(getRpmPrompt(vesselName, fullReportData.phase1.summary.location));
-            updateStatus("Synthesizing...");
+            updateStatus("Synthesizing final report...");
             fullReportData.finalSummary = await callGemini(getSummaryPrompt(vesselName, fullReportData));
             return fullReportData;
         }
