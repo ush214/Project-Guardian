@@ -33,6 +33,6 @@ jobs:
 
       - name: Deploy Hosting and Functions
         env:
-          FIREBASE_TOKEN: ${{ secrets.1//03sN8rnkX8yavCgYIARAAGAMSNwF-L9IrzXVDS0Q5p80jcxngRy7wXjpg_-BXley8HitCqf_WQ75jEPlV-ng3PCmlOKEsJZORY78 }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
           firebase deploy --only hosting,functions --project project-guardian-agent
