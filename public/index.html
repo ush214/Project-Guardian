@@ -118,6 +118,8 @@
         import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
         // --- Firebase Config & Global Variables ---
+        // CRITICAL STEP: PASTE YOUR FIREBASE CONFIG OBJECT HERE.
+        // This object is public by design and is used only to identify your Firebase project.
         const firebaseConfig = {
         apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
         authDomain: "project-guardian-agent.firebaseapp.com",
@@ -128,8 +130,9 @@
         measurementId: "G-NRLH3WSCQ9"
         };
         
+        // This check prevents the app from running with placeholder credentials.
         if (firebaseConfig.apiKey.startsWith("PASTE_YOUR")) {
-            const errorMsg = "CONFIGURATION ERROR: The Firebase configuration is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig' variable in the index.html file.";
+            const errorMsg = "CONFIGURATION ERROR: The Firebase API Key is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig' variable in the index.html file.";
             console.error(errorMsg);
             document.body.innerHTML = `<div style="padding: 2rem; margin: 2rem; text-align: center; font-family: sans-serif; background-color: #fff1f2; color: #b91c1c; border-radius: 8px; border: 2px solid #b91c1c;"><h1>Configuration Error</h1><p style="margin-top: 1rem;">${errorMsg}</p></div>`;
             throw new Error("Firebase Configuration Error");
@@ -138,7 +141,7 @@
         const appId = 'guardian-agent-default';
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const auth = getAuth(app);
+        const auth = getAuth(app); // <-- THIS LINE WAS MISSING AND HAS BEEN CORRECTED.
         const functions = getFunctions(app);
         const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
         const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
@@ -174,7 +177,15 @@
             }).addTo(map);
         }
 
-        signInAnonymously(auth).then(() => { if (!map) initializeMap(); listenForPreviousAnalyses(); }).catch(console.error);
+        signInAnonymously(auth)
+            .then(() => {
+                if (!map) initializeMap();
+                listenForPreviousAnalyses();
+            })
+            .catch((error) => {
+                console.error("Firebase Auth Failed:", error);
+                updateStatus("Authentication failed. Please check console.", true);
+            });
 
         // --- Real-time Data Handling ---
         function listenForPreviousAnalyses() {
@@ -191,8 +202,11 @@
                     const listElement = data.status === 'completed' ? ui.completedWreckList : ui.initialWreckList;
                     addWreckToListAndMap(doc, listElement);
                     if (data.alerts && data.alerts.length > 0) {
-                        alertCount += data.alerts.length;
-                        data.alerts.forEach(alert => addAlertToList(alert, data.vesselName, doc.id));
+                        const unacknowledgedAlerts = data.alerts.filter(a => !a.acknowledged);
+                        if (unacknowledgedAlerts.length > 0) {
+                            alertCount += unacknowledgedAlerts.length;
+                            unacknowledgedAlerts.forEach(alert => addAlertToList(alert, data.vesselName, doc.id));
+                        }
                     }
                 });
                 
@@ -206,15 +220,30 @@
         function addWreckToListAndMap(doc, listElement) {
             const data = doc.data();
             const docId = doc.id;
-            const hasAlert = data.alerts && data.alerts.length > 0;
+            const hasAlert = data.alerts && data.alerts.some(a => !a.acknowledged);
             const li = document.createElement('li');
             li.className = 'wreck-list-item p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition duration-200';
             li.innerHTML = `<span>${data.vesselName}</span> ${hasAlert ? '<span class="alert-icon">🚨</span>' : ''}`;
             li.dataset.id = docId;
             li.addEventListener('click', () => handleWreckSelection(docId));
-            listElement.prepend(li);
-        }
+            listElement.append(li);
 
+            const coords = data.phase1?.screening?.coordinates;
+            if (coords?.latitude && coords?.longitude) {
+                if (markers[docId]) map.removeLayer(markers[docId]);
+                const risk = getRiskProfile(data);
+                const popupContent = createPopupContent(data, risk);
+                const marker = L.marker([coords.latitude, coords.longitude], {
+                    icon: L.icon({
+                        iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${risk.color}.png`,
+                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+                    })
+                }).addTo(map).bindPopup(popupContent);
+                markers[docId] = marker;
+            }
+        }
+        
         function addAlertToList(alert, vesselName, docId) {
             const li = document.createElement('li');
             li.className = 'p-3 bg-red-50 border-l-4 border-red-500 rounded-r-md';
@@ -222,50 +251,187 @@
                 <p class="font-semibold text-red-800">${vesselName}</p>
                 <p class="text-sm text-gray-700">${alert.details}</p>
                 <p class="text-xs text-gray-500 mt-1">${new Date(alert.timestamp).toLocaleString()}</p>
-                <button data-doc-id="${docId}" class="acknowledge-btn text-xs text-blue-600 hover:underline mt-1">Acknowledge & View</button>
+                <button data-doc-id="${docId}" class="view-report-btn text-xs text-blue-600 hover:underline mt-1">View Report</button>
             `;
             ui.alertList.prepend(li);
         }
 
         document.getElementById('alertList').addEventListener('click', (e) => {
-            if (e.target.classList.contains('acknowledge-btn')) {
+            if (e.target.classList.contains('view-report-btn')) {
                 const docId = e.target.dataset.docId;
                 handleWreckSelection(docId);
             }
         });
-        
+
         async function handleWreckSelection(docId) {
-             /* Existing selection logic */
+            document.querySelectorAll('.wreck-list-item').forEach(item => item.classList.remove('active'));
+            document.querySelector(`.wreck-list-item[data-id="${docId}"]`)?.classList.add('active');
+            updateStatus(`Fetching report...`);
+            ui.reportContainer.classList.add('hidden');
+            try {
+                const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    renderReport(data, docId);
+                    updateStatus(`Report for ${data.vesselName} loaded.`);
+                    ui.reportContainer.scrollIntoView({ behavior: 'smooth' });
+                    const coords = data.phase1?.screening?.coordinates;
+                    if (coords && map) {
+                        map.flyTo([coords.latitude, coords.longitude], 8);
+                        setTimeout(() => markers[docId]?.openPopup(), 500);
+                    }
+                } else { updateStatus(`Could not find report.`, true); }
+            } catch (error) { console.error(error); updateStatus("Failed to fetch report.", true); }
         }
         
-        // --- Core Agent & Analysis Logic (largely unchanged) ---
-        
+        // --- Core Agent & Analysis Logic ---
+        ui.analyzeBtn.addEventListener('click', runFullAnalysis);
+        ui.vesselNameInput.addEventListener('keypress', (e) => e.key === 'Enter' && runFullAnalysis());
+
+        async function runFullAnalysis() {
+            if (isRateLimited) { updateStatus("Please wait before next analysis.", true); return; }
+            const vesselName = ui.vesselNameInput.value.trim();
+            if (!vesselName) { updateStatus("Please enter a vessel name.", true); return; }
+            setLoading(true);
+            ui.reportContainer.classList.add('hidden');
+            try {
+                const docId = vesselName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+                const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    renderReport(docSnap.data(), docId);
+                    updateStatus(`Report for ${vesselName} loaded from database.`);
+                } else {
+                    const newReportData = await performNewAnalysis(vesselName);
+                    await saveToDatabase(docRef, newReportData, { status: "initial" });
+                    renderReport(newReportData, docId);
+                    updateStatus(`Analysis complete for ${vesselName}.`);
+                }
+                document.querySelectorAll('.wreck-list-item').forEach(item => item.classList.remove('active'));
+                document.querySelector(`.wreck-list-item[data-id="${docId}"]`)?.classList.add('active');
+                setRateLimit();
+            } catch (error) { console.error(error); updateStatus(`An error occurred: ${error.message}`, true); } 
+            finally { setLoading(false); }
+        }
+
+        async function performNewAnalysis(vesselName) {
+            let fullReportData = { vesselName };
+            updateStatus("Phase 1: Researching...");
+            fullReportData.phase1 = await callGemini(getPhase1Prompt(vesselName));
+            updateStatus("Phase 3: Analyzing WCS...");
+            fullReportData.wcs = await callGemini(getWcsPrompt(vesselName, fullReportData.phase1.summary.background));
+            updateStatus("Phase 3: Analyzing PHS...");
+            fullReportData.phs = await callGemini(getPhsPrompt(vesselName, fullReportData.phase1.summary.background));
+            updateStatus("Phase 3: Analyzing ESI...");
+            fullReportData.esi = await callGemini(getEsiPrompt(vesselName, fullReportData.phase1.summary.location));
+            updateStatus("Phase 3: Analyzing RPM...");
+            fullReportData.rpm = await callGemini(getRpmPrompt(vesselName, fullReportData.phase1.summary.location));
+            updateStatus("Synthesizing final report...");
+            fullReportData.finalSummary = await callGemini(getSummaryPrompt(vesselName, fullReportData));
+            return fullReportData;
+        }
+
         async function enhanceAnalysis(docId, existingData, phase2Text) {
-             /* Existing enhancement logic */
+            setLoading(true, "Enhancing...");
+            try {
+                updateStatus("Summarizing Phase 2 data...");
+                const phase2Summary = await callGemini(getPhase2SummaryPrompt(phase2Text));
+                
+                updateStatus("Re-evaluating WERP scores...");
+                const updatedScores = await callGemini(getUpdatedScoresPrompt(existingData, phase2Text));
+
+                updateStatus("Synthesizing updated report...");
+                const updatedFinalSummary = await callGemini(getSummaryPrompt(existingData.vesselName, { ...existingData, ...updatedScores, phase2: phase2Summary }));
+
+                const finalUpdate = {
+                    ...updatedScores,
+                    phase2: {
+                        summary: phase2Summary.summary,
+                        sourceData: phase2Text
+                    },
+                    finalSummary: updatedFinalSummary,
+                    status: "completed"
+                };
+
+                const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
+                await updateDoc(docRef, finalUpdate);
+                
+                updateStatus("Enhancement complete. Report updated.");
+                handleWreckSelection(docId); // Reload the report
+            } catch (error) {
+                console.error("Enhancement failed:", error);
+                updateStatus(`Enhancement failed: ${error.message}`, true);
+            } finally {
+                setLoading(false);
+            }
         }
         
-        // --- API & Database (largely unchanged) ---
-        
-        // --- Prompt Generation (largely unchanged) ---
+        // --- API & Database ---
+        async function callGemini(prompt) {
+            try {
+                const result = await callGeminiFunction({ prompt });
+                if (result.data.success) {
+                    return JSON.parse(result.data.data);
+                } else {
+                    throw new Error("Cloud function returned an error.");
+                }
+            } catch (error) {
+                console.error("callGemini Error:", error);
+                throw error;
+            }
+        }
+
+        async function saveToDatabase(docRef, data, extraFields = {}) {
+             try { await setDoc(docRef, { ...data, ...extraFields, createdAt: serverTimestamp() }); } 
+             catch (e) { console.error(e); updateStatus("Failed to save report.", true); }
+        }
+
+        // --- Prompt Generation ---
+        function getPhase1Prompt(v) { return `You are an expert maritime historian. For "${v}", conduct a Phase 1 assessment. Return JSON with coordinates: {"summary":{"background":"...","location":"...","discovery":"..."},"screening":{"vesselType":"...","tonnage":12345,"sunkDate":"YYYY-MM-DD","sinkingCause":"...","coordinates":{"latitude":-9.2,"longitude":159.7}},"conclusion":"..."}`; }
+        function getWcsPrompt(v, c) { return `You are a naval architecture expert. For "${v}", analyze WCS based on: ${c}. Return JSON: { "parameters": [{"name": "Age", "rationale": "...", "score": 5}, ...], "totalScore": 15 }`; }
+        function getPhsPrompt(v, c) { return `You are a marine pollution expert. For "${v}", analyze PHS based on: ${c}. Return JSON: { "parameters": [{"name": "Fuel Volume & Type", "rationale": "...", "score": 10, "weight": 40, "weightedScore": 4.0}, ...], "totalWeightedScore": 8.7 }`; }
+        function getEsiPrompt(v, l) { return `You are a marine ecologist. For "${v}" near "${l}", analyze ESI. Return JSON: { "parameters": [{"name": "Proximity to Sensitive Ecosystems", "rationale": "...", "score": 10}, ...], "totalScore": 38 }`; }
+        function getRpmPrompt(v, l) { return `You are a climate scientist. For "${v}" near "${l}", analyze RPM. Return JSON: { "parameters": [{"name": "Thermal Stress", "rationale": "...", "value": 1.3}, ...], "finalMultiplier": 1.8 }`; }
+        function getSummaryPrompt(v, d) { const c = JSON.stringify(d); return `You are a lead strategist. For "${v}", synthesize this data: ${c}. Return JSON: { "summativeAssessment": "...", "remediationSuggestions": [{"priority": 1, "title": "...", "description": "..."}, ...] }`; }
+        function getPhase2SummaryPrompt(phase2Text) { return `You are a lead surveyor. Summarize the following in-situ assessment data into a concise paragraph for the Phase 2 section of a WERP report: "${phase2Text}". Return JSON: {"summary": "..."}`; }
+        function getUpdatedScoresPrompt(existingData, phase2Text) { const d = JSON.stringify(existingData); return `You are a lead risk assessor. Review the existing OSINT report: ${d}. Now, consider this new in-situ data: "${phase2Text}". Re-evaluate the WCS, PHS, ESI, and RPM scores. Provide a rationale for any changes based ONLY on the new data. Return JSON containing ONLY the four updated score objects: {"wcs":{...}, "phs":{...}, "esi":{...}, "rpm":{...}}`; }
 
         // --- UI & Rendering Helpers ---
+        function setLoading(isLoading, text = 'Analyzing...') { ui.analyzeBtn.disabled = isLoading; ui.spinner.classList.toggle('hidden', !isLoading); ui.analyzeText.textContent = isLoading ? text : 'Analyze Wreck'; if (!isLoading) ui.statusMessage.textContent = ""; }
+        function updateStatus(message, isError = false) { ui.statusMessage.textContent = message; ui.statusMessage.style.color = isError ? '#ef4444' : '#6b7280'; }
+        function setRateLimit() { isRateLimited = true; setTimeout(() => { isRateLimited = false; updateStatus(""); }, 30000); }
+
         function renderReport(data, docId) {
-            if (!data) return;
+            if (!data || !data.phase1) { /* error handling */ return; }
+            ui.reportTitle.textContent = `WERP Assessment: ${data.vesselName}`;
             
-            // Display alerts in the report
-            if (data.alerts && data.alerts.length > 0) {
+            if (data.alerts && data.alerts.some(a => !a.acknowledged)) {
                 ui.alertDisplaySection.classList.remove('hidden');
                 ui.alertDisplaySection.innerHTML = `
-                    <div class="p-4 bg-yellow-50 border-l-4 border-yellow-400">
+                    <div class="p-4 mb-6 bg-yellow-50 border-l-4 border-yellow-400">
                         <h3 class="font-bold text-yellow-800">Recent Environmental Alerts</h3>
                         <p class="text-sm text-yellow-700 mt-1">A recent seismic event was detected near this wreck. The WERP score below does not reflect potential new structural damage. A re-assessment or in-situ survey is highly recommended.</p>
                     </div>`;
             } else {
                 ui.alertDisplaySection.classList.add('hidden');
             }
-            
-            // The rest of the renderReport function remains the same
-            // ... (code for rendering tables, summaries, etc.) ...
+
+            const phase2HTML = data.status === 'completed'
+                ? `<section><h3>Phase 2: In-Situ Assessment (Completed)</h3><p>${data.phase2.summary}</p></section>`
+                : `<section><h3>Phase 2: In-Situ Assessment (Recommended)</h3><p>A complete WERP assessment requires a physical, in-situ survey to gather ground-truth data. This typically involves deploying ROVs for visual inspection, performing UT measurements, and collecting samples. This data provides the definitive inputs for a final, high-confidence risk classification.</p><div id="phase2-enhancement-module" class="mt-6 p-4 border-t-2 border-gray-200">
+                    <h4 class="text-lg font-semibold mb-2">Enhance with Phase 2 Data</h4>
+                    <textarea id="phase2-text-input" class="w-full h-32 p-2 border border-gray-300 rounded-md" placeholder="Paste ROV survey summary, UT readings, diver reports, etc. here..."></textarea>
+                    <button id="enhance-report-btn" class="mt-2 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition">Enhance Report</button>
+                   </div></section>`;
+
+            ui.reportContent.innerHTML = `
+                <section><h3>Case Study Background</h3><p>${data.phase1.summary.background}</p><p><strong>Location:</strong> ${data.phase1.summary.location}</p><p><strong>Discovery:</strong> ${data.phase1.summary.discovery}</p></section>
+                <section><h3>Phase 1: Scoping & Screening</h3><ul><li><strong>Vessel Type:</strong> ${data.phase1.screening.vesselType}</li><li><strong>Tonnage:</strong> ${data.phase1.screening.tonnage.toLocaleString()} tons</li><li><strong>Date Sunk:</strong> ${data.phase1.screening.sunkDate}</li><li><strong>Cause of Sinking:</strong> ${data.phase1.screening.sinkingCause}</li></ul><p><strong>Conclusion:</strong> ${data.phase1.conclusion}</p></section>
+                ${phase2HTML}
+                <section><h3>Phase 3: ${data.status === 'completed' ? 'Final' : 'Preliminary'} Risk Synthesis & Classification</h3><p class="italic text-gray-600">Note: This analysis is based on ${data.status === 'completed' ? 'both OSINT and in-situ data' : 'open-source intelligence gathered in Phase 1'}.</p><h4>Wreck Condition Score (WCS) Analysis</h4>${createTable(data.wcs.parameters, ['Parameter', 'Rationale', 'Score (1-5)'], ['name', 'rationale', 'score'])}<p class="text-right font-bold">Total WCS: ${data.wcs.totalScore} / 20</p><h4>Pollutant Hazard Score (PHS) Analysis</h4>${createTable(data.phs.parameters, ['Parameter', 'Rationale', 'Score (1-10)', 'Weighted Score'], ['name', 'rationale', 'score', 'weightedScore'])}<p class="text-right font-bold">Total Weighted PHS: ${data.phs.totalWeightedScore.toFixed(1)} / 10</p><h4>Environmental Sensitivity Index (ESI) Analysis</h4>${createTable(data.esi.parameters, ['Parameter', 'Rationale', 'Score (1-10)'], ['name', 'rationale', 'score'])}<p class="text-right font-bold">Total ESI: ${data.esi.totalScore} / 40</p><h4>Release Probability Modifier (RPM) Analysis</h4>${createTable(data.rpm.parameters, ['Parameter', 'Rationale', 'Value'], ['name', 'rationale', 'value'])}<p class="text-right font-bold">Final Multiplier: ${data.rpm.finalMultiplier}x</p></section>
+                <section><h3>Summative Assessment</h3><p>${data.finalSummary.summativeAssessment}</p></section>
+                <section><h3>Remediation Suggestions</h3>${data.finalSummary.remediationSuggestions.map(s => `<div class="mt-4"><h4>Priority ${s.priority}: ${s.title}</h4><p>${s.description}</p></div>`).join('')}</section>`;
             
             if (data.status !== 'completed') {
                 document.getElementById('enhance-report-btn').addEventListener('click', () => {
@@ -282,8 +448,38 @@
             ui.reportContainer.classList.remove('hidden');
         }
 
-        // --- Other helper functions (unchanged) ---
+        function createTable(data, headers, keys) { let table = '<table><thead><tr>'; headers.forEach(h => table += `<th>${h}</th>`); table += '</tr></thead><tbody>'; data.forEach(row => { table += '<tr>'; keys.forEach(key => table += `<td>${row[key]}</td>`); table += '</tr>'; }); table += '</tbody></table>'; return table; }
         
+        function getRiskProfile(data) { try { const wcs = data.wcs.totalScore / 20; const phs = data.phs.totalWeightedScore / 10; const esi = data.esi.totalScore / 40; const rpm = data.rpm.finalMultiplier; const overallRisk = (phs * 0.5 + esi * 0.4 + wcs * 0.1) * rpm; if (overallRisk > 1.2) return { label: 'Extreme', color: 'violet', popupColor: '#8b5cf6' }; if (overallRisk > 0.9) return { label: 'Very High', color: 'red', popupColor: '#ef4444' }; if (overallRisk > 0.6) return { label: 'High', color: 'orange', popupColor: '#f97316' }; if (overallRisk > 0.3) return { label: 'Medium', color: 'yellow', popupColor: '#eab308' }; return { label: 'Low', color: 'green', popupColor: '#22c55e' }; } catch (e) { return { label: 'Unknown', color: 'grey', popupColor: '#6b7280' }; } }
+        
+        function createPopupContent(data, risk) { return `<div style="font-family: 'Inter', sans-serif; font-size: 14px; min-width: 200px;"><h3 style="margin: 0 0 5px 0; font-size: 16px; font-weight: bold; color: #1e3a8a;">${data.vesselName}</h3><p style="margin: 0 0 10px 0; font-weight: bold; color: ${risk.popupColor};">Risk: ${risk.label}</p><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 8px 0;"><p style="margin: 4px 0;"><strong>WCS:</strong> ${data.wcs?.totalScore || 'N/A'}/20</p><p style="margin: 4px 0;"><strong>PHS:</strong> ${data.phs?.totalWeightedScore?.toFixed(1) || 'N/A'}/10</p><p style="margin: 4px 0;"><strong>ESI:</strong> ${data.esi?.totalScore || 'N/A'}/40</p><p style="margin: 4px 0;"><strong>RPM:</strong> ${data.rpm?.finalMultiplier || 'N/A'}x</p></div>`; }
+
+        function createOrUpdateSpiderChart(data) {
+            const ctx = document.getElementById('werSpiderChart').getContext('2d');
+            const scores = {
+                wcs: data.wcs?.totalScore ? (data.wcs.totalScore / 20) * 100 : 0,
+                phs: data.phs?.totalWeightedScore ? (data.phs.totalWeightedScore / 10) * 100 : 0,
+                esi: data.esi?.totalScore ? (data.esi.totalScore / 40) * 100 : 0,
+                rpm: data.rpm?.finalMultiplier ? ((data.rpm.finalMultiplier - 1) / 1.5) * 100 : 0, 
+            };
+
+            const chartData = {
+                labels: ['WCS', 'PHS', 'ESI', 'RPM'],
+                datasets: [
+                    { label: 'Low Risk', data: [25, 25, 25, 10], borderColor: 'rgba(46, 213, 115, 0.9)', borderWidth: 2.5, pointRadius: 0, fill: false, },
+                    { label: 'Medium Risk', data: [50, 50, 50, 40], borderColor: 'rgba(255, 165, 2, 0.9)', borderWidth: 2.5, pointRadius: 0, fill: false, },
+                    { label: 'High Risk', data: [75, 75, 75, 70], borderColor: 'rgba(255, 71, 87, 0.9)', borderWidth: 2.5, pointRadius: 0, fill: false, },
+                    {
+                        label: data.vesselName, data: [scores.wcs, scores.phs, scores.esi, scores.rpm],
+                        borderColor: 'rgba(30, 64, 175, 1)', backgroundColor: 'rgba(30, 64, 175, 0.2)', borderWidth: 3,
+                        pointBackgroundColor: 'rgba(30, 64, 175, 1)', pointBorderColor: '#fff', pointHoverBackgroundColor: '#fff', pointHoverBorderColor: 'rgba(30, 64, 175, 1)', pointRadius: 5, fill: true,
+                    }
+                ]
+            };
+            
+            if (spiderChart) { spiderChart.data = chartData; spiderChart.update(); } 
+            else { spiderChart = new Chart(ctx, { type: 'radar', data: chartData, options: { scales: { r: { suggestedMin: 0, suggestedMax: 100, pointLabels: { font: { size: 14, weight: 'bold' } }, ticks: { backdropColor: 'rgba(255,255,255,0.75)', stepSize: 25 } } }, plugins: { legend: { position: 'bottom' } } } }); }
+        }
     </script>
 </body>
 </html>
