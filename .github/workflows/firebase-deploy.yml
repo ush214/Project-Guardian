@@ -7,16 +7,18 @@ on:
       - "public/**"
       - "firebase.json"
       - ".firebaserc"
-      - ".github/workflows/firebase-deploy.yml"
       - "functions/**"
+      - ".github/workflows/firebase-deploy.yml"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Set up Node
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -24,24 +26,13 @@ jobs:
       - name: Install Firebase CLI
         run: npm i -g firebase-tools@latest
 
-      - name: Install Functions deps
+      - name: Install Functions dependencies
         if: ${{ hashFiles('functions/package.json') != '' }}
-        run: npm ci
         working-directory: functions
+        run: npm ci
 
       - name: Deploy Hosting and Functions
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }} # or use service account creds with GOOGLE_APPLICATION_CREDENTIALS
+          FIREBASE_TOKEN: ${{ secrets.1//03sN8rnkX8yavCgYIARAAGAMSNwF-L9IrzXVDS0Q5p80jcxngRy7wXjpg_-BXley8HitCqf_WQ75jEPlV-ng3PCmlOKEsJZORY78 }}
         run: |
-          if [ -d "functions" ]; then
-            firebase deploy --only hosting,functions --project project-guardian-agent
-         
-Short answer: No. If your GitHub Actions workflow is set up for Firebase Hosting, pushing the updated public/index.html to the branch it watches (usually main) will auto-deploy Hosting. No Functions deploy is needed for frontend-only changes.
-
-Quick checklist if you don’t see changes live:
-- Confirm index.html is under public/ (your firebase.json points hosting.public to "public").
-- Ensure your workflow triggers on the branch you pushed to and includes the path public/** (or has no path filters).
-- Check the Actions run is green and that the “Deploy to Firebase Hosting” step shows your site URL.
-- Hard refresh the site or append a cache buster, e.g., https://your-site.web.app/?v=20250902.
-
-If you want, paste your .github/workflows/*.yml here and I’ll confirm it deploys Hosting on changes to public/index.html and suggest any tweaks.
+          firebase deploy --only hosting,functions --project project-guardian-agent
