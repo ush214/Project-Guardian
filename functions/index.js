@@ -1,8 +1,6 @@
 /**
  * Firebase Cloud Function to act as a secure backend for the Project Guardian agent.
- * This function receives a prompt from the frontend application, securely adds the
- * secret Gemini API key, calls the Gemini API, and returns the result.
- * The Gemini API key is stored in a .env file that is NOT checked into source control.
+ * This function includes an extended timeout to allow for deep research and enhanced logging.
  */
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
@@ -10,23 +8,25 @@ const { logger } = require("firebase-functions");
 const fetch = require("node-fetch");
 
 // This line loads the secret variables from your .env file into process.env
-// This MUST be at the top of the file.
 require("dotenv").config();
 
 // Securely access the API key from the environment variables.
-// The key itself is ONLY in the .env file, which is listed in .gitignore
-// and is therefore NOT in your public GitHub repository.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 /**
  * A callable function that can be invoked from the frontend application.
+ * CRITICAL UPDATE: The timeout has been increased to 300 seconds (5 minutes)
+ * to allow the multi-step Gemini analysis to complete without interruption.
  */
-exports.callGeminiApi = onCall(async (request) => {
+exports.callGeminiApi = onCall({ timeoutSeconds: 300 }, async (request) => {
+  logger.info("Function invoked with extended timeout.");
+
   // 1. Security Check: Ensure the secret API key is loaded correctly on the server.
   if (!GEMINI_API_KEY) {
-    logger.error("Gemini API Key is not configured in the function's environment. Check the .env file and deployment settings.");
+    logger.error("CRITICAL: Gemini API Key is not configured in the function's environment. The .env file may be missing or was not deployed correctly.");
     throw new HttpsError("internal", "The server is missing its API key configuration.");
   }
+  logger.info("Gemini API Key loaded successfully.");
 
   // 2. Input Validation: Ensure the request from the client contains a prompt.
   const prompt = request.data.prompt;
@@ -56,12 +56,13 @@ exports.callGeminiApi = onCall(async (request) => {
       logger.error(`Gemini API Error: ${response.status}`, { errorBody });
       throw new HttpsError("internal", `API call failed with status: ${response.status}`);
     }
+    logger.info("Successfully received response from Gemini API.");
 
     const result = await response.json();
     
     // 4. Response Validation and Return
     if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
-        // Return the successful result to the client application.
+        logger.info("Successfully parsed Gemini response. Returning data to client.");
         return { success: true, data: result.candidates[0].content.parts[0].text };
     } else {
         logger.error("Unexpected API response structure from Gemini", { result });
@@ -70,7 +71,6 @@ exports.callGeminiApi = onCall(async (request) => {
 
   } catch (error) {
     logger.error("Full function execution error:", error);
-    // Re-throw HttpsError to the client, otherwise wrap the error.
     if (error instanceof HttpsError) {
         throw error;
     }
