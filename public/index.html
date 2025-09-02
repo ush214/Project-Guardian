@@ -95,19 +95,9 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, serverTimestamp, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
-
+        
         // --- Firebase Config & Global Variables ---
-        // =================================================================================
         // CRITICAL STEP: PASTE YOUR FIREBASE CONFIG OBJECT HERE.
-        // You can get this from the Firebase Console -> Project Settings -> General -> Your apps -> SDK setup and configuration -> Config
-        // It should look like:
-        // const firebaseConfig = {
-        //   apiKey: "AIzaSy...",
-        //   authDomain: "your-project-id.firebaseapp.com",
-        //   ...
-        // };
-        // =================================================================================
         const firebaseConfig = {
         apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
         authDomain: "project-guardian-agent.firebaseapp.com",
@@ -118,7 +108,6 @@
         measurementId: "G-NRLH3WSCQ9"
         };
         
-        // Configuration Check: This will stop the app and show an error if the config is still a placeholder.
         if (firebaseConfig.apiKey.startsWith("PASTE_YOUR")) {
             const errorMsg = "CONFIGURATION ERROR: The Firebase configuration is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig' variable in the index.html file.";
             console.error(errorMsg);
@@ -130,7 +119,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-        const functions = getFunctions(app);
+        const functionUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/callGeminiApi`;
         const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
         let map;
         const markers = {};
@@ -314,10 +303,18 @@
         
         // --- API & Database ---
         async function callGemini(prompt, retries = 3, delay = 2000) {
-            const callGeminiApi = httpsCallable(functions, 'callGeminiApi');
-            for (let i = 0; i < retries; i++) {
+             for (let i = 0; i < retries; i++) {
                 try {
-                    const result = await callGeminiApi({ prompt: prompt });
+                    const response = await fetch(functionUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ data: { prompt: prompt } })
+                    });
+                    if (!response.ok) {
+                         const errorBody = await response.text();
+                         throw new Error(`Cloud Function Error: ${response.status} ${errorBody}`);
+                    }
+                    const result = await response.json();
                     if (result.data.success && result.data.data) {
                         return JSON.parse(result.data.data);
                     } else {
