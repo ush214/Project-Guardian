@@ -92,19 +92,40 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, serverTimestamp, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
         // --- Firebase Config & Global Variables ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "...", authDomain: "...", projectId: "..." };
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'guardian-agent-default';
+        // PASTE YOUR FIREBASE CONFIG OBJECT HERE
+        const firebaseConfig = {
+            apiKey: "AIzaSy...", // From Firebase Console -> Project Settings
+            authDomain: "your-project-id.firebaseapp.com",
+            projectId: "your-project-id",
+            storageBucket: "your-project-id.appspot.com",
+            messagingSenderId: "...",
+            appId: "..."
+        };
+
+        // Configuration Check: This will stop the app and show an error if the API key is still a placeholder.
+        if (firebaseConfig.apiKey.startsWith("AIzaSy...")) {
+            const errorMsg = "CONFIGURATION ERROR: The Firebase API Key is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig' variable in the index.html file.";
+            console.error(errorMsg);
+            document.body.innerHTML = `<div style="padding: 2rem; margin: 2rem; text-align: center; font-family: sans-serif; background-color: #fff1f2; color: #b91c1c; border-radius: 8px; border: 2px solid #b91c1c;"><h1>Configuration Error</h1><p style="margin-top: 1rem;">${errorMsg}</p></div>`;
+            throw new Error("Firebase Configuration Error");
+        }
+
+
+        const appId = 'guardian-agent-default';
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
+        const functions = getFunctions(app); // Initialize Cloud Functions
         const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
         let map;
         const markers = {};
         let spiderChart;
+        let isRateLimited = false;
 
         // --- UI Elements ---
         const ui = {
@@ -129,27 +150,16 @@
             }).addTo(map);
         }
 
-        onAuthStateChanged(auth, user => {
-            if (user) {
+        signInAnonymously(auth)
+            .then(() => {
                 if (!map) initializeMap();
                 listenForPreviousAnalyses();
-            } else {
-                authenticateUser();
-            }
-        });
-
-        async function authenticateUser() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
+            })
+            .catch((error) => {
                 console.error("Firebase Auth Failed:", error);
-                updateStatus("Authentication failed.", true);
-            }
-        }
+                updateStatus("Authentication failed. Please check console.", true);
+            });
+
 
         // --- Real-time Data Handling ---
         function listenForPreviousAnalyses() {
@@ -230,6 +240,11 @@
         ui.vesselNameInput.addEventListener('keypress', (e) => e.key === 'Enter' && runFullAnalysis());
 
         async function runFullAnalysis() {
+            if (isRateLimited) {
+                updateStatus("Please wait a moment before the next analysis.", true);
+                return;
+            }
+
             const vesselName = ui.vesselNameInput.value.trim();
             if (!vesselName) {
                 updateStatus("Please enter a vessel name.", true);
@@ -252,9 +267,17 @@
                     renderReport(newReportData);
                     updateStatus(`Analysis complete for ${vesselName}.`);
                 }
+                
                 document.querySelectorAll('#wreckList .wreck-list-item').forEach(item => item.classList.remove('active'));
                 const newLi = document.querySelector(`#wreckList .wreck-list-item[data-id="${docId}"]`);
                 if (newLi) newLi.classList.add('active');
+                
+                // Set rate limit for 30 seconds after a successful analysis
+                isRateLimited = true;
+                setTimeout(() => {
+                    isRateLimited = false;
+                    updateStatus(""); // Clear status after cooldown
+                }, 30000); // 30 seconds
 
             } catch (error) {
                 console.error("Full analysis failed:", error);
@@ -282,34 +305,24 @@
         }
         
         // --- API & Database ---
-        async function callGemini(prompt, retries = 5, delay = 2000) {
-             const apiKey = ""; 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+        async function callGemini(prompt, retries = 3, delay = 2000) {
+            const callGeminiApi = httpsCallable(functions, 'callGeminiApi');
             for (let i = 0; i < retries; i++) {
                 try {
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: prompt }] }],
-                            generationConfig: { responseMimeType: "application/json" }
-                        })
-                    });
-                    if (!response.ok) throw new Error(`API Error: ${response.status}`);
-                    const result = await response.json();
-                    if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
-                        return JSON.parse(result.candidates[0].content.parts[0].text);
+                    const result = await callGeminiApi({ prompt: prompt });
+                    if (result.data.success && result.data.data) {
+                        return JSON.parse(result.data.data);
                     } else {
-                        console.error("Invalid response structure from Gemini", result);
-                        throw new Error("Unexpected API response structure.");
+                        throw new Error("Cloud function returned an error or unexpected structure.");
                     }
                 } catch (error) {
-                     console.warn(`Attempt ${i + 1} failed for prompt. Retrying... Error: ${error.message}`);
+                     console.warn(`Attempt ${i + 1} failed for prompt via Cloud Function. Retrying... Error: ${error.message}`);
                     if (i === retries - 1) throw error;
                     await new Promise(res => setTimeout(res, delay * (i + 1)));
                 }
             }
         }
+
         async function saveToDatabase(docRef, data) {
              try {
                 await setDoc(docRef, { ...data, createdAt: serverTimestamp() });
@@ -371,24 +384,24 @@
                     {
                         label: 'Low Risk',
                         data: [25, 25, 25, 10], 
-                        borderColor: 'rgba(46, 213, 115, 0.9)',
-                        borderWidth: 2,
+                        borderColor: 'rgba(46, 213, 115, 0.9)', // Bright Green
+                        borderWidth: 2.5,
                         pointRadius: 0,
                         fill: false,
                     },
                     {
                         label: 'Medium Risk',
                         data: [50, 50, 50, 40],
-                        borderColor: 'rgba(255, 165, 2, 0.9)',
-                        borderWidth: 2,
+                        borderColor: 'rgba(255, 165, 2, 0.9)', // Bright Orange
+                        borderWidth: 2.5,
                         pointRadius: 0,
                         fill: false,
                     },
                     {
                         label: 'High Risk',
                         data: [75, 75, 75, 70],
-                        borderColor: 'rgba(255, 71, 87, 0.9)',
-                        borderWidth: 2,
+                        borderColor: 'rgba(255, 71, 87, 0.9)', // Bright Red
+                        borderWidth: 2.5,
                         pointRadius: 0,
                         fill: false,
                     },
