@@ -98,13 +98,27 @@
 
         // --- Firebase Config & Global Variables ---
         // PASTE YOUR FIREBASE CONFIG OBJECT HERE
-        const firebaseConfig = {
-            apiKey: "AIzaSy...", // From Firebase Console -> Project Settings
-            authDomain: "your-project-id.firebaseapp.com",
-            projectId: "your-project-id",
-            storageBucket: "your-project-id.appspot.com",
-            messagingSenderId: "...",
-            appId: "..."
+        // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+  authDomain: "project-guardian-agent.firebaseapp.com",
+  projectId: "project-guardian-agent",
+  storageBucket: "project-guardian-agent.firebasestorage.app",
+  messagingSenderId: "84395007243",
+  appId: "1:84395007243:web:b07e5f4c4264d27611160e",
+  measurementId: "G-NRLH3WSCQ9"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
         };
 
         // Configuration Check: This will stop the app and show an error if the API key is still a placeholder.
