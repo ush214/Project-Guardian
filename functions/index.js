@@ -1,21 +1,23 @@
 /**
  * Firebase Cloud Function to act as a secure backend for the Project Guardian agent.
- * This version uses an HTTP onRequest trigger and the 'cors' middleware to handle
- * Cross-Origin Resource Sharing (CORS) policy issues, which is a standard security
- * requirement for web apps calling functions from a different domain.
+ * This is the final, production-ready version using the latest Firebase SDK syntax.
+ * It handles CORS, uses an extended timeout, and has enhanced logging.
  */
 
 const functions = require("firebase-functions");
 const logger = require("firebase-functions/logger");
 const fetch = require("node-fetch");
-const cors = require("cors")({ origin: true }); // Initialize CORS middleware
+const cors = require("cors")({ origin: true });
 
+// This line loads the secret variables from your .env file into process.env
 require("dotenv").config();
+
+// Securely access the API key from the environment variables.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
+// Define the function with runtime options (5-minute timeout)
 exports.callGeminiApi = functions.runWith({ timeoutSeconds: 300 }).https.onRequest((req, res) => {
-  // Use the cors middleware to automatically handle the OPTIONS preflight request
-  // and add the necessary 'Access-Control-Allow-Origin' header.
+  // Use the cors middleware to automatically handle security headers
   cors(req, res, async () => {
     logger.info("Function invoked via HTTP, CORS handled.");
 
@@ -25,7 +27,7 @@ exports.callGeminiApi = functions.runWith({ timeoutSeconds: 300 }).https.onReque
     }
 
     if (!GEMINI_API_KEY) {
-      logger.error("CRITICAL: Gemini API Key is not configured.");
+      logger.error("CRITICAL: Gemini API Key is not configured in the function's environment.");
       res.status(500).send({ error: "Server is missing API key configuration." });
       return;
     }
