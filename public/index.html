@@ -39,8 +39,8 @@
     <header class="bg-white shadow-md">
         <div class="container mx-auto px-4 md:px-8 py-4 flex justify-between items-center">
             <div class="flex items-center space-x-4">
-                <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg" alt="Marinas Guardian Logo" class="h-16">
-                <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg" alt="Deeptrek Logo" class="h-16">
+                <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-16">
+                <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Deeptrek Logo" class="h-16">
             </div>
             <h1 class="hidden md:block text-2xl font-bold text-gray-700">Project Guardian AI Wreck Assessment Agent</h1>
         </div>
@@ -95,9 +95,11 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, serverTimestamp, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
         // --- Firebase Config & Global Variables ---
         // CRITICAL STEP: PASTE YOUR FIREBASE CONFIG OBJECT HERE.
+        // This object is public by design and is used only to identify your Firebase project.
         const firebaseConfig = {
         apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
         authDomain: "project-guardian-agent.firebaseapp.com",
@@ -108,8 +110,9 @@
         measurementId: "G-NRLH3WSCQ9"
         };
         
+        // This check prevents the app from running with placeholder credentials.
         if (firebaseConfig.apiKey.startsWith("PASTE_YOUR")) {
-            const errorMsg = "CONFIGURATION ERROR: The Firebase configuration is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig' variable in the index.html file.";
+            const errorMsg = "CONFIGURATION ERROR: The Firebase API Key is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig' variable in the index.html file.";
             console.error(errorMsg);
             document.body.innerHTML = `<div style="padding: 2rem; margin: 2rem; text-align: center; font-family: sans-serif; background-color: #fff1f2; color: #b91c1c; border-radius: 8px; border: 2px solid #b91c1c;"><h1>Configuration Error</h1><p style="margin-top: 1rem;">${errorMsg}</p></div>`;
             throw new Error("Firebase Configuration Error");
@@ -118,8 +121,8 @@
         const appId = 'guardian-agent-default';
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const auth = getAuth(app);
-        const functionUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/callGeminiApi`;
+        const functions = getFunctions(app);
+        const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
         const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
         let map;
         const markers = {};
@@ -305,16 +308,7 @@
         async function callGemini(prompt, retries = 3, delay = 2000) {
              for (let i = 0; i < retries; i++) {
                 try {
-                    const response = await fetch(functionUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ data: { prompt: prompt } })
-                    });
-                    if (!response.ok) {
-                         const errorBody = await response.text();
-                         throw new Error(`Cloud Function Error: ${response.status} ${errorBody}`);
-                    }
-                    const result = await response.json();
+                    const result = await callGeminiFunction({ prompt: prompt });
                     if (result.data.success && result.data.data) {
                         return JSON.parse(result.data.data);
                     } else {
@@ -360,7 +354,8 @@
             ui.reportContent.innerHTML = `
                 <section><h3>Case Study Background</h3><p>${data.phase1.summary.background}</p><p><strong>Location:</strong> ${data.phase1.summary.location}</p><p><strong>Discovery:</strong> ${data.phase1.summary.discovery}</p></section>
                 <section><h3>Phase 1: Scoping & Screening</h3><ul><li><strong>Vessel Type:</strong> ${data.phase1.screening.vesselType}</li><li><strong>Tonnage:</strong> ${data.phase1.screening.tonnage.toLocaleString()} tons</li><li><strong>Date Sunk:</strong> ${data.phase1.screening.sunkDate}</li><li><strong>Cause of Sinking:</strong> ${data.phase1.screening.sinkingCause}</li></ul><p><strong>Conclusion:</strong> ${data.phase1.conclusion}</p></section>
-                <section><h3>Phase 3: Risk Synthesis & Classification</h3><h4>Wreck Condition Score (WCS) Analysis</h4>${createTable(data.wcs.parameters, ['Parameter', 'Rationale', 'Score (1-5)'], ['name', 'rationale', 'score'])}<p class="text-right font-bold">Total WCS: ${data.wcs.totalScore} / 20</p><h4>Pollutant Hazard Score (PHS) Analysis</h4>${createTable(data.phs.parameters, ['Parameter', 'Rationale', 'Score (1-10)', 'Weighted Score'], ['name', 'rationale', 'score', 'weightedScore'])}<p class="text-right font-bold">Total Weighted PHS: ${data.phs.totalWeightedScore.toFixed(1)} / 10</p><h4>Environmental Sensitivity Index (ESI) Analysis</h4>${createTable(data.esi.parameters, ['Parameter', 'Rationale', 'Score (1-10)'], ['name', 'rationale', 'score'])}<p class="text-right font-bold">Total ESI: ${data.esi.totalScore} / 40</p><h4>Release Probability Modifier (RPM) Analysis</h4>${createTable(data.rpm.parameters, ['Parameter', 'Rationale', 'Value'], ['name', 'rationale', 'value'])}<p class="text-right font-bold">Final Multiplier: ${data.rpm.finalMultiplier}x</p></section>
+                <section><h3>Phase 2: In-Situ Assessment (Recommended)</h3><p>A complete WERP assessment requires a physical, in-situ survey to gather ground-truth data. This typically involves deploying Remotely Operated Vehicles (ROVs) to conduct a detailed visual inspection, perform ultrasonic thickness (UT) measurements of the hull plating, and collect sediment/water samples to test for localized pollution. This Phase 2 data provides the definitive inputs for a final, high-confidence risk classification.</p></section>
+                <section><h3>Phase 3: Preliminary Risk Synthesis & Classification</h3><p class="italic text-gray-600">Note: The following analysis is a preliminary assessment based on the open-source intelligence gathered in Phase 1. The confidence of these scores would be significantly enhanced by the completion of a Phase 2 in-situ assessment.</p><h4>Wreck Condition Score (WCS) Analysis</h4>${createTable(data.wcs.parameters, ['Parameter', 'Rationale', 'Score (1-5)'], ['name', 'rationale', 'score'])}<p class="text-right font-bold">Total WCS: ${data.wcs.totalScore} / 20</p><h4>Pollutant Hazard Score (PHS) Analysis</h4>${createTable(data.phs.parameters, ['Parameter', 'Rationale', 'Score (1-10)', 'Weighted Score'], ['name', 'rationale', 'score', 'weightedScore'])}<p class="text-right font-bold">Total Weighted PHS: ${data.phs.totalWeightedScore.toFixed(1)} / 10</p><h4>Environmental Sensitivity Index (ESI) Analysis</h4>${createTable(data.esi.parameters, ['Parameter', 'Rationale', 'Score (1-10)'], ['name', 'rationale', 'score'])}<p class="text-right font-bold">Total ESI: ${data.esi.totalScore} / 40</p><h4>Release Probability Modifier (RPM) Analysis</h4>${createTable(data.rpm.parameters, ['Parameter', 'Rationale', 'Value'], ['name', 'rationale', 'value'])}<p class="text-right font-bold">Final Multiplier: ${data.rpm.finalMultiplier}x</p></section>
                 <section><h3>Summative Assessment</h3><p>${data.finalSummary.summativeAssessment}</p></section>
                 <section><h3>Remediation Suggestions</h3>${data.finalSummary.remediationSuggestions.map(s => `<div class="mt-4"><h4>Priority ${s.priority}: ${s.title}</h4><p>${s.description}</p></div>`).join('')}</section>`;
             
