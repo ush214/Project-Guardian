@@ -5,16 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Project Guardian: AI Wreck Assessment Agent</title>
   
-  <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
-
-  <!-- TailwindCSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- Leaflet Map Library -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -27,13 +21,8 @@
     crossorigin=""
   ></script>
 
-  <!-- Chart.js for Spider Chart -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- App styles -->
   <link rel="stylesheet" href="styles.css" />
-
-  <!-- Theme controller -->
   <script src="theme.js" defer></script>
 </head>
 <body class="text-gray-800" style="font-family: 'Inter', sans-serif;">
@@ -56,6 +45,7 @@
 
         <!-- Signed-in info in header -->
         <div id="userInfo" class="hidden items-center gap-3 ml-4">
+          <span id="roleBadge" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">Role: —</span>
           <div class="text-sm text-gray-700">
             <div id="userName" class="font-medium"></div>
             <div id="userEmail" class="text-gray-500"></div>
@@ -69,7 +59,7 @@
   </header>
 
   <main class="container mx-auto p-4 md:p-8">
-    <!-- Signed-out container with simple Email/Password auth -->
+    <!-- Signed-out: Email/Password auth -->
     <section id="signedOutContainer" class="mt-10 bg-white rounded-lg shadow p-8 max-w-md mx-auto">
       <h2 class="text-2xl font-semibold text-gray-800 mb-2 text-center">Welcome</h2>
       <p class="text-gray-600 mb-6 text-center">Sign in with your email and password to continue.</p>
@@ -93,7 +83,7 @@
       </div>
 
       <p class="text-xs text-gray-500 mt-6 text-center">
-        Note: No data loads until you sign in.
+        New accounts start as read-only Users. Admin approval is required for Contributor access.
       </p>
     </section>
 
@@ -101,7 +91,10 @@
     <div id="appContainer" class="hidden">
       <!-- Analyze New Vessel -->
       <div class="bg-white rounded-lg shadow-lg p-6 mb-8 max-w-2xl mx-auto">
-        <h2 class="text-xl font-semibold mb-4 text-gray-700">Analyze New Vessel</h2>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-semibold text-gray-700">Analyze New Vessel</h2>
+          <span id="contribHint" class="text-xs text-gray-500 hidden">Contributor access required</span>
+        </div>
         <div class="flex flex-col sm:flex-row gap-4">
           <input
             type="text"
@@ -112,7 +105,8 @@
           />
           <button
             id="analyzeBtn"
-            class="bg-blue-800 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-900 transition duration-300 flex items-center justify-center"
+            class="bg-blue-800 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-900 transition duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Run analysis (Contributors only)"
           >
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                  xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -195,7 +189,7 @@
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
-    // --- Firebase Config & Global Variables ---
+    // --- Firebase Config & Globals ---
     const firebaseConfig = {
       apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
       authDomain: "project-guardian-agent.firebaseapp.com",
@@ -205,16 +199,7 @@
       appId: "1:84395007243:web:b07e5f4c4264d27611160e",
       measurementId: "G-NRLH3WSCQ9"
     };
-
-    if (firebaseConfig.apiKey.startsWith("PASTE_YOUR")) {
-      const errorMsg = "CONFIGURATION ERROR: The Firebase API Key is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig'.";
-      console.error(errorMsg);
-      document.body.innerHTML = `<div style="padding: 2rem; margin: 2rem; text-align: center; font-family: sans-serif; background-color: #fff1f2; color: #b91c1c; border-radius: 8px; border: 1px solid #fecaca;">
-        <h1>Configuration Required</h1>
-        <p>${errorMsg}</p>
-      </div>`;
-      throw new Error("Firebase Configuration Error");
-    }
+    if (firebaseConfig.apiKey.startsWith("PASTE_YOUR")) { throw new Error("Firebase config missing."); }
 
     const appId = 'guardian-agent-default';
     const app = initializeApp(firebaseConfig);
@@ -229,6 +214,10 @@
     let spiderChart;
     let isRateLimited = false;
     let appInitialized = false;
+
+    // Role state
+    let currentRole = 'user'; // 'user' | 'contributor' | 'admin'
+    let roleUnsub = null;
 
     // --- UI Elements ---
     const ui = {
@@ -252,6 +241,8 @@
       userInfo: document.getElementById('userInfo'),
       userName: document.getElementById('userName'),
       userEmail: document.getElementById('userEmail'),
+      roleBadge: document.getElementById('roleBadge'),
+      contribHint: document.getElementById('contribHint'),
       signOutBtn: document.getElementById('signOutBtn'),
       emailInput: document.getElementById('emailInput'),
       passwordInput: document.getElementById('passwordInput'),
@@ -261,14 +252,13 @@
       authMessage: document.getElementById('authMessage'),
     };
 
-    // --- Initialization helpers (deferred until auth) ---
+    // --- Map / Init ---
     function initializeMap() {
       if (map) return;
       map = L.map('map').setView([10, 150], 3);
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
-          '&copy; <a href="https://carto.com/attributions">CARTO</a>'
+          '&copy; OpenStreetMap contributors &copy; CARTO'
       }).addTo(map);
     }
 
@@ -277,8 +267,8 @@
       appInitialized = true;
       if (!map) initializeMap();
       listenForPreviousAnalyses();
-      ui.analyzeBtn.disabled = false;
       ui.statusMessage.textContent = "";
+      applyPermissions(); // ensure buttons reflect role
     }
 
     // --- Auth UI helpers ---
@@ -286,8 +276,10 @@
       ui.userInfo.classList.add('hidden');
       ui.appContainer.classList.add('hidden');
       ui.signedOutContainer.classList.remove('hidden');
-      ui.analyzeBtn.disabled = true;
       ui.statusMessage.textContent = "Please sign in to load data.";
+      if (roleUnsub) { roleUnsub(); roleUnsub = null; }
+      currentRole = 'user';
+      applyPermissions();
     }
 
     function showSignedInUI(user) {
@@ -297,6 +289,23 @@
       ui.userInfo.classList.remove('hidden');
       ui.userName.textContent = user.email || "Signed in";
       ui.userEmail.textContent = user.email || "";
+    }
+
+    function updateRoleUI() {
+      const roleText = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
+      ui.roleBadge.textContent = `Role: ${roleText}`;
+      ui.roleBadge.className = "text-xs px-2 py-1 rounded-full border " + (
+        currentRole === 'contributor' || currentRole === 'admin'
+          ? "bg-green-50 text-green-700 border-green-300"
+          : "bg-gray-100 text-gray-700 border-gray-300"
+      );
+      ui.contribHint.classList.toggle('hidden', (currentRole === 'contributor' || currentRole === 'admin'));
+    }
+
+    function applyPermissions() {
+      const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
+      ui.analyzeBtn.disabled = !canContribute;
+      updateRoleUI();
     }
 
     // --- Email/Password auth handlers ---
@@ -326,7 +335,8 @@
       if (password.length < 6) return setAuthMessage("Password must be at least 6 characters.", true);
       try {
         setAuthMessage("Creating account...");
-        await createUserWithEmailAndPassword(auth, email, password);
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        // Optional: Initialize a profile doc or other onboarding here.
         setAuthMessage("");
       } catch (e) {
         console.error(e);
@@ -365,18 +375,32 @@
     ui.resetPasswordBtn?.addEventListener('click', handlePasswordReset);
     ui.signOutBtn?.addEventListener('click', () => signOut(auth));
 
-    // --- Gate all backend work on auth state ---
+    // --- Auth gating & Role subscription ---
     onAuthStateChanged(auth, (user) => {
       if (!user) {
-        appInitialized = false; // ensure re-init on next sign-in
+        appInitialized = false;
         showSignedOutUI();
         return;
       }
       showSignedInUI(user);
+
+      // Subscribe to this user's role doc for live updates
+      if (roleUnsub) { roleUnsub(); roleUnsub = null; }
+      const roleDocRef = doc(db, 'roles', user.uid);
+      roleUnsub = onSnapshot(roleDocRef, (snap) => {
+        const role = (snap.exists() && typeof snap.data().role === 'string') ? snap.data().role : 'user';
+        currentRole = ['user','contributor','admin'].includes(role) ? role : 'user';
+        applyPermissions();
+      }, (err) => {
+        console.error("Role subscription error:", err);
+        currentRole = 'user';
+        applyPermissions();
+      });
+
       initAfterAuth();
     });
 
-    // --- Real-time Data Handling (only called after auth) ---
+    // --- Real-time Data Handling ---
     function listenForPreviousAnalyses() {
       const q = query(assessmentsCollection, orderBy("createdAt", "desc"));
       onSnapshot(q, (snapshot) => {
@@ -493,7 +517,14 @@
     ui.analyzeBtn.addEventListener('click', runFullAnalysis);
     ui.vesselNameInput.addEventListener('keypress', (e) => e.key === 'Enter' && runFullAnalysis());
 
+    function requireContributor(actionName = "this action") {
+      const ok = (currentRole === 'contributor' || currentRole === 'admin');
+      if (!ok) updateStatus(`Contributor access required to ${actionName}.`, true);
+      return ok;
+    }
+
     async function runFullAnalysis() {
+      if (!requireContributor("run analyses")) return;
       if (isRateLimited) { updateStatus("Please wait before next analysis.", true); return; }
 
       const vesselName = ui.vesselNameInput.value.trim();
@@ -554,6 +585,7 @@
     }
 
     async function enhanceAnalysis(docId, existingData, phase2Text) {
+      if (!requireContributor("enhance reports")) return;
       setLoading(true, "Enhancing...");
       try {
         updateStatus("Summarizing Phase 2 data...");
@@ -597,9 +629,7 @@
         const payload = result?.data ?? result;
         const raw = payload?.data ?? payload?.text ?? payload;
 
-        if (typeof raw !== "string") {
-          throw new Error("Unexpected response format from server.");
-        }
+        if (typeof raw !== "string") throw new Error("Unexpected response format from server.");
 
         const cleaned = raw.trim()
           .replace(/^```(?:json)?/i, "")
@@ -623,7 +653,7 @@
         await setDoc(docRef, { ...data, ...extraFields, createdAt: serverTimestamp() });
       } catch (e) {
         console.error(e);
-        updateStatus("Failed to save report.", true);
+        updateStatus("Failed to save report (permission denied?).", true);
       }
     }
 
@@ -724,9 +754,9 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
 {"wcs":{"parameters":[...] ,"totalScore":...}, "phs":{"parameters":[...], "totalWeightedScore":...}, "esi":{"parameters":[...], "totalScore":...}, "rpm":{"factors":[...], "finalMultiplier":...}}`;
     }
 
-    // --- UI & Rendering Helpers ---
+    // --- UI helpers ---
     function setLoading(isLoading, text = 'Analyzing...') {
-      ui.analyzeBtn.disabled = isLoading;
+      ui.analyzeBtn.disabled = isLoading || !(currentRole === 'contributor' || currentRole === 'admin');
       ui.spinner.classList.toggle('hidden', !isLoading);
       ui.analyzeText.textContent = isLoading ? text : 'Analyze Wreck';
     }
@@ -760,21 +790,28 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
         ui.alertDisplaySection.classList.add('hidden');
       }
 
+      const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
+
       const phase2HTML = data.status === 'completed'
         ? `<section><h3>Phase 2: In-Situ Assessment (Completed)</h3><p>${data.phase2.summary}</p></section>`
-        : `<section>
-            <h3>Phase 2: In-Situ Assessment (Recommended)</h3>
-            <p>A complete WERP assessment requires an in-situ survey to gather ground-truth data (e.g., UT readings, ROV imagery, diver reports).</p>
-            <div class="mt-4">
-              <h4 class="text-lg font-semibold mb-2">Enhance with Phase 2 Data</h4>
-              <textarea id="phase2-text-input" class="w-full h-32 p-2 border border-gray-300 rounded-md"
-                        placeholder="Paste ROV survey summary, UT readings, diver reports, etc. here..."></textarea>
-              <button id="enhance-report-btn"
-                      class="mt-2 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition">
-                Enhance Report
-              </button>
-            </div>
-          </section>`;
+        : (canContribute
+          ? `<section>
+              <h3>Phase 2: In-Situ Assessment (Recommended)</h3>
+              <p>A complete WERP assessment requires an in-situ survey to gather ground-truth data (e.g., UT readings, ROV imagery, diver reports).</p>
+              <div class="mt-4">
+                <h4 class="text-lg font-semibold mb-2">Enhance with Phase 2 Data</h4>
+                <textarea id="phase2-text-input" class="w-full h-32 p-2 border border-gray-300 rounded-md"
+                          placeholder="Paste ROV survey summary, UT readings, diver reports, etc. here..."></textarea>
+                <button id="enhance-report-btn"
+                        class="mt-2 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition">
+                  Enhance Report
+                </button>
+              </div>
+            </section>`
+          : `<section>
+              <h3>Phase 2: In-Situ Assessment (Recommended)</h3>
+              <p class="text-gray-600">Contributor access required to enhance this report with Phase 2 data.</p>
+            </section>`);
 
       function createTable(rows, headers, keys) {
         let table = '<table><thead><tr>';
@@ -874,7 +911,7 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
         </section>
       `;
 
-      if (data.status !== 'completed') {
+      if (data.status !== 'completed' && (currentRole === 'contributor' || currentRole === 'admin')) {
         const btn = document.getElementById('enhance-report-btn');
         if (btn) {
           btn.addEventListener('click', () => {

@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isContributor() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role in ['contributor', 'admin'];
+    }
+
+    // Roles documents: users can read their own role; clients cannot write roles
+    match /roles/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // WERP assessment data
+    match /artifacts/{appId}/public/data/werpassessments/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isContributor();
+    }
+  }
+}
