@@ -2,6 +2,7 @@
 // Exports:
 // - callGeminiApi (contributor/admin)
 // - enqueueBulkImport, processBulkImportQueue (admin) from ./bulkImport.js
+// - guardianSentry (scheduled sentinel) from ./guardianSentry.js
 //
 // Requirements:
 // - Node 20 runtime
@@ -17,6 +18,9 @@ import { db } from "./admin.js";
 
 // Re-export bulk import functions (admin-only)
 export { enqueueBulkImport, processBulkImportQueue } from "./bulkImport.js";
+
+// Re-export guardian sentry scheduled job
+export { guardianSentry } from "./guardianSentry.js";
 
 const REGION = "us-central1";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
