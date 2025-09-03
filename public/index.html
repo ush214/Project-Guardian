@@ -41,11 +41,14 @@
         <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-16" />
         <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Deeptrek Logo" class="h-16" />
       </div>
-      <div class="flex items-center">
+      <div class="flex items-center space-x-4">
         <h1 class="hidden md:block text-2xl font-bold text-gray-700">Project Guardian AI Wreck Assessment Agent</h1>
+        <button id="signOutBtn" class="hidden px-3 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500" title="Sign out">
+          Sign Out
+        </button>
         <button
           id="themeToggle"
-          class="ml-4 rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
+          class="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
           onclick="toggleTheme()"
           aria-label="Toggle theme"
           title="Toggle theme"
@@ -136,12 +139,15 @@
   <script type="module">
     // --- Firebase Imports ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import {
       getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
       collection, query, orderBy, onSnapshot, writeBatch
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+    
+    // --- Auth Module Import ---
+    import { ensureAuth, onAuthChange, getCurrentUser, isAuthenticated } from "./auth.js";
 
     // --- Firebase Config & Global Variables ---
     const firebaseConfig = {
@@ -208,15 +214,19 @@
       }).addTo(map);
     }
 
-    signInAnonymously(auth)
-      .then(() => {
-        if (!map) initializeMap();
-        listenForPreviousAnalyses();
-      })
-      .catch((error) => {
-        console.error("Firebase Auth Failed:", error);
-        updateStatus("Authentication failed. Please check console.", true);
-      });
+    // Initialize app - public reading works without authentication
+    if (!map) initializeMap();
+    listenForPreviousAnalyses();
+    
+    // Set up auth state listener to show/hide sign out button
+    onAuthChange((user) => {
+      const signOutBtn = document.getElementById('signOutBtn');
+      if (user) {
+        signOutBtn.classList.remove('hidden');
+      } else {
+        signOutBtn.classList.add('hidden');
+      }
+    });
 
     // --- Real-time Data Handling ---
     function listenForPreviousAnalyses() {
@@ -341,6 +351,14 @@
       const vesselName = ui.vesselNameInput.value.trim();
       if (!vesselName) { updateStatus("Please enter a vessel name.", true); return; }
 
+      // Check authentication before proceeding with analysis
+      try {
+        await ensureAuth("run an analysis");
+      } catch (error) {
+        // User will be redirected to login, no need to continue
+        return;
+      }
+
       setLoading(true);
       ui.reportContainer.classList.add('hidden');
 
@@ -396,6 +414,14 @@
     }
 
     async function enhanceAnalysis(docId, existingData, phase2Text) {
+      // Check authentication before proceeding with enhancement
+      try {
+        await ensureAuth("enhance a report");
+      } catch (error) {
+        // User will be redirected to login, no need to continue
+        return;
+      }
+
       setLoading(true, "Enhancing...");
       try {
         updateStatus("Summarizing Phase 2 data...");

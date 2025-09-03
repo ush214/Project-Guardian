@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Guardian - Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="theme.js" defer></script>
+</head>
+<body class="text-gray-800 min-h-screen flex items-center justify-center" style="font-family: 'Inter', sans-serif;">
+  <div class="w-full max-w-md">
+    <div class="bg-white rounded-lg shadow-lg p-8">
+      <!-- Logo and Header -->
+      <div class="text-center mb-8">
+        <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Project Guardian Logo" class="h-16 mx-auto mb-4" />
+        <h1 class="text-2xl font-bold text-gray-800">Project Guardian</h1>
+        <p class="text-gray-600 mt-2">Sign in to access protected features</p>
+        <p class="text-sm text-gray-500 mt-1">Access is limited to authorized users</p>
+      </div>
+
+      <!-- Sign In Form -->
+      <form id="loginForm" class="space-y-6">
+        <div>
+          <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input type="email" id="email" required
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                 placeholder="Enter your email">
+        </div>
+
+        <div>
+          <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <input type="password" id="password" required
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                 placeholder="Enter your password">
+        </div>
+
+        <button type="submit" id="signInBtn" 
+                class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
+          <span id="signInText">Sign In</span>
+          <span id="signInSpinner" class="hidden">Signing in...</span>
+        </button>
+      </form>
+
+      <!-- Status Message -->
+      <div id="statusMessage" class="mt-4 text-center text-sm hidden"></div>
+
+      <!-- Back to App Link -->
+      <div class="mt-6 text-center">
+        <a href="/" class="text-blue-600 hover:underline text-sm">← Back to Project Guardian</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase and Auth Module -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+    // Firebase Config
+    const firebaseConfig = {
+      apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+      authDomain: "project-guardian-agent.firebaseapp.com",
+      projectId: "project-guardian-agent",
+      storageBucket: "project-guardian-agent.firebasestorage.app",
+      messagingSenderId: "84395007243",
+      appId: "1:84395007243:web:b07e5f4c4264d27611160e",
+      measurementId: "G-NRLH3WSCQ9"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    // UI Elements
+    const loginForm = document.getElementById('loginForm');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const signInBtn = document.getElementById('signInBtn');
+    const signInText = document.getElementById('signInText');
+    const signInSpinner = document.getElementById('signInSpinner');
+    const statusMessage = document.getElementById('statusMessage');
+
+    // Utility Functions
+    function showStatus(message, isError = false) {
+      statusMessage.textContent = message;
+      statusMessage.className = `mt-4 text-center text-sm ${isError ? 'text-red-600' : 'text-green-600'}`;
+      statusMessage.classList.remove('hidden');
+    }
+
+    function setLoading(loading) {
+      signInBtn.disabled = loading;
+      if (loading) {
+        signInText.classList.add('hidden');
+        signInSpinner.classList.remove('hidden');
+      } else {
+        signInText.classList.remove('hidden');
+        signInSpinner.classList.add('hidden');
+      }
+    }
+
+    // Check if user is already signed in
+    auth.onAuthStateChanged((user) => {
+      if (user) {
+        // User is signed in, redirect to the app or specified next page
+        const urlParams = new URLSearchParams(window.location.search);
+        const nextUrl = urlParams.get('next') || '/';
+        window.location.href = nextUrl;
+      }
+    });
+
+    // Handle form submission
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+
+      if (!email || !password) {
+        showStatus('Please enter both email and password.', true);
+        return;
+      }
+
+      setLoading(true);
+      statusMessage.classList.add('hidden');
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        showStatus('Sign in successful! Redirecting...');
+        // Redirect will happen automatically via onAuthStateChanged
+      } catch (error) {
+        console.error('Sign in error:', error);
+        let errorMessage = 'Sign in failed. Please check your credentials.';
+        
+        if (error.code === 'auth/user-not-found') {
+          errorMessage = 'No account found with this email address.';
+        } else if (error.code === 'auth/wrong-password') {
+          errorMessage = 'Incorrect password.';
+        } else if (error.code === 'auth/invalid-email') {
+          errorMessage = 'Invalid email address.';
+        } else if (error.code === 'auth/too-many-requests') {
+          errorMessage = 'Too many failed attempts. Please try again later.';
+        }
+        
+        showStatus(errorMessage, true);
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -22,7 +22,7 @@ const db = admin.firestore();
 // Define the secret parameter. This tells the function which secret to access from Secret Manager.
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
-// --- Callable Function for AI Analysis (No changes needed) ---
+// --- Callable Function for AI Analysis ---
 exports.callGeminiApi = onCall(
   {
     timeoutSeconds: 300,
@@ -30,8 +30,31 @@ exports.callGeminiApi = onCall(
     cors: true, 
   },
   async (request) => {
-    // ... (existing callGeminiApi code remains the same) ...
     logger.info("onCall function invoked.");
+    
+    // Check authentication
+    if (!request.auth) {
+      logger.warn("Unauthenticated request to callGeminiApi");
+      throw new HttpsError("unauthenticated", "You must be signed in to use this function.");
+    }
+    
+    // Check allowlist
+    try {
+      const allowlistDoc = await db.doc(`system/allowlist/users/${request.auth.uid}`).get();
+      if (!allowlistDoc.exists) {
+        logger.warn(`User ${request.auth.uid} not in allowlist`);
+        throw new HttpsError("permission-denied", "You do not have permission to use this function.");
+      }
+    } catch (error) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      logger.error("Error checking allowlist:", error);
+      throw new HttpsError("internal", "Failed to verify permissions.");
+    }
+    
+    logger.info(`Authorized request from user ${request.auth.uid}`);
+    
     const apiKey = geminiApiKey.value();
     if (!apiKey) {
       logger.error("CRITICAL: Gemini API Key could not be accessed from Secret Manager.");

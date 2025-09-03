@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is in allowlist
+    function isAllowed() {
+      return request.auth != null && 
+             exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid));
+    }
+    
+    // Public read access for assessment data
+    match /artifacts/{appId}/public/{document=**} {
+      allow read: if true;
+      allow write: if isAllowed();
+    }
+    
+    // Protected internal data - only allowlisted users
+    match /artifacts/{appId}/internal/{document=**} {
+      allow read, write: if isAllowed();
+    }
+    
+    // System allowlist - only server can manage
+    match /system/allowlist/{document=**} {
+      allow read, write: if false; // No direct client access
+    }
+    
+    // Default deny rule for all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
