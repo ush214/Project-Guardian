@@ -30,7 +30,14 @@ exports.callGeminiApi = onCall(
     cors: true, 
   },
   async (request) => {
-    // ... (existing callGeminiApi code remains the same) ...
+    // Authentication and authorization checks
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication is required.');
+    }
+    if (request.auth.token?.firebase?.sign_in_provider === 'anonymous') {
+      throw new HttpsError('permission-denied', 'Anonymous users are not allowed.');
+    }
+    
     logger.info("onCall function invoked.");
     const apiKey = geminiApiKey.value();
     if (!apiKey) {
