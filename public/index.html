@@ -26,7 +26,6 @@
   <script src="theme.js" defer></script>
 
   <style>
-    /* Basic styles for map and tables */
     #map { width: 100%; height: 500px; border-radius: 8px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; }
@@ -129,6 +128,23 @@
         <p id="statusMessage" class="text-sm text-gray-500 mt-4 text-center h-4" aria-live="polite"></p>
       </div>
 
+      <!-- Bulk Import (Admin only) -->
+      <div id="bulkImportSection" class="bg-white rounded-lg shadow-lg p-6 mb-8 max-w-3xl mx-auto hidden">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xl font-semibold text-gray-700">Bulk Import (Admin only)</h2>
+          <span class="text-xs text-gray-500">Queued, deduplicated, slow processing</span>
+        </div>
+        <label class="block">
+          <span class="text-sm text-gray-700">Comma-separated vessel names</span>
+          <textarea id="bulkNamesInput" class="mt-1 w-full h-32 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="vessel one, vessel two, vessel three"></textarea>
+        </label>
+        <div class="flex flex-col sm:flex-row gap-2 mt-3">
+          <button id="bulkQueueBtn" class="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Queue import</button>
+          <button id="bulkClearBtn" class="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Clear</button>
+        </div>
+        <p id="bulkStatus" class="text-sm text-gray-600 mt-2 h-5" aria-live="polite"></p>
+      </div>
+
       <!-- Map -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
         <div id="mapContainer" class="lg:col-span-3 bg-white rounded-lg shadow-lg p-4">
@@ -215,7 +231,8 @@
     const db = getFirestore(app);
     const auth = getAuth(app);
     const functions = getFunctions(app, 'us-central1');
-    const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
+    const callGeminiFunction = httpsCallable(functions, 'callGeminiApi'); // existing callable
+    const enqueueBulkImportFn = httpsCallable(functions, 'enqueueBulkImport'); // new callable
     const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
 
     let map;
@@ -225,7 +242,7 @@
     let appInitialized = false;
 
     // Role state
-    let currentRole = 'user'; // 'user' | 'contributor' | 'admin'
+    let currentRole = 'user';
     let roleUnsub = null;
 
     // --- UI Elements ---
@@ -259,6 +276,12 @@
       createAccountBtn: document.getElementById('createAccountBtn'),
       resetPasswordBtn: document.getElementById('resetPasswordBtn'),
       authMessage: document.getElementById('authMessage'),
+      // Bulk import UI
+      bulkImportSection: document.getElementById('bulkImportSection'),
+      bulkNamesInput: document.getElementById('bulkNamesInput'),
+      bulkQueueBtn: document.getElementById('bulkQueueBtn'),
+      bulkClearBtn: document.getElementById('bulkClearBtn'),
+      bulkStatus: document.getElementById('bulkStatus'),
     };
 
     // --- Map / Init ---
@@ -266,8 +289,7 @@
       if (map) return;
       map = L.map('map').setView([10, 150], 3);
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution:
-          '&copy; OpenStreetMap contributors &copy; CARTO'
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
       }).addTo(map);
     }
 
@@ -277,7 +299,7 @@
       if (!map) initializeMap();
       listenForPreviousAnalyses();
       ui.statusMessage.textContent = "";
-      applyPermissions(); // ensure buttons reflect role
+      applyPermissions();
     }
 
     // --- Auth UI helpers ---
@@ -314,6 +336,8 @@
     function applyPermissions() {
       const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
       ui.analyzeBtn.disabled = !canContribute;
+      // Bulk import is admin-only
+      ui.bulkImportSection.classList.toggle('hidden', currentRole !== 'admin');
       updateRoleUI();
     }
 
@@ -542,7 +566,7 @@
       ui.reportContainer.classList.add('hidden');
 
       try {
-        const docId = vesselName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const docId = vesselName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g,'-').replace(/^-|-$/g,'');
         const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
         const docSnap = await getDoc(docRef);
 
@@ -551,7 +575,7 @@
           updateStatus(`Report for ${vesselName} loaded from database.`);
         } else {
           const newReportData = await performNewAnalysis(vesselName);
-          await saveToDatabase(docRef, newReportData, { status: "initial" });
+          await setDoc(docRef, { ...newReportData, status: "initial", createdAt: serverTimestamp() });
           renderReport(newReportData, docId);
           updateStatus(`Analysis complete for ${vesselName}.`);
         }
@@ -592,8 +616,39 @@
       return fullReportData;
     }
 
+    // Bulk import UI handlers (admin only)
+    ui.bulkQueueBtn?.addEventListener('click', async () => {
+      if (currentRole !== 'admin') {
+        ui.bulkStatus.textContent = "Admin access required.";
+        ui.bulkStatus.style.color = '#ef4444';
+        return;
+      }
+      const raw = (ui.bulkNamesInput.value || '').trim();
+      if (!raw) {
+        ui.bulkStatus.textContent = "Enter one or more vessel names separated by commas.";
+        ui.bulkStatus.style.color = '#ef4444';
+        return;
+      }
+      try {
+        ui.bulkStatus.style.color = '#6b7280';
+        ui.bulkStatus.textContent = "Queuing...";
+        const res = await enqueueBulkImportFn({ names: raw });
+        const { total = 0, enqueued = 0, skippedDuplicate = 0, skippedExisting = 0 } = res?.data || {};
+        ui.bulkStatus.textContent = `Queued ${enqueued} of ${total} (skipped duplicates: ${skippedDuplicate}, already exist: ${skippedExisting}).`;
+      } catch (e) {
+        console.error(e);
+        ui.bulkStatus.textContent = e?.message || "Failed to queue import.";
+        ui.bulkStatus.style.color = '#ef4444';
+      }
+    });
+    ui.bulkClearBtn?.addEventListener('click', () => {
+      ui.bulkNamesInput.value = '';
+      ui.bulkStatus.textContent = '';
+      ui.bulkStatus.style.color = '#6b7280';
+    });
+
     async function enhanceAnalysis(docId, existingData, phase2Text) {
-      if (!requireContributor("enhance reports")) return;
+      if (!(currentRole === 'contributor' || currentRole === 'admin')) return;
       setLoading(true, "Enhancing...");
       try {
         updateStatus("Summarizing Phase 2 data...");
@@ -630,7 +685,7 @@
       }
     }
 
-    // --- API & Database ---
+    // --- API helper using existing callable ---
     async function callGemini(prompt) {
       try {
         const result = await callGeminiFunction({ prompt });
@@ -653,15 +708,6 @@
       } catch (error) {
         console.error("callGemini Error:", error);
         throw error;
-      }
-    }
-
-    async function saveToDatabase(docRef, data, extraFields = {}) {
-      try {
-        await setDoc(docRef, { ...data, ...extraFields, createdAt: serverTimestamp() });
-      } catch (e) {
-        console.error(e);
-        updateStatus("Failed to save report (permission denied?).", true);
       }
     }
 
