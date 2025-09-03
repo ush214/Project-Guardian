@@ -8,14 +8,14 @@ service cloud.firestore {
 
     function isContributor() {
       return isSignedIn()
-        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.Role in ['contributor', 'admin'];
+        && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role in ['contributor', 'admin'];
     }
 
-    // Users can read only their own allowlist/role doc; no client-side writes
-    match /system/allowlist/users/{uid} {
+    // Roles documents: users can read their own role; clients cannot write roles
+    match /roles/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
-      allow write: if false; // manage via Console/Admin SDK only
+      allow write: if false;
     }
 
     // WERP assessment data
