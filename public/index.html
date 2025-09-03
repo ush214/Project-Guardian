@@ -136,12 +136,13 @@
   <script type="module">
     // --- Firebase Imports ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import {
       getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
       collection, query, orderBy, onSnapshot, writeBatch
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+    import { ensureAuth } from './auth.js';
 
     // --- Firebase Config & Global Variables ---
     const firebaseConfig = {
@@ -208,15 +209,9 @@
       }).addTo(map);
     }
 
-    signInAnonymously(auth)
-      .then(() => {
-        if (!map) initializeMap();
-        listenForPreviousAnalyses();
-      })
-      .catch((error) => {
-        console.error("Firebase Auth Failed:", error);
-        updateStatus("Authentication failed. Please check console.", true);
-      });
+    // Initialize the app without authentication
+    if (!map) initializeMap();
+    listenForPreviousAnalyses();
 
     // --- Real-time Data Handling ---
     function listenForPreviousAnalyses() {
@@ -341,6 +336,14 @@
       const vesselName = ui.vesselNameInput.value.trim();
       if (!vesselName) { updateStatus("Please enter a vessel name.", true); return; }
 
+      // Require authentication for analysis
+      try {
+        await ensureAuth("Analyze Wreck");
+      } catch (error) {
+        console.error("Authentication failed:", error);
+        return; // ensureAuth will handle the redirect
+      }
+
       setLoading(true);
       ui.reportContainer.classList.add('hidden');
 
@@ -396,6 +399,14 @@
     }
 
     async function enhanceAnalysis(docId, existingData, phase2Text) {
+      // Require authentication for enhancement
+      try {
+        await ensureAuth("Enhance Report");
+      } catch (error) {
+        console.error("Authentication failed:", error);
+        return; // ensureAuth will handle the redirect
+      }
+      
       setLoading(true, "Enhancing...");
       try {
         updateStatus("Summarizing Phase 2 data...");

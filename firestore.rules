@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow public reads to artifacts/{appId}/public/** without authentication
+    match /artifacts/{appId}/public/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Require authentication for artifacts/{appId}/internal/**
+    match /artifacts/{appId}/internal/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

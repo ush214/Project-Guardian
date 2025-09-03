@@ -30,8 +30,15 @@ exports.callGeminiApi = onCall(
     cors: true, 
   },
   async (request) => {
-    // ... (existing callGeminiApi code remains the same) ...
     logger.info("onCall function invoked.");
+    
+    // Check authentication
+    if (!request.auth) {
+      logger.warn("Unauthenticated request to callGeminiApi");
+      throw new HttpsError("unauthenticated", "Authentication required to call Gemini API.");
+    }
+    
+    logger.info(`Authenticated user: ${request.auth.uid}`);
     const apiKey = geminiApiKey.value();
     if (!apiKey) {
       logger.error("CRITICAL: Gemini API Key could not be accessed from Secret Manager.");
