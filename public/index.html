@@ -24,6 +24,15 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <script src="theme.js" defer></script>
+
+  <style>
+    /* Basic styles for map and tables */
+    #map { width: 100%; height: 500px; border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; }
+    th { background: #f9fafb; font-weight: 600; }
+    .wreck-list-item.active { background: #e0f2fe !important; }
+  </style>
 </head>
 <body class="text-gray-800" style="font-family: 'Inter', sans-serif;">
   <!-- Header -->
@@ -185,7 +194,7 @@
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import {
       getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
-      collection, query, orderBy, onSnapshot, writeBatch
+      collection, query, orderBy, onSnapshot
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
@@ -335,8 +344,7 @@
       if (password.length < 6) return setAuthMessage("Password must be at least 6 characters.", true);
       try {
         setAuthMessage("Creating account...");
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        // Optional: Initialize a profile doc or other onboarding here.
+        await createUserWithEmailAndPassword(auth, email, password);
         setAuthMessage("");
       } catch (e) {
         console.error(e);
@@ -384,11 +392,11 @@
       }
       showSignedInUI(user);
 
-      // Subscribe to this user's role doc for live updates
+      // Subscribe to this user's role doc for live updates at system/allowlist/users/{uid}
       if (roleUnsub) { roleUnsub(); roleUnsub = null; }
-      const roleDocRef = doc(db, 'roles', user.uid);
+      const roleDocRef = doc(db, 'system', 'allowlist', 'users', user.uid);
       roleUnsub = onSnapshot(roleDocRef, (snap) => {
-        const role = (snap.exists() && typeof snap.data().role === 'string') ? snap.data().role : 'user';
+        const role = (snap.exists() && typeof snap.data().Role === 'string') ? snap.data().Role : 'user';
         currentRole = ['user','contributor','admin'].includes(role) ? role : 'user';
         applyPermissions();
       }, (err) => {
