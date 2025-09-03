@@ -299,7 +299,7 @@
     }
 
     // Initialize app for authenticated users
-    function initializeApp() {
+    function initializeUserApp() {
       if (!map) initializeMap();
       listenForPreviousAnalyses();
     }
@@ -311,7 +311,7 @@
       
       if (user) {
         // User is signed in - initialize the app
-        initializeApp();
+        initializeUserApp();
       } else {
         // User is signed out - clear any existing data but don't show errors
         if (map) {
