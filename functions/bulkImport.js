@@ -1,24 +1,20 @@
-// Cloud Functions: Admin-only bulk import queue and scheduled processor
-// Requires: npm i firebase-admin firebase-functions @google/generative-ai
+// Admin-only bulk import queue and scheduled processor (ESM).
+// Uses Firebase Secret GEMINI_API_KEY and model gemini-2.5-pro.
+
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineSecret } from "firebase-functions/params";
-import { initializeApp } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { db } from "./admin.js";
 
-initializeApp();
-const db = getFirestore();
-
-// Secrets and constants
-const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY"); // from Firebase Secrets store
 const REGION = "us-central1";
 const APP_ID = "guardian-agent-default";
 const QUEUE_PATH = "system/bulkImport/queue";
-const BATCH_SIZE = 5; // process up to 5 items per run
+const BATCH_SIZE = 5;
+const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
 
-// Helpers
 function normalizeId(name) {
   return String(name || "")
     .toLowerCase()
@@ -45,10 +41,7 @@ async function callGemini(prompt) {
   const res = await model.generateContent(prompt);
   const text = typeof res.response.text === "function" ? res.response.text() : "";
   const raw = (text || "").trim();
-  const cleaned = raw
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/, "")
-    .trim();
+  const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   try {
     return JSON.parse(cleaned);
   } catch (e) {
@@ -150,7 +143,7 @@ async function performNewAnalysis(vesselName) {
   return report;
 }
 
-// Admin-only: enqueue comma-separated names
+// Admin-only callable: enqueue comma-separated names
 export const enqueueBulkImport = onCall(
   { region: REGION, secrets: [GEMINI_API_KEY] },
   async (req) => {
