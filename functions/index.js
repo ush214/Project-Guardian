@@ -55,7 +55,11 @@ async function generateGeminiJSON(prompt) {
 }
 
 export const callGeminiApi = onCall(
-  { region: REGION, secrets: [GEMINI_API_KEY] },
+  {
+    region: REGION,
+    invoker: "public", // IMPORTANT: allow unauthenticated HTTP so CORS preflight succeeds
+    secrets: [GEMINI_API_KEY]
+  },
   async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");

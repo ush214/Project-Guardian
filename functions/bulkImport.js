@@ -145,7 +145,11 @@ async function performNewAnalysis(vesselName) {
 
 // Admin-only callable: enqueue comma-separated names
 export const enqueueBulkImport = onCall(
-  { region: REGION, secrets: [GEMINI_API_KEY] },
+  {
+    region: REGION,
+    invoker: "public", // IMPORTANT: allow unauthenticated HTTP so CORS preflight succeeds
+    secrets: [GEMINI_API_KEY]
+  },
   async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
@@ -175,14 +179,17 @@ export const enqueueBulkImport = onCall(
 
       // Idempotent queue doc by docId (one queued item per vessel)
       const qRef = db.doc(`${QUEUE_PATH}/${docId}`);
-      await qRef.set({
-        vesselName: name,
-        docId,
-        status: "pending",
-        attempts: 0,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp()
-      }, { merge: true });
+      await qRef.set(
+        {
+          vesselName: name,
+          docId,
+          status: "pending",
+          attempts: 0,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
       enqueued++;
     }
 
@@ -195,20 +202,26 @@ export const processBulkImportQueue = onSchedule(
   { region: REGION, schedule: "every 10 minutes", timeZone: "Etc/UTC", secrets: [GEMINI_API_KEY] },
   async () => {
     const qCol = db.collection("system").doc("bulkImport").collection("queue");
-    const snap = await qCol.where("status", "==", "pending").orderBy("createdAt", "asc").limit(BATCH_SIZE).get();
+    const snap = await qCol
+      .where("status", "==", "pending")
+      .orderBy("createdAt", "asc")
+      .limit(BATCH_SIZE)
+      .get();
 
     for (const docSnap of snap.docs) {
       const qRef = docSnap.ref;
       const data = docSnap.data();
 
       // Claim atomically
-      const claimed = await db.runTransaction(async (tx) => {
-        const fresh = await tx.get(qRef);
-        if (!fresh.exists) return false;
-        if (fresh.get("status") !== "pending") return false;
-        tx.update(qRef, { status: "processing", updatedAt: FieldValue.serverTimestamp() });
-        return true;
-      }).catch(() => false);
+      const claimed = await db
+        .runTransaction(async (tx) => {
+          const fresh = await tx.get(qRef);
+          if (!fresh.exists) return false;
+          if (fresh.get("status") !== "pending") return false;
+          tx.update(qRef, { status: "processing", updatedAt: FieldValue.serverTimestamp() });
+          return true;
+        })
+        .catch(() => false);
       if (!claimed) continue;
 
       try {
