@@ -54,40 +54,46 @@
           title="Toggle theme"
         >🌙</button>
 
-        <!-- Auth UI in header -->
-        <div id="authHeader" class="ml-4 flex items-center gap-3">
-          <!-- Signed-out -->
-          <button id="signInBtn" class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
-            Sign in
-          </button>
-          <!-- Signed-in -->
-          <div id="userInfo" class="hidden items-center gap-3">
-            <img id="userPhoto" alt="User avatar" class="w-8 h-8 rounded-full hidden" referrerpolicy="no-referrer" />
-            <div class="text-sm text-gray-700">
-              <div id="userName" class="font-medium"></div>
-              <div id="userEmail" class="text-gray-500"></div>
-            </div>
-            <button id="signOutBtn" class="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300">
-              Sign out
-            </button>
+        <!-- Signed-in info in header -->
+        <div id="userInfo" class="hidden items-center gap-3 ml-4">
+          <div class="text-sm text-gray-700">
+            <div id="userName" class="font-medium"></div>
+            <div id="userEmail" class="text-gray-500"></div>
           </div>
+          <button id="signOutBtn" class="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300">
+            Sign out
+          </button>
         </div>
       </div>
     </div>
   </header>
 
   <main class="container mx-auto p-4 md:p-8">
-    <!-- Signed-out container -->
-    <section id="signedOutContainer" class="mt-10 bg-white rounded-lg shadow p-8 text-center">
-      <h2 class="text-2xl font-semibold text-gray-800 mb-3">Welcome</h2>
-      <p class="text-gray-600 mb-6">
-        Please sign in with Google to continue.
-      </p>
-      <button id="signInBtnMain" class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
-        Sign in with Google
-      </button>
-      <p class="text-xs text-gray-500 mt-4">
-        Note: No data will be loaded until you sign in.
+    <!-- Signed-out container with simple Email/Password auth -->
+    <section id="signedOutContainer" class="mt-10 bg-white rounded-lg shadow p-8 max-w-md mx-auto">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-2 text-center">Welcome</h2>
+      <p class="text-gray-600 mb-6 text-center">Sign in with your email and password to continue.</p>
+
+      <div class="space-y-3">
+        <label class="block">
+          <span class="text-sm text-gray-700">Email</span>
+          <input id="emailInput" type="email" class="mt-1 w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="you@example.com" autocomplete="email" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-gray-700">Password</span>
+          <input id="passwordInput" type="password" class="mt-1 w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="••••••••" autocomplete="current-password" />
+        </label>
+        <p id="authMessage" class="text-sm h-5 text-center text-gray-500" aria-live="polite"></p>
+
+        <div class="flex flex-col sm:flex-row gap-2 mt-2">
+          <button id="signInEmailBtn" class="flex-1 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Sign in</button>
+          <button id="createAccountBtn" class="flex-1 px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Create account</button>
+        </div>
+        <button id="resetPasswordBtn" class="w-full text-sm text-blue-700 hover:underline mt-1">Forgot password?</button>
+      </div>
+
+      <p class="text-xs text-gray-500 mt-6 text-center">
+        Note: No data loads until you sign in.
       </p>
     </section>
 
@@ -177,11 +183,11 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import {
       getAuth,
-      GoogleAuthProvider,
-      signInWithPopup,
-      signInWithRedirect,
       onAuthStateChanged,
-      signOut
+      signOut,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      sendPasswordResetEmail
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import {
       getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
@@ -200,7 +206,6 @@
       measurementId: "G-NRLH3WSCQ9"
     };
 
-    // This check prevents the app from running with placeholder credentials.
     if (firebaseConfig.apiKey.startsWith("PASTE_YOUR")) {
       const errorMsg = "CONFIGURATION ERROR: The Firebase API Key is a placeholder. Please copy your actual Firebase config object from your project settings and paste it into the 'firebaseConfig'.";
       console.error(errorMsg);
@@ -215,7 +220,6 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
-    // Pin region to where your functions deploy (adjust if needed)
     const functions = getFunctions(app, 'us-central1');
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
     const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
@@ -245,13 +249,16 @@
       alertDisplaySection: document.getElementById('alert-display-section'),
       appContainer: document.getElementById('appContainer'),
       signedOutContainer: document.getElementById('signedOutContainer'),
-      signInBtn: document.getElementById('signInBtn'),
-      signInBtnMain: document.getElementById('signInBtnMain'),
-      signOutBtn: document.getElementById('signOutBtn'),
       userInfo: document.getElementById('userInfo'),
       userName: document.getElementById('userName'),
       userEmail: document.getElementById('userEmail'),
-      userPhoto: document.getElementById('userPhoto')
+      signOutBtn: document.getElementById('signOutBtn'),
+      emailInput: document.getElementById('emailInput'),
+      passwordInput: document.getElementById('passwordInput'),
+      signInEmailBtn: document.getElementById('signInEmailBtn'),
+      createAccountBtn: document.getElementById('createAccountBtn'),
+      resetPasswordBtn: document.getElementById('resetPasswordBtn'),
+      authMessage: document.getElementById('authMessage'),
     };
 
     // --- Initialization helpers (deferred until auth) ---
@@ -275,12 +282,8 @@
     }
 
     // --- Auth UI helpers ---
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
-
     function showSignedOutUI() {
       ui.userInfo.classList.add('hidden');
-      ui.signInBtn.classList.remove('hidden');
       ui.appContainer.classList.add('hidden');
       ui.signedOutContainer.classList.remove('hidden');
       ui.analyzeBtn.disabled = true;
@@ -288,42 +291,83 @@
     }
 
     function showSignedInUI(user) {
-      ui.signInBtn.classList.add('hidden');
       ui.signedOutContainer.classList.add('hidden');
       ui.appContainer.classList.remove('hidden');
 
       ui.userInfo.classList.remove('hidden');
-      ui.userName.textContent = user.displayName || user.email || "Signed in";
+      ui.userName.textContent = user.email || "Signed in";
       ui.userEmail.textContent = user.email || "";
-      if (user.photoURL) {
-        ui.userPhoto.src = user.photoURL;
-        ui.userPhoto.classList.remove("hidden");
-      } else {
-        ui.userPhoto.classList.add("hidden");
-      }
     }
 
-    async function beginGoogleSignIn() {
+    // --- Email/Password auth handlers ---
+    function setAuthMessage(msg, isError = false) {
+      ui.authMessage.textContent = msg || "";
+      ui.authMessage.style.color = isError ? '#ef4444' : '#6b7280';
+    }
+
+    async function handleSignInEmailPassword() {
+      const email = ui.emailInput.value.trim();
+      const password = ui.passwordInput.value;
+      if (!email || !password) return setAuthMessage("Enter email and password.", true);
       try {
-        await signInWithPopup(auth, provider);
-      } catch (err) {
-        const message = (err && err.message) ? err.message.toLowerCase() : "";
-        if ((err && err.code && String(err.code).includes("popup")) || message.includes("popup")) {
-          await signInWithRedirect(auth, provider);
-        } else {
-          console.error("Google sign-in failed:", err);
-          alert("Sign-in failed. Please try again.");
-        }
+        setAuthMessage("Signing in...");
+        await signInWithEmailAndPassword(auth, email, password);
+        setAuthMessage("");
+      } catch (e) {
+        console.error(e);
+        setAuthMessage(cleanAuthError(e), true);
       }
     }
 
-    ui.signInBtn?.addEventListener('click', beginGoogleSignIn);
-    ui.signInBtnMain?.addEventListener('click', beginGoogleSignIn);
+    async function handleCreateAccount() {
+      const email = ui.emailInput.value.trim();
+      const password = ui.passwordInput.value;
+      if (!email || !password) return setAuthMessage("Enter email and a password (min 6 chars).", true);
+      if (password.length < 6) return setAuthMessage("Password must be at least 6 characters.", true);
+      try {
+        setAuthMessage("Creating account...");
+        await createUserWithEmailAndPassword(auth, email, password);
+        setAuthMessage("");
+      } catch (e) {
+        console.error(e);
+        setAuthMessage(cleanAuthError(e), true);
+      }
+    }
+
+    async function handlePasswordReset() {
+      const email = ui.emailInput.value.trim();
+      if (!email) return setAuthMessage("Enter your email to reset password.", true);
+      try {
+        setAuthMessage("Sending reset email...");
+        await sendPasswordResetEmail(auth, email);
+        setAuthMessage("Password reset email sent.");
+      } catch (e) {
+        console.error(e);
+        setAuthMessage(cleanAuthError(e), true);
+      }
+    }
+
+    function cleanAuthError(e) {
+      const code = e?.code || "";
+      switch (code) {
+        case "auth/invalid-email": return "Invalid email address.";
+        case "auth/user-disabled": return "This account is disabled.";
+        case "auth/user-not-found": return "No account found with that email.";
+        case "auth/wrong-password": return "Incorrect password.";
+        case "auth/email-already-in-use": return "An account already exists for that email.";
+        case "auth/weak-password": return "Password must be at least 6 characters.";
+        default: return e?.message || "Authentication error. Please try again.";
+      }
+    }
+
+    ui.signInEmailBtn?.addEventListener('click', handleSignInEmailPassword);
+    ui.createAccountBtn?.addEventListener('click', handleCreateAccount);
+    ui.resetPasswordBtn?.addEventListener('click', handlePasswordReset);
     ui.signOutBtn?.addEventListener('click', () => signOut(auth));
 
     // --- Gate all backend work on auth state ---
     onAuthStateChanged(auth, (user) => {
-      if (!user || user.isAnonymous) {
+      if (!user) {
         appInitialized = false; // ensure re-init on next sign-in
         showSignedOutUI();
         return;
@@ -697,13 +741,11 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
       setTimeout(() => { isRateLimited = false; updateStatus(""); }, 30000);
     }
 
-    // UPDATED: Phase 2 appears before Phase 3, and note hidden when completed
     function renderReport(data, docId) {
       if (!data || !data.phase1) return;
 
       ui.reportTitle.textContent = `WERP Assessment: ${data.vesselName}`;
 
-      // Alerts banner if present
       if (data.alerts && data.alerts.some(a => !a.acknowledged)) {
         ui.alertDisplaySection.classList.remove('hidden');
         ui.alertDisplaySection.innerHTML = `
@@ -734,7 +776,6 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
             </div>
           </section>`;
 
-      // Helper to build simple tables
       function createTable(rows, headers, keys) {
         let table = '<table><thead><tr>';
         headers.forEach(h => table += `<th>${h}</th>`);
@@ -748,7 +789,6 @@ Recalculate WCS, PHS, ESI, RPM as needed and return JSON merging ONLY recalculat
         return table;
       }
 
-      // Phase order: Background -> Phase 1 -> Phase 2 -> Phase 3 (WCS, PHS, ESI, RPM) -> Synthesis -> Summary -> Remediation
       ui.reportContent.innerHTML = `
         <section>
           <h3>Case Study Background</h3>
