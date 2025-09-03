@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Project Guardian: AI Wreck Assessment Agent</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
 
   <!-- TailwindCSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -41,7 +44,7 @@
         <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-16" />
         <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Deeptrek Logo" class="h-16" />
       </div>
-      <div class="flex items-center">
+      <div class="flex items-center gap-3">
         <h1 class="hidden md:block text-2xl font-bold text-gray-700">Project Guardian AI Wreck Assessment Agent</h1>
         <button
           id="themeToggle"
@@ -50,93 +53,136 @@
           aria-label="Toggle theme"
           title="Toggle theme"
         >🌙</button>
+
+        <!-- Auth UI in header -->
+        <div id="authHeader" class="ml-4 flex items-center gap-3">
+          <!-- Signed-out -->
+          <button id="signInBtn" class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+            Sign in
+          </button>
+          <!-- Signed-in -->
+          <div id="userInfo" class="hidden items-center gap-3">
+            <img id="userPhoto" alt="User avatar" class="w-8 h-8 rounded-full hidden" referrerpolicy="no-referrer" />
+            <div class="text-sm text-gray-700">
+              <div id="userName" class="font-medium"></div>
+              <div id="userEmail" class="text-gray-500"></div>
+            </div>
+            <button id="signOutBtn" class="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300">
+              Sign out
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </header>
 
   <main class="container mx-auto p-4 md:p-8">
-    <!-- Analyze New Vessel -->
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8 max-w-2xl mx-auto">
-      <h2 class="text-xl font-semibold mb-4 text-gray-700">Analyze New Vessel</h2>
-      <div class="flex flex-col sm:flex-row gap-4">
-        <input
-          type="text"
-          id="vesselName"
-          class="flex-grow p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          placeholder="e.g., IJN Kirishima"
-          aria-label="Vessel name"
-        />
-        <button
-          id="analyzeBtn"
-          class="bg-blue-800 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-900 transition duration-300 flex items-center justify-center"
-        >
-          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-               xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M10 21l2-2m-2-2l2 2m6-6a8 8 0 11-16 0 8 8 0 0116 0z" />
-          </svg>
-          <div id="spinner" class="spinner animate-spin rounded-full h-5 w-5 border-2 border-white border-t-blue-800 mr-2 hidden"></div>
-          <span id="analyzeText">Analyze Wreck</span>
-        </button>
-      </div>
-      <p id="statusMessage" class="text-sm text-gray-500 mt-4 text-center h-4" aria-live="polite"></p>
-    </div>
+    <!-- Signed-out container -->
+    <section id="signedOutContainer" class="mt-10 bg-white rounded-lg shadow p-8 text-center">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-3">Welcome</h2>
+      <p class="text-gray-600 mb-6">
+        Please sign in with Google to continue.
+      </p>
+      <button id="signInBtnMain" class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+        Sign in with Google
+      </button>
+      <p class="text-xs text-gray-500 mt-4">
+        Note: No data will be loaded until you sign in.
+      </p>
+    </section>
 
-    <!-- Map -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-      <div id="mapContainer" class="lg:col-span-3 bg-white rounded-lg shadow-lg p-4">
-        <div id="map"></div>
+    <!-- App container (shown when signed in) -->
+    <div id="appContainer" class="hidden">
+      <!-- Analyze New Vessel -->
+      <div class="bg-white rounded-lg shadow-lg p-6 mb-8 max-w-2xl mx-auto">
+        <h2 class="text-xl font-semibold mb-4 text-gray-700">Analyze New Vessel</h2>
+        <div class="flex flex-col sm:flex-row gap-4">
+          <input
+            type="text"
+            id="vesselName"
+            class="flex-grow p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            placeholder="e.g., IJN Kirishima"
+            aria-label="Vessel name"
+          />
+          <button
+            id="analyzeBtn"
+            class="bg-blue-800 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-900 transition duration-300 flex items-center justify-center"
+          >
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                 xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M10 21l2-2m-2-2l2 2m6-6a8 8 0 11-16 0 8 8 0 0116 0z" />
+            </svg>
+            <div id="spinner" class="spinner animate-spin rounded-full h-5 w-5 border-2 border-white border-t-blue-800 mr-2 hidden"></div>
+            <span id="analyzeText">Analyze Wreck</span>
+          </button>
+        </div>
+        <p id="statusMessage" class="text-sm text-gray-500 mt-4 text-center h-4" aria-live="polite"></p>
       </div>
-    </div>
 
-    <!-- Lists -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-      <!-- Initial Assessments -->
-      <div class="bg-white rounded-lg shadow-lg p-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-700">Initial Assessments</h2>
-        <div id="initialWreckListContainer" class="h-96 overflow-y-auto">
-          <ul id="initialWreckList" class="space-y-2"></ul>
-          <p id="noInitialWrecksMessage" class="text-gray-500 text-center hidden">No initial assessments found.</p>
+      <!-- Map -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <div id="mapContainer" class="lg:col-span-3 bg-white rounded-lg shadow-lg p-4">
+          <div id="map"></div>
         </div>
       </div>
 
-      <!-- Completed Assessments -->
-      <div class="bg-white rounded-lg shadow-lg p-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-700">Completed Assessments</h2>
-        <div id="completedWreckListContainer" class="h-96 overflow-y-auto">
-          <ul id="completedWreckList" class="space-y-2"></ul>
-          <p id="noCompletedWrecksMessage" class="text-gray-500 text-center hidden">No completed assessments found.</p>
+      <!-- Lists -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Initial Assessments -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+          <h2 class="text-xl font-semibold mb-4 text-gray-700">Initial Assessments</h2>
+          <div id="initialWreckListContainer" class="h-96 overflow-y-auto">
+            <ul id="initialWreckList" class="space-y-2"></ul>
+            <p id="noInitialWrecksMessage" class="text-gray-500 text-center hidden">No initial assessments found.</p>
+          </div>
+        </div>
+
+        <!-- Completed Assessments -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+          <h2 class="text-xl font-semibold mb-4 text-gray-700">Completed Assessments</h2>
+          <div id="completedWreckListContainer" class="h-96 overflow-y-auto">
+            <ul id="completedWreckList" class="space-y-2"></ul>
+            <p id="noCompletedWrecksMessage" class="text-gray-500 text-center hidden">No completed assessments found.</p>
+          </div>
+        </div>
+
+        <!-- Alerts -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+          <h2 class="text-xl font-semibold mb-4 text-gray-700">Environmental Alerts</h2>
+          <div id="alertListContainer" class="h-96 overflow-y-auto">
+            <ul id="alertList" class="space-y-3"></ul>
+            <p id="noAlertsMessage" class="text-gray-500 text-center">No recent alerts.</p>
+          </div>
         </div>
       </div>
 
-      <!-- Alerts -->
-      <div class="bg-white rounded-lg shadow-lg p-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-700">Environmental Alerts</h2>
-        <div id="alertListContainer" class="h-96 overflow-y-auto">
-          <ul id="alertList" class="space-y-3"></ul>
-          <p id="noAlertsMessage" class="text-gray-500 text-center">No recent alerts.</p>
+      <!-- Report -->
+      <div id="reportContainer" class="mt-8 bg-white rounded-lg shadow-lg p-6 md:p-8 max-w-6xl mx-auto hidden">
+        <h2 id="reportTitle" class="text-4xl font-bold mb-6 text-center text-gray-800"></h2>
+        <div id="alert-display-section" class="hidden mb-6"></div>
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          <div id="reportContent" class="lg:col-span-3 prose max-w-none"></div>
+          <div id="reportChart" class="lg:col-span-2">
+            <h3 class="text-xl font-bold mb-4 text-center text-gray-800">WERP Risk Profile</h3>
+            <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
+          </div>
         </div>
       </div>
-    </div>
-
-    <!-- Report -->
-    <div id="reportContainer" class="mt-8 bg-white rounded-lg shadow-lg p-6 md:p-8 max-w-6xl mx-auto hidden">
-      <h2 id="reportTitle" class="text-4xl font-bold mb-6 text-center text-gray-800"></h2>
-      <div id="alert-display-section" class="hidden mb-6"></div>
-      <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
-        <div id="reportContent" class="lg:col-span-3 prose max-w-none"></div>
-        <div id="reportChart" class="lg:col-span-2">
-          <h3 class="text-xl font-bold mb-4 text-center text-gray-800">WERP Risk Profile</h3>
-          <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
-        </div>
-      </div>
-    </div>
+    </div><!-- /#appContainer -->
   </main>
 
   <script type="module">
     // --- Firebase Imports ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+      signInWithRedirect,
+      onAuthStateChanged,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import {
       getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
       collection, query, orderBy, onSnapshot, writeBatch
@@ -178,6 +224,7 @@
     const markers = {};
     let spiderChart;
     let isRateLimited = false;
+    let appInitialized = false;
 
     // --- UI Elements ---
     const ui = {
@@ -196,10 +243,20 @@
       alertList: document.getElementById('alertList'),
       noAlertsMessage: document.getElementById('noAlertsMessage'),
       alertDisplaySection: document.getElementById('alert-display-section'),
+      appContainer: document.getElementById('appContainer'),
+      signedOutContainer: document.getElementById('signedOutContainer'),
+      signInBtn: document.getElementById('signInBtn'),
+      signInBtnMain: document.getElementById('signInBtnMain'),
+      signOutBtn: document.getElementById('signOutBtn'),
+      userInfo: document.getElementById('userInfo'),
+      userName: document.getElementById('userName'),
+      userEmail: document.getElementById('userEmail'),
+      userPhoto: document.getElementById('userPhoto')
     };
 
-    // --- Initialization ---
+    // --- Initialization helpers (deferred until auth) ---
     function initializeMap() {
+      if (map) return;
       map = L.map('map').setView([10, 150], 3);
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution:
@@ -208,17 +265,74 @@
       }).addTo(map);
     }
 
-    signInAnonymously(auth)
-      .then(() => {
-        if (!map) initializeMap();
-        listenForPreviousAnalyses();
-      })
-      .catch((error) => {
-        console.error("Firebase Auth Failed:", error);
-        updateStatus("Authentication failed. Please check console.", true);
-      });
+    function initAfterAuth() {
+      if (appInitialized) return;
+      appInitialized = true;
+      if (!map) initializeMap();
+      listenForPreviousAnalyses();
+      ui.analyzeBtn.disabled = false;
+      ui.statusMessage.textContent = "";
+    }
 
-    // --- Real-time Data Handling ---
+    // --- Auth UI helpers ---
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+
+    function showSignedOutUI() {
+      ui.userInfo.classList.add('hidden');
+      ui.signInBtn.classList.remove('hidden');
+      ui.appContainer.classList.add('hidden');
+      ui.signedOutContainer.classList.remove('hidden');
+      ui.analyzeBtn.disabled = true;
+      ui.statusMessage.textContent = "Please sign in to load data.";
+    }
+
+    function showSignedInUI(user) {
+      ui.signInBtn.classList.add('hidden');
+      ui.signedOutContainer.classList.add('hidden');
+      ui.appContainer.classList.remove('hidden');
+
+      ui.userInfo.classList.remove('hidden');
+      ui.userName.textContent = user.displayName || user.email || "Signed in";
+      ui.userEmail.textContent = user.email || "";
+      if (user.photoURL) {
+        ui.userPhoto.src = user.photoURL;
+        ui.userPhoto.classList.remove("hidden");
+      } else {
+        ui.userPhoto.classList.add("hidden");
+      }
+    }
+
+    async function beginGoogleSignIn() {
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (err) {
+        const message = (err && err.message) ? err.message.toLowerCase() : "";
+        if ((err && err.code && String(err.code).includes("popup")) || message.includes("popup")) {
+          await signInWithRedirect(auth, provider);
+        } else {
+          console.error("Google sign-in failed:", err);
+          alert("Sign-in failed. Please try again.");
+        }
+      }
+    }
+
+    ui.signInBtn?.addEventListener('click', beginGoogleSignIn);
+    ui.signInBtnMain?.addEventListener('click', beginGoogleSignIn);
+    ui.signOutBtn?.addEventListener('click', () => signOut(auth));
+
+    // --- Gate all backend work on auth state ---
+    onAuthStateChanged(auth, (user) => {
+      if (!user || user.isAnonymous) {
+        appInitialized = false; // ensure re-init on next sign-in
+        showSignedOutUI();
+        return;
+      }
+      showSignedInUI(user);
+      initAfterAuth();
+    });
+
+    // --- Real-time Data Handling (only called after auth) ---
     function listenForPreviousAnalyses() {
       const q = query(assessmentsCollection, orderBy("createdAt", "desc"));
       onSnapshot(q, (snapshot) => {
