@@ -117,7 +117,12 @@ export function isAuthenticated() {
   return !!getCurrentUser();
 }
 
-// Auto-initialize sign out button when module loads
-document.addEventListener('DOMContentLoaded', () => {
+// Auto-initialize sign out button when module loads or DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    initializeSignOutButton();
+  });
+} else {
+  // DOM already loaded
   initializeSignOutButton();
-});
+}
