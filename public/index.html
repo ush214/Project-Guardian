@@ -46,6 +46,29 @@
       </div>
       <div class="flex items-center">
         <h1 class="hidden md:block text-2xl font-bold text-gray-700">Project Guardian AI Wreck Assessment Agent</h1>
+        
+        <!-- Auth UI -->
+        <div id="authContainer" class="ml-4 flex items-center gap-2">
+          <!-- Sign-in button (shown when signed out) -->
+          <button
+            id="signInBtn"
+            class="hidden px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+          >
+            Sign in with Google
+          </button>
+          
+          <!-- User info and sign-out (shown when signed in) -->
+          <div id="userInfo" class="hidden flex items-center gap-2">
+            <span id="userDisplay" class="text-sm text-gray-600"></span>
+            <button
+              id="signOutBtn"
+              class="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+        
         <button
           id="themeToggle"
           class="ml-4 rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
@@ -139,7 +162,7 @@
   <script type="module">
     // --- Firebase Imports ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import {
       getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
       collection, query, orderBy, onSnapshot, writeBatch
@@ -199,6 +222,11 @@
       alertList: document.getElementById('alertList'),
       noAlertsMessage: document.getElementById('noAlertsMessage'),
       alertDisplaySection: document.getElementById('alert-display-section'),
+      // Auth UI elements
+      signInBtn: document.getElementById('signInBtn'),
+      signOutBtn: document.getElementById('signOutBtn'),
+      userInfo: document.getElementById('userInfo'),
+      userDisplay: document.getElementById('userDisplay'),
     };
 
     // --- Initialization ---
@@ -211,15 +239,98 @@
       }).addTo(map);
     }
 
-    signInAnonymously(auth)
-      .then(() => {
-        if (!map) initializeMap();
-        listenForPreviousAnalyses();
-      })
-      .catch((error) => {
-        console.error("Firebase Auth Failed:", error);
-        updateStatus("Authentication failed. Please check console.", true);
-      });
+    // --- Authentication Logic ---
+    const googleProvider = new GoogleAuthProvider();
+    let currentUser = null;
+
+    // Google Sign-in function
+    async function signInWithGoogle() {
+      try {
+        ui.signInBtn.textContent = 'Signing in...';
+        ui.signInBtn.disabled = true;
+        
+        let result;
+        try {
+          // Try popup first
+          result = await signInWithPopup(auth, googleProvider);
+        } catch (popupError) {
+          console.log('Popup failed, trying redirect:', popupError);
+          // Fallback to redirect if popup fails
+          await signInWithRedirect(auth, googleProvider);
+          return; // signInWithRedirect doesn't return, so exit here
+        }
+        
+        console.log('Successfully signed in:', result.user.displayName);
+      } catch (error) {
+        console.error('Google sign-in failed:', error);
+        updateStatus('Sign-in failed. Please try again.', true);
+        ui.signInBtn.textContent = 'Sign in with Google';
+        ui.signInBtn.disabled = false;
+      }
+    }
+
+    // Sign-out function
+    async function signOutUser() {
+      try {
+        await signOut(auth);
+        console.log('Successfully signed out');
+      } catch (error) {
+        console.error('Sign-out failed:', error);
+        updateStatus('Sign-out failed. Please try again.', true);
+      }
+    }
+
+    // Update UI based on auth state
+    function updateAuthUI(user) {
+      if (user) {
+        // User is signed in
+        ui.signInBtn.classList.add('hidden');
+        ui.userInfo.classList.remove('hidden');
+        ui.userDisplay.textContent = user.displayName || user.email || 'User';
+        currentUser = user;
+      } else {
+        // User is signed out
+        ui.signInBtn.classList.remove('hidden');
+        ui.userInfo.classList.add('hidden');
+        ui.signInBtn.textContent = 'Sign in with Google';
+        ui.signInBtn.disabled = false;
+        currentUser = null;
+      }
+    }
+
+    // Initialize app for authenticated users
+    function initializeApp() {
+      if (!map) initializeMap();
+      listenForPreviousAnalyses();
+    }
+
+    // Auth state change listener
+    onAuthStateChanged(auth, (user) => {
+      console.log('Auth state changed:', user ? user.displayName || user.email : 'signed out');
+      updateAuthUI(user);
+      
+      if (user) {
+        // User is signed in - initialize the app
+        initializeApp();
+      } else {
+        // User is signed out - clear any existing data but don't show errors
+        if (map) {
+          // Clear map markers but keep map
+          Object.values(markers).forEach(marker => marker.remove());
+          Object.keys(markers).forEach(key => delete markers[key]);
+        }
+        // Clear lists
+        if (ui.initialWreckList) ui.initialWreckList.innerHTML = '';
+        if (ui.completedWreckList) ui.completedWreckList.innerHTML = '';
+        if (ui.alertList) ui.alertList.innerHTML = '';
+        // Show appropriate messages
+        updateStatus('Please sign in to access the application.');
+      }
+    });
+
+    // Event listeners for auth buttons
+    ui.signInBtn.addEventListener('click', signInWithGoogle);
+    ui.signOutBtn.addEventListener('click', signOutUser);
 
     // --- Real-time Data Handling ---
     function listenForPreviousAnalyses() {
@@ -305,6 +416,12 @@
     });
 
     async function handleWreckSelection(docId) {
+      // Check if user is authenticated
+      if (!currentUser) {
+        updateStatus("Please sign in to view reports.", true);
+        return;
+      }
+      
       document.querySelectorAll('.wreck-list-item').forEach(item => item.classList.remove('active'));
       document.querySelector(`.wreck-list-item[data-id="${docId}"]`)?.classList.add('active');
 
@@ -339,6 +456,12 @@
     ui.vesselNameInput.addEventListener('keypress', (e) => e.key === 'Enter' && runFullAnalysis());
 
     async function runFullAnalysis() {
+      // Check if user is authenticated
+      if (!currentUser) {
+        updateStatus("Please sign in to perform analysis.", true);
+        return;
+      }
+      
       if (isRateLimited) { updateStatus("Please wait before next analysis.", true); return; }
 
       const vesselName = ui.vesselNameInput.value.trim();
