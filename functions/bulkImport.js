@@ -15,6 +15,15 @@ const BATCH_SIZE = 5;
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
 
+// Allow your Hosting site and common local dev ports
+const ALLOWED_ORIGINS = [
+  "https://project-guardian-agent.web.app",
+  "http://localhost:3000",
+  "http://localhost:5000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5000"
+];
+
 function normalizeId(name) {
   return String(name || "")
     .toLowerCase()
@@ -147,8 +156,9 @@ async function performNewAnalysis(vesselName) {
 export const enqueueBulkImport = onCall(
   {
     region: REGION,
-    invoker: "public", // IMPORTANT: allow unauthenticated HTTP so CORS preflight succeeds
-    secrets: [GEMINI_API_KEY]
+    invoker: "public",
+    secrets: [GEMINI_API_KEY],
+    cors: ALLOWED_ORIGINS
   },
   async (req) => {
     const uid = req.auth?.uid;
@@ -179,17 +189,14 @@ export const enqueueBulkImport = onCall(
 
       // Idempotent queue doc by docId (one queued item per vessel)
       const qRef = db.doc(`${QUEUE_PATH}/${docId}`);
-      await qRef.set(
-        {
-          vesselName: name,
-          docId,
-          status: "pending",
-          attempts: 0,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp()
-        },
-        { merge: true }
-      );
+      await qRef.set({
+        vesselName: name,
+        docId,
+        status: "pending",
+        attempts: 0,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
       enqueued++;
     }
 
@@ -197,31 +204,25 @@ export const enqueueBulkImport = onCall(
   }
 );
 
-// Scheduled processor: runs every 10 minutes to process a few pending items
+// Scheduled processor
 export const processBulkImportQueue = onSchedule(
   { region: REGION, schedule: "every 10 minutes", timeZone: "Etc/UTC", secrets: [GEMINI_API_KEY] },
   async () => {
     const qCol = db.collection("system").doc("bulkImport").collection("queue");
-    const snap = await qCol
-      .where("status", "==", "pending")
-      .orderBy("createdAt", "asc")
-      .limit(BATCH_SIZE)
-      .get();
+    const snap = await qCol.where("status", "==", "pending").orderBy("createdAt", "asc").limit(BATCH_SIZE).get();
 
     for (const docSnap of snap.docs) {
       const qRef = docSnap.ref;
       const data = docSnap.data();
 
       // Claim atomically
-      const claimed = await db
-        .runTransaction(async (tx) => {
-          const fresh = await tx.get(qRef);
-          if (!fresh.exists) return false;
-          if (fresh.get("status") !== "pending") return false;
-          tx.update(qRef, { status: "processing", updatedAt: FieldValue.serverTimestamp() });
-          return true;
-        })
-        .catch(() => false);
+      const claimed = await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(qRef);
+        if (!fresh.exists) return false;
+        if (fresh.get("status") !== "pending") return false;
+        tx.update(qRef, { status: "processing", updatedAt: FieldValue.serverTimestamp() });
+        return true;
+      }).catch(() => false);
       if (!claimed) continue;
 
       try {

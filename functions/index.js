@@ -1,30 +1,29 @@
 // Functions entry (ESM).
 // Exports:
-// - callGeminiApi (contributor/admin)
+// - callGeminiApi (contributor/admin) [onCall, CORS + public invoker]
 // - enqueueBulkImport, processBulkImportQueue (admin) from ./bulkImport.js
-// - guardianSentry (scheduled sentinel) from ./guardianSentry.js
-//
-// Requirements:
-// - Node 20 runtime
-// - "type": "module" in functions/package.json
-// - Secret "GEMINI_API_KEY" set in Firebase Secrets
-//
-// Roles stored at: system/allowlist/users/{uid} with field "Role" in ["user","contributor","admin"]
+// - guardianSentry (scheduled) from ./guardianSentry.js
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "./admin.js";
 
-// Re-export bulk import functions (admin-only)
 export { enqueueBulkImport, processBulkImportQueue } from "./bulkImport.js";
-
-// Re-export guardian sentry scheduled job
 export { guardianSentry } from "./guardianSentry.js";
 
 const REGION = "us-central1";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
+
+// Allow your Hosting site and common local dev ports
+const ALLOWED_ORIGINS = [
+  "https://project-guardian-agent.web.app",
+  "http://localhost:3000",
+  "http://localhost:5000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5000"
+];
 
 async function getRole(uid) {
   try {
@@ -49,16 +48,16 @@ async function generateGeminiJSON(prompt) {
   const res = await model.generateContent(prompt);
   const textFn = res?.response && typeof res.response.text === "function" ? res.response.text : null;
   const raw = (textFn ? textFn.call(res.response) : "").trim();
-  // Strip ``` / ```json fences if present
   const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  return cleaned; // client parses JSON
+  return cleaned;
 }
 
 export const callGeminiApi = onCall(
   {
     region: REGION,
-    invoker: "public", // IMPORTANT: allow unauthenticated HTTP so CORS preflight succeeds
-    secrets: [GEMINI_API_KEY]
+    invoker: "public",
+    secrets: [GEMINI_API_KEY],
+    cors: ALLOWED_ORIGINS
   },
   async (req) => {
     const uid = req.auth?.uid;
