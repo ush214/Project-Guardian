@@ -32,14 +32,14 @@ const callGeminiApiByUrl = httpsCallableFromURL(functions, `${ORIGIN}/callable/c
 // They return only the .data payload from the callable.
 export async function runEnqueueBulkImport(namesCsv) {
   // Choose ONE of the two lines below. Name-based is recommended.
-  const res = await enqueueBulkImportByName({ names: String(namesCsv || "") });
-  // const res = await enqueueBulkImportByUrl({ names: String(namesCsv || "") });
+  // const res = await enqueueBulkImportByName({ names: String(namesCsv || "") });
+  const res = await enqueueBulkImportByUrl({ names: String(namesCsv || "") });
   return res.data;
 }
 
 export async function runGemini(prompt) {
-  const res = await callGeminiApiByName({ prompt: String(prompt || "") });
-  // const res = await callGeminiApiByUrl({ prompt: String(prompt || "") });
+  // const res = await callGeminiApiByName({ prompt: String(prompt || "") });
+  const res = await callGeminiApiByUrl({ prompt: String(prompt || "") });
   return res.data;
 }
 
