@@ -14,7 +14,11 @@ import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
-import { logger } from "firebase-functions/logger";
+// Older firebase-functions versions may not support `import { logger } from "firebase-functions/logger"`.
+// Use v1 logger via the main package for compatibility.
+import * as functions from "firebase-functions";
+const { logger } = functions;
+
 import { getStorage } from "firebase-admin/storage";
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "./admin.js";
