@@ -212,7 +212,7 @@
       getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
       collection, query, orderBy, onSnapshot
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-    import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+    import { getFunctions, httpsCallable, httpsCallableFromURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
     // --- Firebase Config & Globals ---
     const firebaseConfig = {
@@ -232,7 +232,7 @@
     const auth = getAuth(app);
     const functions = getFunctions(app, 'us-central1');
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi'); // existing callable
-    const enqueueBulkImportFn = httpsCallable(functions, 'enqueueBulkImport'); // new callable
+    const enqueueBulkImportFn = httpsCallableFromURL(functions, 'https://us-central1-project-guardian-agent.cloudfunctions.net/callable/enqueueBulkImport'); // new callable
     const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
 
     let map;

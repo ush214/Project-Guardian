@@ -31,15 +31,16 @@ const callGeminiApiByUrl = httpsCallableFromURL(functions, `${ORIGIN}/callable/c
 // Convenience wrappers that you can call from your UI code.
 // They return only the .data payload from the callable.
 export async function runEnqueueBulkImport(namesCsv) {
-  // Choose ONE of the two lines below. Name-based is recommended.
-  const res = await enqueueBulkImportByName({ names: String(namesCsv || "") });
-  // const res = await enqueueBulkImportByUrl({ names: String(namesCsv || "") });
+  // Use URL-based callable to guarantee /callable path is used
+  console.log('Using URL-based callable for enqueueBulkImport:', `${ORIGIN}/callable/enqueueBulkImport`);
+  const res = await enqueueBulkImportByUrl({ names: String(namesCsv || "") });
   return res.data;
 }
 
 export async function runGemini(prompt) {
-  const res = await callGeminiApiByName({ prompt: String(prompt || "") });
-  // const res = await callGeminiApiByUrl({ prompt: String(prompt || "") });
+  // Use URL-based callable to guarantee /callable path is used
+  console.log('Using URL-based callable for callGeminiApi:', `${ORIGIN}/callable/callGeminiApi`);
+  const res = await callGeminiApiByUrl({ prompt: String(prompt || "") });
   return res.data;
 }
 
