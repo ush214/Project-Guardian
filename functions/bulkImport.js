@@ -1,261 +1,244 @@
-// Admin-only bulk import queue and scheduled processor (ESM).
-// Uses Firebase Secret GEMINI_API_KEY and model gemini-2.5-pro.
+/**
+ * Bulk import pipeline (JavaScript, Firebase Functions v2):
+ * - processBulkImportFromStorage: GCS onObjectFinalized trigger that reads a CSV (one vessel per line)
+ *   from gs://project-guardian-agent.firebasestorage.app/bulk-import/*.csv and enqueues Firestore docs.
+ * - runBulkImportQueue: Scheduled job that processes queued items and writes analysis artifacts.
+ *
+ * Requirements:
+ * - Admin initializer file that exports `db` (e.g., functions/src/admin.js).
+ * - Secret named GEMINI_API_KEY configured in the Firebase/Google Cloud project.
+ * - Dependency @google/generative-ai installed.
+ *
+ * Notes:
+ * - Adjust APP_ID and collection paths to match your app’s structure.
+ * - This file intentionally avoids naming conflicts with any existing HTTP function named
+ *   `processBulkImportQueue` by naming the scheduler `runBulkImportQueue`.
+ */
 
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineSecret } from "firebase-functions/params";
+import { logger } from "firebase-functions/v2";
+import { getStorage } from "firebase-admin/storage";
 import { FieldValue } from "firebase-admin/firestore";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "./admin.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// ----- Config -----
 const REGION = "us-central1";
-const APP_ID = "guardian-agent-default";
+const BUCKET = "project-guardian-agent.firebasestorage.app";
+const APP_ID = "guardian"; // TODO: set this to your actual app id if different
 const QUEUE_PATH = "system/bulkImport/queue";
 const BATCH_SIZE = 5;
-const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 
-// Allow your Hosting site and common local dev ports
-const ALLOWED_ORIGINS = [
-  "https://project-guardian-agent.web.app",
-  "https://project-guardian-agent.firebaseapp.com",
-  "http://localhost:3000",
-  "http://localhost:5000",
-  "http://localhost:5173",
-  "http://127.0.0.1:5000"
-];
-
+// ----- Utilities -----
 function normalizeId(name) {
-  return String(name || "")
+  return name
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // remove diacritics
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
-async function getRole(uid) {
-  const snap = await db.doc(`system/allowlist/users/${uid}`).get();
-  if (!snap.exists) return "user";
-  return snap.get("Role") || "user";
-}
-
-function createGeminiClient() {
-  const key = GEMINI_API_KEY.value();
-  if (!key) throw new Error("GEMINI_API_KEY secret is not available at runtime.");
-  const genAI = new GoogleGenerativeAI(key);
-  return genAI.getGenerativeModel({ model: GEMINI_MODEL });
+function stripCodeFences(text) {
+  // Remove ```json ... ``` or ``` ... ``` fences if present
+  return text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
 }
 
 async function callGemini(prompt) {
-  const model = createGeminiClient();
+  const key = GEMINI_API_KEY.value();
+  if (!key) {
+    throw new Error("GEMINI_API_KEY secret is not available at runtime.");
+  }
+  const genAI = new GoogleGenerativeAI(key);
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+
   const res = await model.generateContent(prompt);
-  const text = typeof res.response.text === "function" ? res.response.text() : "";
-  const raw = (text || "").trim();
-  const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const raw = res.response.text();
+  const cleaned = stripCodeFences(raw);
+
   try {
     return JSON.parse(cleaned);
   } catch (e) {
-    console.error("Gemini JSON parse failed. Raw:", raw);
-    throw new Error("Model returned invalid JSON.");
+    logger.error("Failed to parse Gemini JSON. Raw output:", raw);
+    throw new Error("Gemini did not return valid JSON for the given prompt.");
   }
 }
 
+// ----- Prompt Generation -----
 function getPhase1Prompt(v) {
-  return `You are an expert maritime historian. For "${v}", conduct a Phase 1 WERP assessment.
-Return strictly valid JSON with:
-{
-  "summary": {"background":"...", "location":"...", "discovery":"..."},
-  "screening": {
-    "vesselType":"...", "tonnage":"...", "yearBuilt":"...", "lastOwner":"...",
-    "coordinates": {"latitude": <number>, "longitude": <number>}
-  }
-}`;
+  return `You are an expert maritime historian. For "${v}", conduct a Phase 1 WERP assessment. Return strictly valid JSON with coordinates: {"summary":{"background":"...","location":"...","discovery":"..."},"screening":{"vesselType":"...","tonnage":0,"sunkDate":"YYYY-MM-DD","sinkingCause":"...","coordinates":{"latitude":0.0,"longitude":0.0}},"conclusion":"..."}`;
 }
-
-function getWcsPrompt(v, context) {
-  return `You are a naval architecture expert. For "${v}", analyze WCS using context: ${context}.
-Return JSON:
-{
-  "parameters": [
-    {"name":"Age","rationale":"...","score":0-5},
-    {"name":"Construction","rationale":"...","score":0-5},
-    {"name":"Integrity","rationale":"...","score":0-5},
-    {"name":"Corrosion","rationale":"...","score":0-5}
-  ]
-}`;
+function getWcsPrompt(v, c) {
+  return `You are a naval architecture expert. For "${v}", analyze WCS based on context: ${c}. Return JSON: { "parameters": [{"name": "Age", "rationale": "...", "score": 0}, ...], "totalScore": 0 }`;
 }
-
-function getPhsPrompt(v, context) {
-  return `You are a marine pollution expert. For "${v}", analyze PHS using context: ${context}.
-Return JSON:
-{
-  "parameters": [
-    {"name":"Fuel Type","rationale":"...","score":0-5},
-    {"name":"Cargo Residuals","rationale":"...","score":0-5},
-    {"name":"Onboard Stores","rationale":"...","score":0-5}
-  ]
-}`;
+function getPhsPrompt(v, c) {
+  return `You are a marine pollution expert. For "${v}", analyze PHS based on context: ${c}. Return JSON: { "parameters": [{"name": "Fuel Volume & Type", "rationale": "...", "score": 0, "weight": 40, "weightedScore": 0.0}, ...], "totalWeightedScore": 0.0 }`;
 }
-
-function getEsiPrompt(v, location) {
-  return `You are an environmental scientist. For "${v}" at "${location}", compute ESI.
-Return JSON:
-{
-  "parameters": [
-    {"name":"Shoreline Sensitivity","rationale":"...","score":0-5},
-    {"name":"Habitat Value","rationale":"...","score":0-5}
-  ]
-}`;
+function getEsiPrompt(v, l) {
+  return `You are a marine ecologist. For "${v}" at "${l}", analyze ESI. Return JSON: { "parameters": [{"name": "Proximity to Sensitive Ecosystems", "rationale": "...", "score": 0}, ...], "totalScore": 0 }`;
 }
-
-function getRpmPrompt(v, location) {
-  return `You are a risk modeler. For "${v}" near "${location}", compute RPM multipliers.
-Return JSON:
-{
-  "parameters": [
-    {"name":"Thermal Stress","rationale":"...","value":1.0},
-    {"name":"Storm Exposure","rationale":"...","value":1.0},
-    {"name":"Seismic Activity","rationale":"...","value":1.0},
-    {"name":"Anthropogenic Disturbance","rationale":"...","value":1.0}
-  ],
-  "finalMultiplier": 1.0
-}`;
+function getRpmPrompt(v, l) {
+  return `You are a climate scientist. For "${v}" near "${l}", compute RPM. Return JSON: { "parameters": [{"name": "Thermal Stress", "rationale": "...", "value": 1.0}, ...], "finalMultiplier": 1.0 }`;
 }
-
 function getSummaryPrompt(v, d) {
   const c = JSON.stringify(d);
-  return `You are a lead strategist. For "${v}", synthesize this data: ${c}.
-Return JSON:
-{
-  "summativeAssessment": "...",
-  "remediationSuggestions": [
-    {"priority":1,"title":"...","description":"..."},
-    {"priority":2,"title":"...","description":"..."},
-    {"priority":3,"title":"...","description":"..."}
-  ]
-}`;
+  return `You are a lead strategist. For "${v}", synthesize this data: ${c}. Return JSON: { "summativeAssessment": "...", "remediationSuggestions": [{"priority": 1, "title": "...", "description": "..."}, ...] }`;
 }
 
+// ----- Core Analysis -----
 async function performNewAnalysis(vesselName) {
   const report = { vesselName };
   report.phase1 = await callGemini(getPhase1Prompt(vesselName));
-  report.wcs = await callGemini(getWcsPrompt(vesselName, report.phase1.summary?.background || ""));
-  report.phs = await callGemini(getPhsPrompt(vesselName, report.phase1.summary?.background || ""));
-  report.esi = await callGemini(getEsiPrompt(vesselName, report.phase1.summary?.location || ""));
-  report.rpm = await callGemini(getRpmPrompt(vesselName, report.phase1.summary?.location || ""));
+  report.wcs = await callGemini(
+    getWcsPrompt(vesselName, report.phase1?.summary?.background || "")
+  );
+  report.phs = await callGemini(
+    getPhsPrompt(vesselName, report.phase1?.summary?.background || "")
+  );
+  report.esi = await callGemini(
+    getEsiPrompt(vesselName, report.phase1?.summary?.location || "")
+  );
+  report.rpm = await callGemini(
+    getRpmPrompt(vesselName, report.phase1?.summary?.location || "")
+  );
   report.finalSummary = await callGemini(getSummaryPrompt(vesselName, report));
   return report;
 }
 
-// Admin-only callable: enqueue comma-separated names
-export const enqueueBulkImport = onCall(
+// ----- Cloud Functions -----
+// 1) STORAGE-TRIGGERED: Enqueue vessel names from CSV upload
+export const processBulkImportFromStorage = onObjectFinalized(
   {
     region: REGION,
-    invoker: "public",
-    secrets: [GEMINI_API_KEY],
-    cors: ALLOWED_ORIGINS
+    bucket: BUCKET,
+    cpu: 1,
+    memory: "512MiB",
   },
-  async (req) => {
-    const uid = req.auth?.uid;
-    if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
-    const role = await getRole(uid);
-    if (role !== "admin") throw new HttpsError("permission-denied", "Admin only.");
+  async (event) => {
+    const { bucket, name } = event.data;
 
-    const raw = String(req.data?.names || "");
-    const names = raw.split(",").map(s => s.trim()).filter(Boolean);
-
-    const seen = new Set();
-    let skippedDuplicate = 0;
-    let skippedExisting = 0;
-    let enqueued = 0;
-
-    for (const name of names) {
-      const docId = normalizeId(name);
-      if (!docId) { skippedDuplicate++; continue; }
-      if (seen.has(docId)) { skippedDuplicate++; continue; }
-      seen.add(docId);
-
-      // Skip if assessment already exists
-      const assessRef = db.doc(`artifacts/${APP_ID}/public/data/werpassessments/${docId}`);
-      if ((await assessRef.get()).exists) {
-        skippedExisting++;
-        continue;
-      }
-
-      // Idempotent queue doc by docId (one queued item per vessel)
-      const qRef = db.doc(`${QUEUE_PATH}/${docId}`);
-      await qRef.set({
-        vesselName: name,
-        docId,
-        status: "pending",
-        attempts: 0,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp()
-      }, { merge: true });
-      enqueued++;
+    if (!name || !name.startsWith("bulk-import/") || !name.endsWith(".csv")) {
+      logger.info(`Ignoring file '${name}'.`);
+      return;
     }
 
-    return { total: names.length, enqueued, skippedDuplicate, skippedExisting };
+    logger.info(`Processing uploaded file: ${name}`);
+    const file = getStorage().bucket(bucket).file(name);
+    const [buf] = await file.download();
+    const contents = buf.toString("utf8");
+
+    const vesselNames = contents
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (vesselNames.length === 0) {
+      logger.warn(`File '${name}' is empty.`);
+      return;
+    }
+
+    logger.info(`Found ${vesselNames.length} names. Enqueuing...`);
+
+    const batch = db.batch();
+    for (const vesselName of vesselNames) {
+      const docId = normalizeId(vesselName);
+      if (!docId) continue;
+      const queueRef = db.doc(`${QUEUE_PATH}/${docId}`);
+      batch.set(
+        queueRef,
+        {
+          vesselName,
+          docId,
+          status: "pending",
+          attempts: 0,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit();
+
+    const newName = name.replace("bulk-import/", "bulk-import/processed/");
+    await file.move(newName);
+    logger.info(`Moved processed file to '${newName}'.`);
   }
 );
 
-// Scheduled processor: picks up items from the queue and generates reports
-export const processBulkImportQueue = onSchedule(
+// 2) SCHEDULED: Process the Firestore queue (renamed to avoid clashing with your existing HTTP function)
+export const runBulkImportQueue = onSchedule(
   {
     region: REGION,
     schedule: "every 5 minutes",
-    timeZone: "Etc/UTC"
+    timeZone: "Etc/UTC",
+    secrets: [GEMINI_API_KEY],
+    timeoutSeconds: 540,
+    memory: "1GiB",
   },
   async () => {
-    // Fetch a batch of pending items
-    const qSnap = await db.collection(QUEUE_PATH)
+    logger.info("Running scheduled queue processor...");
+
+    const qSnap = await db
+      .collection(QUEUE_PATH)
       .where("status", "in", ["pending", "retry"])
       .orderBy("createdAt", "asc")
       .limit(BATCH_SIZE)
       .get();
 
-    if (qSnap.empty) return;
+    if (qSnap.empty) {
+      logger.info("Queue is empty.");
+      return;
+    }
 
     for (const doc of qSnap.docs) {
       const qRef = doc.ref;
-      const { vesselName, docId, attempts = 0 } = doc.data();
+      const data = doc.data() || {};
+      const vesselName = data.vesselName;
+      const docId = data.docId;
+      const attempts = data.attempts ?? 0;
 
-      // Mark as processing
-      await qRef.set({
+      await qRef.update({
         status: "processing",
-        updatedAt: FieldValue.serverTimestamp()
-      }, { merge: true });
+        updatedAt: FieldValue.serverTimestamp(),
+      });
 
       try {
         const analysis = await performNewAnalysis(vesselName);
+        const assessRef = db.doc(
+          `artifacts/${APP_ID}/public/data/werpassessments/${docId}`
+        );
+        await assessRef.set(
+          {
+            vesselName,
+            ...analysis,
+            status: "initial",
+            createdAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
 
-        // Write final assessment document
-        const assessRef = db.doc(`artifacts/${APP_ID}/public/data/werpassessments/${docId}`);
-        await assessRef.set({
-          vesselName,
-          ...analysis,
-          status: "completed",
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp()
-        }, { merge: true });
-
-        // Mark queue item as succeeded
-        await qRef.set({
+        await qRef.update({
           status: "succeeded",
           updatedAt: FieldValue.serverTimestamp(),
-          attempts: attempts + 1
-        }, { merge: true });
-
+        });
+        logger.info(`Success for '${vesselName}'.`);
       } catch (err) {
-        console.error(`Bulk import failed for ${vesselName}:`, err);
-        const nextAttempts = (attempts || 0) + 1;
+        logger.error(`Bulk import failed for '${vesselName}':`, err);
+        const nextAttempts = attempts + 1;
         const terminal = nextAttempts >= 3;
-        await qRef.set({
+        await qRef.update({
           status: terminal ? "failed" : "retry",
-          error: String(err?.message || err || "Unknown error"),
+          error: String(err?.message || "Unknown error"),
           attempts: nextAttempts,
-          updatedAt: FieldValue.serverTimestamp()
-        }, { merge: true });
+          updatedAt: FieldValue.serverTimestamp(),
+        });
       }
     }
   }
