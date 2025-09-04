@@ -1,7 +1,7 @@
 // Functions entry (ESM).
 // Exports:
 // - callGeminiApi (contributor/admin) [onCall, CORS + public invoker]
-// - enqueueBulkImport, processBulkImportQueue (admin) from ./bulkImport.js
+// - enqueueBulkImport, processBulkImportFromStorage, runBulkImportQueue (admin) from ./bulkImport.js
 // - guardianSentry (scheduled) from ./guardianSentry.js
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -9,7 +9,11 @@ import { defineSecret } from "firebase-functions/params";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "./admin.js";
 
-export { enqueueBulkImport, processBulkImportQueue } from "./bulkImport.js";
+export {
+  enqueueBulkImport,
+  processBulkImportFromStorage,
+  runBulkImportQueue
+} from "./bulkImport.js";
 export { guardianSentry } from "./guardianSentry.js";
 
 const REGION = "us-central1";
