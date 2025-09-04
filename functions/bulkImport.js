@@ -23,11 +23,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ----- Config -----
 const REGION = "us-central1";
-const BUCKET = "project-guardian-agent.firebasestorage.app";
-const APP_ID = "guardian"; // TODO: adjust if needed
+const EXPECTED_BUCKET = "project-guardian-agent.firebasestorage.app"; // confirmed by you
+const APP_ID = "guardian"; // adjust if needed
 const QUEUE_PATH = "system/bulkImport/queue";
-const BATCH_SIZE = 5; // number of queue docs to process per scheduler run
-const FIRESTORE_BATCH_LIMIT = 500; // Firestore write batch limit
+const BATCH_SIZE = 5;
+const FIRESTORE_BATCH_LIMIT = 500;
 const GEMINI_MODEL = "gemini-2.5-pro";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 
@@ -36,7 +36,7 @@ function normalizeId(name) {
   return String(name || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "") // remove diacritics
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 }
@@ -63,6 +63,17 @@ async function callGemini(prompt) {
   } catch (e) {
     logger.error("Failed to parse Gemini JSON. Raw output:", raw);
     throw new Error("Gemini did not return valid JSON for the given prompt.");
+  }
+}
+
+async function getRole(uid) {
+  try {
+    const snap = await db.doc(`system/allowlist/users/${uid}`).get();
+    if (!snap.exists) return "user";
+    return snap.get("Role") || "user";
+  } catch (e) {
+    logger.error("Failed to read Role for uid:", uid, e);
+    return "user";
   }
 }
 
@@ -202,28 +213,21 @@ function getSummaryPrompt(v, d) {
 async function performNewAnalysis(vesselName) {
   const report = { vesselName };
   report.phase1 = await callGemini(getPhase1Prompt(vesselName));
-  report.wcs = await callGemini(
-    getWcsPrompt(vesselName, report.phase1?.summary?.background || "")
-  );
-  report.phs = await callGemini(
-    getPhsPrompt(vesselName, report.phase1?.summary?.background || "")
-  );
-  report.esi = await callGemini(
-    getEsiPrompt(vesselName, report.phase1?.summary?.location || "")
-  );
-  report.rpm = await callGemini(
-    getRpmPrompt(vesselName, report.phase1?.summary?.location || "")
-  );
+  report.wcs = await callGemini(getWcsPrompt(vesselName, report.phase1?.summary?.background || ""));
+  report.phs = await callGemini(getPhsPrompt(vesselName, report.phase1?.summary?.background || ""));
+  report.esi = await callGemini(getEsiPrompt(vesselName, report.phase1?.summary?.location || ""));
+  report.rpm = await callGemini(getRpmPrompt(vesselName, report.phase1?.summary?.location || ""));
   report.finalSummary = await callGemini(getSummaryPrompt(vesselName, report));
   return report;
 }
 
 // ----- Cloud Functions -----
 // 1) STORAGE-TRIGGERED: Enqueue vessel names from CSV upload
+// No 'bucket' filter here to avoid Eventarc validation failures.
+// We filter by bucket at runtime instead.
 export const processBulkImportFromStorage = onObjectFinalized(
   {
     region: REGION,
-    bucket: BUCKET,
     cpu: 1,
     memory: "512MiB",
   },
@@ -231,6 +235,11 @@ export const processBulkImportFromStorage = onObjectFinalized(
     const bucket = event?.data?.bucket;
     const name = event?.data?.name;
 
+    // Filter to only your desired bucket and path
+    if (bucket !== EXPECTED_BUCKET) {
+      logger.info(`Ignoring event from bucket ${bucket}. Expected ${EXPECTED_BUCKET}.`);
+      return;
+    }
     if (!name || !name.endsWith(".csv")) {
       logger.info(`Ignoring non-CSV file '${name}'.`);
       return;
@@ -250,42 +259,40 @@ export const processBulkImportFromStorage = onObjectFinalized(
 );
 
 // 2) CALLABLE: Manual enqueue by specifying a GCS path or bucket/object
+// Keep this only if you still want a manual kick-off path. It requires Firebase Auth + role check.
 export const enqueueBulkImport = onCall(
   {
     region: REGION,
     cors: true,
-    invoker: "public", // tighten if needed
   },
   async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "Sign-in required.");
+    }
+    const role = await getRole(uid);
+    if (!["contributor", "admin"].includes(role)) {
+      throw new HttpsError("permission-denied", "Contributor access required.");
+    }
+
     try {
       const ref = parseGcsRefFromData(request.data);
       if (!ref) {
-        throw new HttpsError(
-          "invalid-argument",
-          "Expected data with gsUri or { bucket, name | object }."
-        );
+        throw new HttpsError("invalid-argument", "Expected data with gsUri or { bucket, name | object }.");
       }
-
       if (!ref.name.endsWith(".csv")) {
-        throw new HttpsError(
-          "invalid-argument",
-          "Provided object is not a .csv file."
-        );
+        throw new HttpsError("invalid-argument", "Provided object is not a .csv file.");
+      }
+      if (ref.bucket !== EXPECTED_BUCKET) {
+        throw new HttpsError("invalid-argument", `Bucket must be ${EXPECTED_BUCKET}.`);
       }
 
-      const { enqueued, processedPath } = await enqueueFromGcsFile(
-        ref.bucket,
-        ref.name,
-        true
-      );
+      const { enqueued, processedPath } = await enqueueFromGcsFile(ref.bucket, ref.name, true);
       return { ok: true, enqueued, processedPath };
     } catch (e) {
       if (e instanceof HttpsError) throw e;
       logger.error("enqueueBulkImport failed:", e);
-      throw new HttpsError(
-        "invalid-argument",
-        e?.message || "Invalid request, unable to process."
-      );
+      throw new HttpsError("invalid-argument", e?.message || "Invalid request, unable to process.");
     }
   }
 );
@@ -339,9 +346,7 @@ export const runBulkImportQueue = onSchedule(
 
       try {
         const analysis = await performNewAnalysis(vesselName);
-        const assessRef = db.doc(
-          `artifacts/${APP_ID}/public/data/werpassessments/${docId}`
-        );
+        const assessRef = db.doc(`artifacts/${APP_ID}/public/data/werpassessments/${docId}`);
         await assessRef.set(
           {
             vesselName,

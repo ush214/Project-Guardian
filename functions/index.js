@@ -1,8 +1,7 @@
 // Functions entry (ESM).
-// Exports:
-// - callGeminiApi (contributor/admin) [onCall, CORS + public invoker]
-// - enqueueBulkImport, processBulkImportFromStorage, runBulkImportQueue (admin) from ./bulkImport.js
-// - guardianSentry (scheduled) from ./guardianSentry.js
+// - callGeminiApi
+// - enqueueBulkImport, processBulkImportFromStorage, runBulkImportQueue
+// - guardianSentry
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -20,7 +19,6 @@ const REGION = "us-central1";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
 
-// Allow your Hosting site and common local dev ports
 const ALLOWED_ORIGINS = [
   "https://project-guardian-agent.web.app",
   "https://project-guardian-agent.firebaseapp.com",
