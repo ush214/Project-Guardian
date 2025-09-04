@@ -6,7 +6,6 @@
  *
  * Prereqs:
  * - Secret GEMINI_API_KEY in Secret Manager, access granted to default runtime SA.
- * - Firestore composite index (if you use an "IN" query). This version avoids "IN" to not require the index.
  * - db exported from ./admin.js (firebase-admin initialized).
  */
 
@@ -15,7 +14,6 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 // Older firebase-functions versions may not support `import { logger } from "firebase-functions/logger"`.
-// Use v1 logger via the main package for compatibility.
 import * as functions from "firebase-functions";
 const { logger } = functions;
 
@@ -27,7 +25,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // ----- Config -----
 const REGION = "us-central1";
 const EXPECTED_BUCKET = "project-guardian-agent.firebasestorage.app";
-const APP_ID = "guardian";
+// Align with frontend appId
+const APP_ID = "guardian-agent-default";
 const QUEUE_PATH = "system/bulkImport/queue";
 const BATCH_SIZE = 5;
 const FIRESTORE_BATCH_LIMIT = 500;
@@ -207,23 +206,85 @@ async function enqueueFromGcsFile(bucket, name, moveToProcessed = true) {
 
 // ----- Prompt Generation -----
 function getPhase1Prompt(v) {
-  return `You are an expert maritime historian. For "${v}", conduct a Phase 1 WERP assessment. Return strictly valid JSON with coordinates: {"summary":{"background":"...","location":"...","discovery":"..."},"screening":{"vesselType":"...","tonnage":0,"sunkDate":"YYYY-MM-DD","sinkingCause":"...","coordinates":{"latitude":0.0,"longitude":0.0}},"conclusion":"..."}`;
+  return `You are an expert maritime historian. For "${v}", conduct a Phase 1 WERP assessment.
+Return strictly valid JSON with:
+{
+  "summary": {"background":"...", "location":"...", "discovery":"..."},
+  "screening": {
+    "vesselType":"...", "tonnage":"...", "yearBuilt":"...", "lastOwner":"...",
+    "coordinates": {"latitude": <number>, "longitude": <number>}
+  }
+}`;
 }
+
 function getWcsPrompt(v, c) {
-  return `You are a naval architecture expert. For "${v}", analyze WCS based on context: ${c}. Return JSON: { "parameters": [{"name": "Age", "rationale": "...", "score": 0}, ...], "totalScore": 0 }`;
+  return `You are a naval architecture expert. For "${v}", analyze WCS based on context: ${c}.
+Return JSON:
+{
+  "parameters": [
+    {"name":"Age","rationale":"...","score":0-5},
+    {"name":"Construction","rationale":"...","score":0-5},
+    {"name":"Integrity","rationale":"...","score":0-5},
+    {"name":"Corrosion","rationale":"...","score":0-5}
+  ],
+  "totalScore": 0-20
+}`;
 }
+
 function getPhsPrompt(v, c) {
-  return `You are a marine pollution expert. For "${v}", analyze PHS based on context: ${c}. Return JSON: { "parameters": [{"name": "Fuel Volume & Type", "rationale": "...", "score": 0, "weight": 40, "weightedScore": 0.0}, ...], "totalWeightedScore": 0.0 }`;
+  return `You are a marine pollution expert. For "${v}", analyze PHS based on context: ${c}.
+Return JSON:
+{
+  "parameters": [
+    {"name":"Fuel Volume & Type","rationale":"...","weight":1,"score":0-10},
+    {"name":"Cargo Risk","rationale":"...","weight":1,"score":0-10},
+    {"name":"Residual Oils","rationale":"...","weight":1,"score":0-10},
+    {"name":"Leak Likelihood","rationale":"...","weight":1,"score":0-10}
+  ],
+  "totalWeightedScore": 0-10
+}`;
 }
+
 function getEsiPrompt(v, l) {
-  return `You are a marine ecologist. For "${v}" at "${l}", analyze ESI. Return JSON: { "parameters": [{"name": "Proximity to Sensitive Ecosystems", "rationale": "...", "score": 0}, ...], "totalScore": 0 }`;
+  return `You are a marine ecologist. For "${v}" near "${l}", analyze ESI.
+Return JSON:
+{
+  "parameters": [
+    {"name":"Proximity to Sensitive Ecosystems","rationale":"...","score":0-10},
+    {"name":"Biodiversity Value","rationale":"...","score":0-10},
+    {"name":"Protected Areas","rationale":"...","score":0-10},
+    {"name":"Socioeconomic Sensitivity","rationale":"...","score":0-10}
+  ],
+  "totalScore": 0-40
+}`;
 }
+
 function getRpmPrompt(v, l) {
-  return `You are a climate scientist. For "${v}" near "${l}", compute RPM. Return JSON: { "parameters": [{"name": "Thermal Stress", "rationale": "...", "value": 1.0}, ...], "finalMultiplier": 1.0 }`;
+  return `You are a climate scientist. For "${v}" near "${l}", analyze RPM (Risk Pressure Modifiers).
+Return JSON:
+{
+  "factors": [
+    {"name":"Thermal Stress","rationale":"...","value":1.0-2.5},
+    {"name":"Storm Exposure","rationale":"...","value":1.0-2.5},
+    {"name":"Seismic Activity","rationale":"...","value":1.0-2.5},
+    {"name":"Anthropogenic Disturbance","rationale":"...","value":1.0-2.5}
+  ],
+  "finalMultiplier": 1.0-2.5
+}`;
 }
+
 function getSummaryPrompt(v, d) {
   const c = JSON.stringify(d);
-  return `You are a lead strategist. For "${v}", synthesize this data: ${c}. Return JSON: { "summativeAssessment": "...", "remediationSuggestions": [{"priority": 1, "title": "...", "description": "..."}, ...] }`;
+  return `You are a lead strategist. For "${v}", synthesize this data: ${c}.
+Return JSON:
+{
+  "summativeAssessment": "...",
+  "remediationSuggestions": [
+    {"priority":1,"title":"...","description":"..."},
+    {"priority":2,"title":"...","description":"..."},
+    {"priority":3,"title":"...","description":"..."}
+  ]
+}`;
 }
 
 // ----- Core Analysis -----

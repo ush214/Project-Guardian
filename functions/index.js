@@ -1,7 +1,9 @@
 // Functions entry (ESM).
 // - callGeminiApi
-// - enqueueBulkImport, processBulkImportFromStorage, runBulkImportQueue
+// - enqueueBulkImport, processBulkImportFromStorage, runBulkImportQueue, runBulkImportQueueNow
+//   and back-compat alias: processBulkImportQueue
 // - guardianSentry
+// - migrateWerps (one-time migration)
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -11,9 +13,13 @@ import { db } from "./admin.js";
 export {
   enqueueBulkImport,
   processBulkImportFromStorage,
-  runBulkImportQueue
+  runBulkImportQueue,
+  runBulkImportQueueNow,
+  // Back-compat alias to avoid deletion prompt and keep legacy scheduler running until paused
+  runBulkImportQueue as processBulkImportQueue
 } from "./bulkImport.js";
 export { guardianSentry } from "./guardianSentry.js";
+export { migrateWerps } from "./migrateAssessments.js";
 
 const REGION = "us-central1";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
