@@ -1,6 +1,6 @@
 // Functions entry (ESM).
 // - callGeminiApi
-// - enqueueBulkImport, processBulkImportFromStorage, runBulkImportQueue
+// - enqueueBulkImport, processBulkImportFromStorage, runBulkImportQueue, runBulkImportQueueNow
 // - guardianSentry
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -11,7 +11,8 @@ import { db } from "./admin.js";
 export {
   enqueueBulkImport,
   processBulkImportFromStorage,
-  runBulkImportQueue
+  runBulkImportQueue,
+  runBulkImportQueueNow
 } from "./bulkImport.js";
 export { guardianSentry } from "./guardianSentry.js";
 
@@ -48,11 +49,27 @@ function createGeminiClient() {
 
 async function generateGeminiJSON(prompt) {
   const model = createGeminiClient();
-  const res = await model.generateContent(prompt);
-  const textFn = res?.response && typeof res.response.text === "function" ? res.response.text : null;
-  const raw = (textFn ? textFn.call(res.response) : "").trim();
-  const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  return cleaned;
+  
+  try {
+    // First try with JSON MIME type
+    const res = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
+    });
+    const textFn = res?.response && typeof res.response.text === "function" ? res.response.text : null;
+    const raw = (textFn ? textFn.call(res.response) : "").trim();
+    return raw;
+  } catch (err) {
+    // Fall back to string mode if JSON mode fails
+    console.warn("JSON mode failed, falling back to string mode:", err);
+    const res = await model.generateContent(prompt);
+    const textFn = res?.response && typeof res.response.text === "function" ? res.response.text : null;
+    const raw = (textFn ? textFn.call(res.response) : "").trim();
+    const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    return cleaned;
+  }
 }
 
 export const callGeminiApi = onCall(
