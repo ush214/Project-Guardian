@@ -128,23 +128,6 @@
         <p id="statusMessage" class="text-sm text-gray-500 mt-4 text-center h-4" aria-live="polite"></p>
       </div>
 
-      <!-- Bulk Import (Admin only) -->
-      <div id="bulkImportSection" class="bg-white rounded-lg shadow-lg p-6 mb-8 max-w-3xl mx-auto hidden">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xl font-semibold text-gray-700">Bulk Import (Admin only)</h2>
-          <span class="text-xs text-gray-500">Queued, deduplicated, slow processing</span>
-        </div>
-        <label class="block">
-          <span class="text-sm text-gray-700">Comma-separated vessel names</span>
-          <textarea id="bulkNamesInput" class="mt-1 w-full h-32 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="vessel one, vessel two, vessel three"></textarea>
-        </label>
-        <div class="flex flex-col sm:flex-row gap-2 mt-3">
-          <button id="bulkQueueBtn" class="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Queue import</button>
-          <button id="bulkClearBtn" class="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Clear</button>
-        </div>
-        <p id="bulkStatus" class="text-sm text-gray-600 mt-2 h-5" aria-live="polite"></p>
-      </div>
-
       <!-- Map -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
         <div id="mapContainer" class="lg:col-span-3 bg-white rounded-lg shadow-lg p-4">
@@ -232,7 +215,6 @@
     const auth = getAuth(app);
     const functions = getFunctions(app, 'us-central1');
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi'); // existing callable
-    const enqueueBulkImportFn = httpsCallableFromURL(functions, 'https://us-central1-project-guardian-agent.cloudfunctions.net/callable/enqueueBulkImport'); // URL-based callable
     const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
 
     let map;
@@ -276,12 +258,6 @@
       createAccountBtn: document.getElementById('createAccountBtn'),
       resetPasswordBtn: document.getElementById('resetPasswordBtn'),
       authMessage: document.getElementById('authMessage'),
-      // Bulk import UI
-      bulkImportSection: document.getElementById('bulkImportSection'),
-      bulkNamesInput: document.getElementById('bulkNamesInput'),
-      bulkQueueBtn: document.getElementById('bulkQueueBtn'),
-      bulkClearBtn: document.getElementById('bulkClearBtn'),
-      bulkStatus: document.getElementById('bulkStatus'),
     };
 
     // --- Map / Init ---
@@ -336,8 +312,6 @@
     function applyPermissions() {
       const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
       ui.analyzeBtn.disabled = !canContribute;
-      // Bulk import is admin-only
-      ui.bulkImportSection.classList.toggle('hidden', currentRole !== 'admin');
       updateRoleUI();
     }
 
@@ -420,7 +394,7 @@
       if (roleUnsub) { roleUnsub(); roleUnsub = null; }
       const roleDocRef = doc(db, 'system', 'allowlist', 'users', user.uid);
       roleUnsub = onSnapshot(roleDocRef, (snap) => {
-        const role = (snap.exists() && typeof snap.data().Role === 'string') ? snap.data().Role : 'user';
+        const role = (snap.exists() && typeof snap.data()?.Role === 'string') ? snap.data()?.Role : 'user';
         currentRole = ['user','contributor','admin'].includes(role) ? role : 'user';
         applyPermissions();
       }, (err) => {
@@ -444,11 +418,11 @@
 
         snapshot.docs.forEach(docSnap => {
           const data = docSnap.data();
-          const listElement = data.status === 'completed' ? ui.completedWreckList : ui.initialWreckList;
+          const listElement = data?.status === 'completed' ? ui.completedWreckList : ui.initialWreckList;
           addWreckToListAndMap(docSnap, listElement);
 
-          if (data.alerts && data.alerts.length > 0) {
-            const unacknowledgedAlerts = data.alerts.filter(a => !a.acknowledged);
+          if (data?.alerts && data.alerts.length > 0) {
+            const unacknowledgedAlerts = data.alerts.filter(a => !a?.acknowledged);
             if (unacknowledgedAlerts.length > 0) {
               alertCount += unacknowledgedAlerts.length;
               unacknowledgedAlerts.forEach(alert => addAlertToList(alert, data.vesselName, docSnap.id));
@@ -466,11 +440,11 @@
     function addWreckToListAndMap(docSnap, listElement) {
       const data = docSnap.data();
       const docId = docSnap.id;
-      const hasAlert = data.alerts && data.alerts.some(a => !a.acknowledged);
+      const hasAlert = data?.alerts && data.alerts.some(a => !a?.acknowledged);
 
       const li = document.createElement('li');
       li.className = 'wreck-list-item p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition duration-200';
-      li.innerHTML = `<span>${data.vesselName}</span> ${hasAlert ? '<span class="alert-icon">🚨</span>' : ''}`;
+      li.innerHTML = `<span>${data?.vesselName || 'Unknown'}</span> ${hasAlert ? '<span class="alert-icon">🚨</span>' : ''}`;
       li.dataset.id = docId;
       li.addEventListener('click', () => handleWreckSelection(docId));
       listElement.append(li);
@@ -528,10 +502,10 @@
         if (docSnap.exists()) {
           const data = docSnap.data();
           renderReport(data, docId);
-          updateStatus(`Report for ${data.vesselName} loaded.`);
+          updateStatus(`Report for ${data?.vesselName || 'vessel'} loaded.`);
           ui.reportContainer.scrollIntoView({ behavior: 'smooth' });
 
-          const coords = data.phase1?.screening?.coordinates;
+          const coords = data?.phase1?.screening?.coordinates;
           if (coords && map) {
             map.flyTo([coords.latitude, coords.longitude], 8);
             setTimeout(() => markers[docId]?.openPopup(), 500);
@@ -615,37 +589,6 @@
 
       return fullReportData;
     }
-
-    // Bulk import UI handlers (admin only)
-    ui.bulkQueueBtn?.addEventListener('click', async () => {
-      if (currentRole !== 'admin') {
-        ui.bulkStatus.textContent = "Admin access required.";
-        ui.bulkStatus.style.color = '#ef4444';
-        return;
-      }
-      const raw = (ui.bulkNamesInput.value || '').trim();
-      if (!raw) {
-        ui.bulkStatus.textContent = "Enter one or more vessel names separated by commas.";
-        ui.bulkStatus.style.color = '#ef4444';
-        return;
-      }
-      try {
-        ui.bulkStatus.style.color = '#6b7280';
-        ui.bulkStatus.textContent = "Queuing...";
-        const res = await enqueueBulkImportFn({ names: raw });
-        const { total = 0, enqueued = 0, skippedDuplicate = 0, skippedExisting = 0 } = res?.data || {};
-        ui.bulkStatus.textContent = `Queued ${enqueued} of ${total} (skipped duplicates: ${skippedDuplicate}, already exist: ${skippedExisting}).`;
-      } catch (e) {
-        console.error(e);
-        ui.bulkStatus.textContent = e?.message || "Failed to queue import.";
-        ui.bulkStatus.style.color = '#ef4444';
-      }
-    });
-    ui.bulkClearBtn?.addEventListener('click', () => {
-      ui.bulkNamesInput.value = '';
-      ui.bulkStatus.textContent = '';
-      ui.bulkStatus.style.color = '#6b7280';
-    });
 
     async function enhanceAnalysis(docId, existingData, phase2Text) {
       if (!(currentRole === 'contributor' || currentRole === 'admin')) return;

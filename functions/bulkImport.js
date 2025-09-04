@@ -27,7 +27,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // ----- Config -----
 const REGION = "us-central1";
 const EXPECTED_BUCKET = "project-guardian-agent.firebasestorage.app";
-const APP_ID = "guardian";
+const APP_ID = "guardian-agent-default";
 const QUEUE_PATH = "system/bulkImport/queue";
 const BATCH_SIZE = 5;
 const FIRESTORE_BATCH_LIMIT = 500;

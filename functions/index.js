@@ -11,8 +11,12 @@ import { db } from "./admin.js";
 export {
   enqueueBulkImport,
   processBulkImportFromStorage,
-  runBulkImportQueue
+  runBulkImportQueue,
+  runBulkImportQueueNow
 } from "./bulkImport.js";
+
+// Back-compat alias for processBulkImportQueue -> runBulkImportQueue
+export { runBulkImportQueue as processBulkImportQueue } from "./bulkImport.js";
 export { guardianSentry } from "./guardianSentry.js";
 
 const REGION = "us-central1";
