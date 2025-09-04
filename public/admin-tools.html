@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Tools — Project Guardian</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 2rem; color: #111; }
+    .box { max-width: 800px; margin: 0 auto; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 8px; }
+    h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
+    h2 { font-size: 1.125rem; margin: 1.5rem 0 0.5rem; }
+    .muted { color: #6b7280; }
+    button { background: #1e40af; color: #fff; border: 0; padding: 0.6rem 1rem; border-radius: 6px; cursor: pointer; }
+    button.secondary { background: #065f46; }
+    button[disabled] { opacity: 0.6; cursor: not-allowed; }
+    pre { background: #0b1020; color: #e5e7eb; padding: 1rem; border-radius: 6px; overflow: auto; font-size: 12px; }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .badge { font-size: 12px; border: 1px solid #e5e7eb; padding: 0.15rem 0.5rem; border-radius: 999px; color: #374151; background: #f9fafb; }
+    .warn { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; padding: 0.75rem; border-radius: 6px; }
+    a { color: #1e40af; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Admin Tools</h1>
+    <div id="authState" class="muted">Checking sign-in...</div>
+    <div id="roleState" class="muted"></div>
+
+    <div id="notAdmin" class="warn" style="display:none;">
+      You must be an admin to use these tools.
+    </div>
+
+    <div id="tools" style="display:none;">
+      <h2>Normalize WERP Records</h2>
+      <p class="muted">
+        Sets status to "initial" unless Phase 2 exists, and clamps metrics to expected ranges for charts.
+      </p>
+      <div class="row" style="margin: 0.5rem 0 1rem;">
+        <button id="dryRunBtn">Dry-run</button>
+        <button id="applyBtn" class="secondary">Apply changes</button>
+        <span id="busy" class="badge" style="display:none;">Running...</span>
+      </div>
+      <pre id="out">{ }</pre>
+      <p class="muted">
+        Tip: Run Dry-run first to preview, then Apply changes.
+      </p>
+    </div>
+
+    <p class="muted" style="margin-top:1rem;">
+      Back to app: <a href="/">Home</a>
+    </p>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+      authDomain: "project-guardian-agent.firebaseapp.com",
+      projectId: "project-guardian-agent",
+      storageBucket: "project-guardian-agent.firebasestorage.app",
+      messagingSenderId: "84395007243",
+      appId: "1:84395007243:web:b07e5f4c4264d27611160e",
+      measurementId: "G-NRLH3WSCQ9"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const functions = getFunctions(app, "us-central1");
+    const normalizeWerps = httpsCallable(functions, "normalizeWerps");
+
+    const authState = document.getElementById("authState");
+    const roleState = document.getElementById("roleState");
+    const notAdmin = document.getElementById("notAdmin");
+    const tools = document.getElementById("tools");
+    const out = document.getElementById("out");
+    const dryRunBtn = document.getElementById("dryRunBtn");
+    const applyBtn = document.getElementById("applyBtn");
+    const busy = document.getElementById("busy");
+
+    function setBusy(b) {
+      dryRunBtn.disabled = b;
+      applyBtn.disabled = b;
+      busy.style.display = b ? "" : "none";
+    }
+    function print(obj) {
+      out.textContent = JSON.stringify(obj, null, 2);
+    }
+
+    async function getRole(uid) {
+      try {
+        const ref = doc(db, "system", "allowlist", "users", uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return "user";
+        return snap.get("Role") || "user";
+      } catch {
+        return "user";
+      }
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        authState.textContent = "Not signed in. Please sign in on the main app, then reload this page.";
+        tools.style.display = "none";
+        notAdmin.style.display = "";
+        roleState.textContent = "";
+        return;
+      }
+      authState.textContent = `Signed in as ${user.email || user.uid}`;
+      const role = await getRole(user.uid);
+      roleState.textContent = `Role: ${role}`;
+      if (role !== "admin") {
+        tools.style.display = "none";
+        notAdmin.style.display = "";
+        return;
+      }
+      notAdmin.style.display = "none";
+      tools.style.display = "";
+    });
+
+    dryRunBtn.addEventListener("click", async () => {
+      setBusy(true);
+      print({ status: "Running dry-run..." });
+      try {
+        const res = await normalizeWerps({ dryRun: true });
+        print(res.data || res);
+      } catch (e) {
+        print({ error: e?.message || String(e) });
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    applyBtn.addEventListener("click", async () => {
+      if (!confirm("Apply normalization changes now?")) return;
+      setBusy(true);
+      print({ status: "Applying changes..." });
+      try {
+        const res = await normalizeWerps({ dryRun: false });
+        print(res.data || res);
+      } catch (e) {
+        print({ error: e?.message || String(e) });
+      } finally {
+        setBusy(false);
+      }
+    });
+  </script>
+</body>
+</html>
