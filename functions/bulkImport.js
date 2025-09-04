@@ -18,6 +18,7 @@ const GEMINI_MODEL = "gemini-2.5-pro";
 // Allow your Hosting site and common local dev ports
 const ALLOWED_ORIGINS = [
   "https://project-guardian-agent.web.app",
+  "https://project-guardian-agent.firebaseapp.com",
   "http://localhost:3000",
   "http://localhost:5000",
   "http://localhost:5173",
@@ -80,8 +81,7 @@ Return JSON:
     {"name":"Construction","rationale":"...","score":0-5},
     {"name":"Integrity","rationale":"...","score":0-5},
     {"name":"Corrosion","rationale":"...","score":0-5}
-  ],
-  "totalScore": 0-20
+  ]
 }`;
 }
 
@@ -90,40 +90,35 @@ function getPhsPrompt(v, context) {
 Return JSON:
 {
   "parameters": [
-    {"name":"Fuel Volume & Type","rationale":"...","weight":1,"score":0-10},
-    {"name":"Cargo Risk","rationale":"...","weight":1,"score":0-10},
-    {"name":"Residual Oils","rationale":"...","weight":1,"score":0-10},
-    {"name":"Leak Likelihood","rationale":"...","weight":1,"score":0-10}
-  ],
-  "totalWeightedScore": 0-10
+    {"name":"Fuel Type","rationale":"...","score":0-5},
+    {"name":"Cargo Residuals","rationale":"...","score":0-5},
+    {"name":"Onboard Stores","rationale":"...","score":0-5}
+  ]
 }`;
 }
 
-function getEsiPrompt(v, loc) {
-  return `You are a marine ecologist. For "${v}" near "${loc}", analyze ESI.
+function getEsiPrompt(v, location) {
+  return `You are an environmental scientist. For "${v}" at "${location}", compute ESI.
 Return JSON:
 {
   "parameters": [
-    {"name":"Proximity to Sensitive Ecosystems","rationale":"...","score":0-10},
-    {"name":"Biodiversity Value","rationale":"...","score":0-10},
-    {"name":"Protected Areas","rationale":"...","score":0-10},
-    {"name":"Socioeconomic Sensitivity","rationale":"...","score":0-10}
-  ],
-  "totalScore": 0-40
+    {"name":"Shoreline Sensitivity","rationale":"...","score":0-5},
+    {"name":"Habitat Value","rationale":"...","score":0-5}
+  ]
 }`;
 }
 
-function getRpmPrompt(v, loc) {
-  return `You are a climate scientist. For "${v}" near "${loc}", analyze RPM (Risk Pressure Modifiers).
+function getRpmPrompt(v, location) {
+  return `You are a risk modeler. For "${v}" near "${location}", compute RPM multipliers.
 Return JSON:
 {
-  "factors": [
-    {"name":"Thermal Stress","rationale":"...","value":1.0-2.5},
-    {"name":"Storm Exposure","rationale":"...","value":1.0-2.5},
-    {"name":"Seismic Activity","rationale":"...","value":1.0-2.5},
-    {"name":"Anthropogenic Disturbance","rationale":"...","value":1.0-2.5}
+  "parameters": [
+    {"name":"Thermal Stress","rationale":"...","value":1.0},
+    {"name":"Storm Exposure","rationale":"...","value":1.0},
+    {"name":"Seismic Activity","rationale":"...","value":1.0},
+    {"name":"Anthropogenic Disturbance","rationale":"...","value":1.0}
   ],
-  "finalMultiplier": 1.0-2.5
+  "finalMultiplier": 1.0
 }`;
 }
 
@@ -144,10 +139,10 @@ Return JSON:
 async function performNewAnalysis(vesselName) {
   const report = { vesselName };
   report.phase1 = await callGemini(getPhase1Prompt(vesselName));
-  report.wcs = await callGemini(getWcsPrompt(vesselName, report.phase1.summary.background));
-  report.phs = await callGemini(getPhsPrompt(vesselName, report.phase1.summary.background));
-  report.esi = await callGemini(getEsiPrompt(vesselName, report.phase1.summary.location));
-  report.rpm = await callGemini(getRpmPrompt(vesselName, report.phase1.summary.location));
+  report.wcs = await callGemini(getWcsPrompt(vesselName, report.phase1.summary?.background || ""));
+  report.phs = await callGemini(getPhsPrompt(vesselName, report.phase1.summary?.background || ""));
+  report.esi = await callGemini(getEsiPrompt(vesselName, report.phase1.summary?.location || ""));
+  report.rpm = await callGemini(getRpmPrompt(vesselName, report.phase1.summary?.location || ""));
   report.finalSummary = await callGemini(getSummaryPrompt(vesselName, report));
   return report;
 }
@@ -204,49 +199,63 @@ export const enqueueBulkImport = onCall(
   }
 );
 
-// Scheduled processor
+// Scheduled processor: picks up items from the queue and generates reports
 export const processBulkImportQueue = onSchedule(
-  { region: REGION, schedule: "every 10 minutes", timeZone: "Etc/UTC", secrets: [GEMINI_API_KEY] },
+  {
+    region: REGION,
+    schedule: "every 5 minutes",
+    timeZone: "Etc/UTC"
+  },
   async () => {
-    const qCol = db.collection("system").doc("bulkImport").collection("queue");
-    const snap = await qCol.where("status", "==", "pending").orderBy("createdAt", "asc").limit(BATCH_SIZE).get();
+    // Fetch a batch of pending items
+    const qSnap = await db.collection(QUEUE_PATH)
+      .where("status", "in", ["pending", "retry"])
+      .orderBy("createdAt", "asc")
+      .limit(BATCH_SIZE)
+      .get();
 
-    for (const docSnap of snap.docs) {
-      const qRef = docSnap.ref;
-      const data = docSnap.data();
+    if (qSnap.empty) return;
 
-      // Claim atomically
-      const claimed = await db.runTransaction(async (tx) => {
-        const fresh = await tx.get(qRef);
-        if (!fresh.exists) return false;
-        if (fresh.get("status") !== "pending") return false;
-        tx.update(qRef, { status: "processing", updatedAt: FieldValue.serverTimestamp() });
-        return true;
-      }).catch(() => false);
-      if (!claimed) continue;
+    for (const doc of qSnap.docs) {
+      const qRef = doc.ref;
+      const { vesselName, docId, attempts = 0 } = doc.data();
+
+      // Mark as processing
+      await qRef.set({
+        status: "processing",
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
 
       try {
-        const docId = data.docId;
-        const name = data.vesselName;
+        const analysis = await performNewAnalysis(vesselName);
 
-        // Dedup guard at processing time
+        // Write final assessment document
         const assessRef = db.doc(`artifacts/${APP_ID}/public/data/werpassessments/${docId}`);
-        if ((await assessRef.get()).exists) {
-          await qRef.update({ status: "skipped_duplicate", updatedAt: FieldValue.serverTimestamp() });
-          continue;
-        }
-
-        const report = await performNewAnalysis(name);
-        await assessRef.set({ ...report, status: "initial", createdAt: FieldValue.serverTimestamp() });
-        await qRef.update({ status: "done", updatedAt: FieldValue.serverTimestamp() });
-      } catch (err) {
-        console.error("Bulk import item failed:", docSnap.id, err);
-        const attempts = (docSnap.get("attempts") || 0) + 1;
-        await qRef.update({
-          status: attempts >= 3 ? "failed" : "pending",
-          attempts,
+        await assessRef.set({
+          vesselName,
+          ...analysis,
+          status: "completed",
+          createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp()
-        });
+        }, { merge: true });
+
+        // Mark queue item as succeeded
+        await qRef.set({
+          status: "succeeded",
+          updatedAt: FieldValue.serverTimestamp(),
+          attempts: attempts + 1
+        }, { merge: true });
+
+      } catch (err) {
+        console.error(`Bulk import failed for ${vesselName}:`, err);
+        const nextAttempts = (attempts || 0) + 1;
+        const terminal = nextAttempts >= 3;
+        await qRef.set({
+          status: terminal ? "failed" : "retry",
+          error: String(err?.message || err || "Unknown error"),
+          attempts: nextAttempts,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
       }
     }
   }

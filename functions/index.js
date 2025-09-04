@@ -19,6 +19,7 @@ const GEMINI_MODEL = "gemini-2.5-pro";
 // Allow your Hosting site and common local dev ports
 const ALLOWED_ORIGINS = [
   "https://project-guardian-agent.web.app",
+  "https://project-guardian-agent.firebaseapp.com",
   "http://localhost:3000",
   "http://localhost:5000",
   "http://localhost:5173",
