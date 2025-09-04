@@ -4,6 +4,7 @@
 //   and back-compat alias: processBulkImportQueue
 // - guardianSentry
 // - migrateWerps (one-time migration)
+// - normalizeWerps (one-time normalization)
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -15,11 +16,11 @@ export {
   processBulkImportFromStorage,
   runBulkImportQueue,
   runBulkImportQueueNow,
-  // Back-compat alias to avoid deletion prompt and keep legacy scheduler running until paused
   runBulkImportQueue as processBulkImportQueue
 } from "./bulkImport.js";
 export { guardianSentry } from "./guardianSentry.js";
 export { migrateWerps } from "./migrateAssessments.js";
+export { normalizeWerps } from "./normalizeWerps.js";
 
 const REGION = "us-central1";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
