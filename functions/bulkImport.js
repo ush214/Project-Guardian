@@ -2,7 +2,7 @@
  * Bulk import pipeline (Firebase Functions v2, ESM)
  * - Storage trigger reads CSVs from gs://<bucket>/bulk-import/*.csv, enqueues names to Firestore, and moves CSV to bulk-import/processed/.
  * - Scheduled job processes the Firestore queue and writes analysis artifacts.
- * - Callable helpers for manual enqueue and run-now.
+ * - Callables for manual enqueue and run-now.
  *
  * Prereqs:
  * - Secret GEMINI_API_KEY in Secret Manager, access granted to default runtime SA.
@@ -13,7 +13,6 @@ import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
-// Older firebase-functions versions may not support `import { logger } from "firebase-functions/logger"`.
 import * as functions from "firebase-functions";
 const { logger } = functions;
 
@@ -25,7 +24,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // ----- Config -----
 const REGION = "us-central1";
 const EXPECTED_BUCKET = "project-guardian-agent.firebasestorage.app";
-// Align with frontend appId
 const APP_ID = "guardian-agent-default";
 const QUEUE_PATH = "system/bulkImport/queue";
 const BATCH_SIZE = 5;
@@ -43,19 +41,217 @@ function normalizeId(name) {
     .replace(/(^-|-$)/g, "");
 }
 
+function clamp(n, min, max) {
+  if (typeof n !== "number" || Number.isNaN(n)) return undefined;
+  return Math.min(max, Math.max(min, n));
+}
+
+function toNum(x) {
+  if (typeof x === "number") return x;
+  const n = parseFloat(String(x));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function coerceParameterArray(arr, numericKeys) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(item => {
+    const out = { ...item };
+    for (const k of numericKeys) {
+      const v = toNum(out[k]);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  });
+}
+
+// Ensure ESI/WCS/PHS/RPM structure and recompute totals within expected ranges for charts
+function normalizeAndScore(report) {
+  const out = { ...report };
+
+  // WCS: 4 params, score 0-5 each, total 0-20
+  const wcsParams = coerceParameterArray(out?.wcs?.parameters, ["score"]);
+  const wcsTotal = clamp(
+    wcsParams.reduce((s, p) => s + clamp(toNum(p?.score) ?? 0, 0, 5), 0),
+    0,
+    20
+  );
+  out.wcs = {
+    ...(out.wcs || {}),
+    parameters: wcsParams,
+    totalScore: wcsTotal ?? clamp(toNum(out?.wcs?.totalScore), 0, 20) ?? 0
+  };
+
+  // PHS: weighted average of 0-10 scores to 0-10
+  const phsParams = coerceParameterArray(out?.phs?.parameters, ["score", "weight"]);
+  const phsWeights = phsParams.map(p => toNum(p?.weight) ?? 1).map(w => (w > 0 ? w : 1));
+  const phsWeighted = phsParams.reduce((s, p, i) => s + (clamp(toNum(p?.score) ?? 0, 0, 10) * phsWeights[i]), 0);
+  const phsWeightSum = phsWeights.reduce((s, w) => s + w, 0) || 1;
+  const phsTotal = clamp(phsWeighted / phsWeightSum, 0, 10);
+  out.phs = {
+    ...(out.phs || {}),
+    parameters: phsParams,
+    totalWeightedScore: phsTotal ?? clamp(toNum(out?.phs?.totalWeightedScore), 0, 10) ?? 0
+  };
+
+  // ESI: ensure 4 named components exist, each 0-10; total 0-40
+  const requiredEsiNames = [
+    "Proximity to Sensitive Ecosystems",
+    "Biodiversity Value",
+    "Protected Areas",
+    "Socioeconomic Sensitivity"
+  ];
+  const esiParamsRaw = coerceParameterArray(out?.esi?.parameters, ["score"]);
+  const esiByName = {};
+  for (const p of esiParamsRaw) {
+    if (p?.name) esiByName[p.name] = p;
+  }
+  const esiParams = requiredEsiNames.map(name => {
+    const p = esiByName[name];
+    return p
+      ? { ...p, score: clamp(toNum(p.score) ?? 0, 0, 10) }
+      : { name, rationale: "Insufficient data.", score: 0 };
+  });
+  const esiTotal = clamp(esiParams.reduce((s, p) => s + (toNum(p.score) ?? 0), 0), 0, 40);
+  out.esi = {
+    ...(out.esi || {}),
+    parameters: esiParams,
+    totalScore: esiTotal ?? clamp(toNum(out?.esi?.totalScore), 0, 40) ?? 0
+  };
+
+  // RPM: ensure 4 factors, value 1.0-2.5; finalMultiplier as average
+  const requiredRpmFactors = [
+    "Thermal Stress",
+    "Storm Exposure",
+    "Seismic Activity",
+    "Anthropogenic Disturbance"
+  ];
+  const rpmRaw = coerceParameterArray(out?.rpm?.factors, ["value"]);
+  const rpmByName = {};
+  for (const f of rpmRaw) {
+    if (f?.name) rpmByName[f.name] = f;
+  }
+  const rpmFactors = requiredRpmFactors.map(name => {
+    const f = rpmByName[name];
+    const v = clamp(toNum(f?.value) ?? 1.0, 1.0, 2.5);
+    return f
+      ? { ...f, value: v, rationale: (typeof f?.rationale === "string" && f.rationale.trim()) ? f.rationale : "Not specified." }
+      : { name, value: 1.0, rationale: "Insufficient data." };
+  });
+  const rpmAvg = clamp(rpmFactors.reduce((s, f) => s + (toNum(f.value) ?? 1.0), 0) / rpmFactors.length, 1.0, 2.5);
+  out.rpm = {
+    ...(out.rpm || {}),
+    factors: rpmFactors,
+    finalMultiplier: clamp(toNum(out?.rpm?.finalMultiplier), 1.0, 2.5) ?? rpmAvg
+  };
+
+  // Status: completed only if Phase 2 content exists
+  const hasPhase2 = !!(out?.phase2 && (out.phase2.summary || Object.keys(out.phase2).length > 0));
+  out.status = hasPhase2 ? "completed" : "initial";
+
+  return out;
+}
+
 function extractJsonCandidate(text) {
   const s = String(text || "");
-  // Prefer fenced ```json blocks
   let m = s.match(/```json([\s\S]*?)```/i);
   if (m?.[1]) return m[1].trim();
-  // Any fenced block
   m = s.match(/```([\s\S]*?)```/i);
   if (m?.[1]) return m[1].trim();
-  // Fall back to first {...} block
   const first = s.indexOf("{");
   const last = s.lastIndexOf("}");
   if (first !== -1 && last !== -1 && last > first) return s.slice(first, last + 1).trim();
   return s.trim();
+}
+
+function buildSchemas() {
+  // Minimal schemas that force shape and ranges; model may still deviate, so we post-validate.
+  return {
+    wcs: {
+      type: "object",
+      properties: {
+        parameters: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              rationale: { type: "string" },
+              score: { type: "number", minimum: 0, maximum: 5 }
+            },
+            required: ["name", "score"]
+          },
+          minItems: 4,
+          maxItems: 8
+        },
+        totalScore: { type: "number", minimum: 0, maximum: 20 }
+      },
+      required: ["parameters"]
+    },
+    phs: {
+      type: "object",
+      properties: {
+        parameters: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              rationale: { type: "string" },
+              weight: { type: "number", minimum: 0, maximum: 5 },
+              score: { type: "number", minimum: 0, maximum: 10 }
+            },
+            required: ["name", "score"]
+          },
+          minItems: 3,
+          maxItems: 10
+        },
+        totalWeightedScore: { type: "number", minimum: 0, maximum: 10 }
+      },
+      required: ["parameters"]
+    },
+    esi: {
+      type: "object",
+      properties: {
+        parameters: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              rationale: { type: "string" },
+              score: { type: "number", minimum: 0, maximum: 10 }
+            },
+            required: ["name", "score"]
+          },
+          minItems: 4,
+          maxItems: 12
+        },
+        totalScore: { type: "number", minimum: 0, maximum: 40 }
+      },
+      required: ["parameters"]
+    },
+    rpm: {
+      type: "object",
+      properties: {
+        factors: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              rationale: { type: "string" },
+              value: { type: "number", minimum: 1.0, maximum: 2.5 }
+            },
+            required: ["name", "value"]
+          },
+          minItems: 4,
+          maxItems: 12
+        },
+        finalMultiplier: { type: "number", minimum: 1.0, maximum: 2.5 }
+      },
+      required: ["factors"]
+    }
+  };
 }
 
 async function callGemini(prompt, schema /* optional JSON schema */) {
@@ -187,7 +383,6 @@ async function enqueueFromGcsFile(bucket, name, moveToProcessed = true) {
   logger.info(`Found ${vesselNames.length} names. Enqueuing...`);
   const { enqueued } = await enqueueVessels(vesselNames);
 
-  // Only move if the source is not already under processed/
   const isAlreadyProcessed = /^bulk-import\/processed\//.test(name);
   const shouldMove = moveToProcessed && !isAlreadyProcessed && /^bulk-import\//.test(name);
 
@@ -219,7 +414,7 @@ Return strictly valid JSON with:
 
 function getWcsPrompt(v, c) {
   return `You are a naval architecture expert. For "${v}", analyze WCS based on context: ${c}.
-Return JSON:
+Return strictly valid JSON for the object:
 {
   "parameters": [
     {"name":"Age","rationale":"...","score":0-5},
@@ -228,12 +423,13 @@ Return JSON:
     {"name":"Corrosion","rationale":"...","score":0-5}
   ],
   "totalScore": 0-20
-}`;
+}
+Make sure totalScore equals the sum of the parameter scores and does not exceed 20.`;
 }
 
 function getPhsPrompt(v, c) {
   return `You are a marine pollution expert. For "${v}", analyze PHS based on context: ${c}.
-Return JSON:
+Return strictly valid JSON for the object:
 {
   "parameters": [
     {"name":"Fuel Volume & Type","rationale":"...","weight":1,"score":0-10},
@@ -242,12 +438,13 @@ Return JSON:
     {"name":"Leak Likelihood","rationale":"...","weight":1,"score":0-10}
   ],
   "totalWeightedScore": 0-10
-}`;
+}
+totalWeightedScore must be the weighted average of the parameter scores (weights default 1), clamped 0..10.`;
 }
 
 function getEsiPrompt(v, l) {
-  return `You are a marine ecologist. For "${v}" near "${l}", analyze ESI.
-Return JSON:
+  return `You are a marine ecologist. For "${v}" at "${l}", analyze ESI.
+Return strictly valid JSON for the object:
 {
   "parameters": [
     {"name":"Proximity to Sensitive Ecosystems","rationale":"...","score":0-10},
@@ -256,12 +453,13 @@ Return JSON:
     {"name":"Socioeconomic Sensitivity","rationale":"...","score":0-10}
   ],
   "totalScore": 0-40
-}`;
+}
+Ensure all four parameters are included and totalScore equals the sum of their scores (0..40).`;
 }
 
 function getRpmPrompt(v, l) {
-  return `You are a climate scientist. For "${v}" near "${l}", analyze RPM (Risk Pressure Modifiers).
-Return JSON:
+  return `You are a climate scientist. For "${v}" near "${l}", compute RPM (Risk Pressure Modifiers).
+Return strictly valid JSON for the object:
 {
   "factors": [
     {"name":"Thermal Stress","rationale":"...","value":1.0-2.5},
@@ -270,13 +468,14 @@ Return JSON:
     {"name":"Anthropogenic Disturbance","rationale":"...","value":1.0-2.5}
   ],
   "finalMultiplier": 1.0-2.5
-}`;
+}
+finalMultiplier must be the average of the factor values and include rationales for each factor.`;
 }
 
 function getSummaryPrompt(v, d) {
   const c = JSON.stringify(d);
   return `You are a lead strategist. For "${v}", synthesize this data: ${c}.
-Return JSON:
+Return strictly valid JSON:
 {
   "summativeAssessment": "...",
   "remediationSuggestions": [
@@ -289,23 +488,43 @@ Return JSON:
 
 // ----- Core Analysis -----
 async function performNewAnalysis(vesselName) {
+  const schema = buildSchemas();
   const report = { vesselName };
+
   report.phase1 = await callGemini(getPhase1Prompt(vesselName));
-  report.wcs = await callGemini(getWcsPrompt(vesselName, report.phase1?.summary?.background || ""));
-  report.phs = await callGemini(getPhsPrompt(vesselName, report.phase1?.summary?.background || ""));
-  report.esi = await callGemini(getEsiPrompt(vesselName, report.phase1?.summary?.location || ""));
-  report.rpm = await callGemini(getRpmPrompt(vesselName, report.phase1?.summary?.location || ""));
+
+  report.wcs = await callGemini(
+    getWcsPrompt(vesselName, report.phase1?.summary?.background || ""),
+    schema.wcs
+  );
+
+  report.phs = await callGemini(
+    getPhsPrompt(vesselName, report.phase1?.summary?.background || ""),
+    schema.phs
+  );
+
+  report.esi = await callGemini(
+    getEsiPrompt(vesselName, report.phase1?.summary?.location || ""),
+    schema.esi
+  );
+
+  report.rpm = await callGemini(
+    getRpmPrompt(vesselName, report.phase1?.summary?.location || ""),
+    schema.rpm
+  );
+
   report.finalSummary = await callGemini(getSummaryPrompt(vesselName, report));
-  return report;
+
+  // Post-validate, compute totals, clamp ranges, ensure required components
+  return normalizeAndScore(report);
 }
 
-// ----- Queue Processing (no composite index needed) -----
+// ----- Queue Processing -----
 async function processQueueBatch(limit = BATCH_SIZE) {
   logger.info("Running queue processor batch...");
 
   const results = [];
 
-  // Prefer pending first
   const qPending = await db
     .collection(QUEUE_PATH)
     .where("status", "==", "pending")
@@ -315,7 +534,6 @@ async function processQueueBatch(limit = BATCH_SIZE) {
 
   results.push(...qPending.docs);
 
-  // Then retry if we still have capacity
   if (results.length < limit) {
     const qRetry = await db
       .collection(QUEUE_PATH)
@@ -362,7 +580,7 @@ async function processQueueBatch(limit = BATCH_SIZE) {
         {
           vesselName,
           ...analysis,
-          status: "initial",
+          status: analysis?.status || "initial",
           createdAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -391,7 +609,6 @@ async function processQueueBatch(limit = BATCH_SIZE) {
 }
 
 // ----- Triggers & Callables -----
-// Storage-triggered: enqueue vessel names from CSV upload
 export const processBulkImportFromStorage = onObjectFinalized(
   { region: REGION, cpu: 1, memory: "512MiB" },
   async (event) => {
@@ -406,12 +623,10 @@ export const processBulkImportFromStorage = onObjectFinalized(
       logger.info(`Ignoring non-CSV file '${name}'.`);
       return;
     }
-    // Skip files already in processed/ to prevent re-trigger loops
     if (/^bulk-import\/processed\//.test(name)) {
       logger.info(`Ignoring already-processed file '${name}'.`);
       return;
     }
-    // Accept root-level CSVs by relocating them into bulk-import/
     if (/^[^/]+\.csv$/i.test(name)) {
       const destName = `bulk-import/${name}`;
       await getStorage().bucket(bucket).file(name).move(destName);
@@ -432,7 +647,6 @@ export const processBulkImportFromStorage = onObjectFinalized(
   }
 );
 
-// Scheduled: process the queue
 export const runBulkImportQueue = onSchedule(
   {
     region: REGION,
@@ -453,7 +667,6 @@ export const runBulkImportQueue = onSchedule(
   }
 );
 
-// Callable: manual run-now for admins/contributors
 export const runBulkImportQueueNow = onCall(
   {
     region: REGION,
@@ -480,7 +693,6 @@ export const runBulkImportQueueNow = onCall(
   }
 );
 
-// Callable: manual enqueue by specifying a GCS path or bucket/object
 export const enqueueBulkImport = onCall(
   { region: REGION, cors: true },
   async (request) => {
