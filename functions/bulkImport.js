@@ -2,6 +2,7 @@
  * Bulk import pipeline (JavaScript, Firebase Functions v2):
  * - processBulkImportFromStorage: GCS onObjectFinalized trigger that reads a CSV (one vessel per line)
  *   from gs://project-guardian-agent.firebasestorage.app/bulk-import/*.csv and enqueues Firestore docs.
+ * - enqueueBulkImport: Firebase callable function to enqueue from a provided GCS path (manual/HTTP kick-off).
  * - runBulkImportQueue: Scheduled job that processes queued items and writes analysis artifacts.
  *
  * Requirements:
@@ -17,6 +18,7 @@
 
 import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
 import { getStorage } from "firebase-admin/storage";
@@ -29,13 +31,14 @@ const REGION = "us-central1";
 const BUCKET = "project-guardian-agent.firebasestorage.app";
 const APP_ID = "guardian"; // TODO: set this to your actual app id if different
 const QUEUE_PATH = "system/bulkImport/queue";
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 5; // number of queue docs to process per scheduler run
+const FIRESTORE_BATCH_LIMIT = 500; // Firestore write batch limit
 const GEMINI_MODEL = "gemini-2.5-pro";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 
 // ----- Utilities -----
 function normalizeId(name) {
-  return name
+  return String(name || "")
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "") // remove diacritics
@@ -45,7 +48,7 @@ function normalizeId(name) {
 
 function stripCodeFences(text) {
   // Remove ```json ... ``` or ``` ... ``` fences if present
-  return text
+  return String(text || "")
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/```$/i, "")
     .trim();
@@ -69,6 +72,122 @@ async function callGemini(prompt) {
     logger.error("Failed to parse Gemini JSON. Raw output:", raw);
     throw new Error("Gemini did not return valid JSON for the given prompt.");
   }
+}
+
+// Parse different shapes of inputs into { bucket, name } for GCS objects.
+function parseGcsRefFromData(data) {
+  if (!data || typeof data !== "object") return null;
+
+  // 1) gsUri: "gs://bucket/path/to/file.csv"
+  if (typeof data.gsUri === "string" && data.gsUri.startsWith("gs://")) {
+    const without = data.gsUri.slice("gs://".length);
+    const firstSlash = without.indexOf("/");
+    if (firstSlash === -1) return null;
+    const bucket = without.slice(0, firstSlash);
+    const name = without.slice(firstSlash + 1);
+    return { bucket, name };
+  }
+
+  // 2) bucket + name (preferred)
+  if (typeof data.bucket === "string" && typeof data.name === "string") {
+    return { bucket: data.bucket, name: data.name };
+  }
+
+  // 3) bucket + object (alternate)
+  if (typeof data.bucket === "string" && typeof data.object === "string") {
+    return { bucket: data.bucket, name: data.object };
+  }
+
+  // 4) path: "gs://bucket/path/to/file.csv"
+  if (typeof data.path === "string" && data.path.startsWith("gs://")) {
+    const without = data.path.slice("gs://".length);
+    const firstSlash = without.indexOf("/");
+    if (firstSlash === -1) return null;
+    const bucket = without.slice(0, firstSlash);
+    const name = without.slice(firstSlash + 1);
+    return { bucket, name };
+  }
+
+  return null;
+}
+
+function splitLinesToVessels(contents) {
+  return String(contents || "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => !!s);
+}
+
+async function enqueueVessels(vesselNames) {
+  if (!Array.isArray(vesselNames) || vesselNames.length === 0) return { enqueued: 0 };
+
+  let enqueued = 0;
+  let batch = db.batch();
+  let batchCount = 0;
+
+  for (const vesselName of vesselNames) {
+    const docId = normalizeId(vesselName);
+    if (!docId) continue;
+
+    const queueRef = db.doc(`${QUEUE_PATH}/${docId}`);
+    batch.set(
+      queueRef,
+      {
+        vesselName,
+        docId,
+        status: "pending",
+        attempts: 0,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    enqueued++;
+    batchCount++;
+
+    if (batchCount >= FIRESTORE_BATCH_LIMIT) {
+      await batch.commit();
+      batch = db.batch();
+      batchCount = 0;
+    }
+  }
+
+  if (batchCount > 0) {
+    await batch.commit();
+  }
+
+  return { enqueued };
+}
+
+async function enqueueFromGcsFile(bucket, name, moveToProcessed = true) {
+  if (!bucket || !name) {
+    throw new Error("Missing bucket or name for the GCS file.");
+  }
+
+  logger.info(`Downloading GCS file: gs://${bucket}/${name}`);
+  const file = getStorage().bucket(bucket).file(name);
+  const [buf] = await file.download();
+  const contents = buf.toString("utf8");
+
+  const vesselNames = splitLinesToVessels(contents);
+  if (vesselNames.length === 0) {
+    logger.warn(`GCS file 'gs://${bucket}/${name}' is empty.`);
+    return { enqueued: 0, processedPath: null };
+  }
+
+  logger.info(`Found ${vesselNames.length} names. Enqueuing...`);
+  const { enqueued } = await enqueueVessels(vesselNames);
+
+  let processedPath = null;
+  if (moveToProcessed && name.startsWith("bulk-import/")) {
+    const newName = name.replace("bulk-import/", "bulk-import/processed/");
+    await file.move(newName);
+    processedPath = `gs://${bucket}/${newName}`;
+    logger.info(`Moved processed file to '${processedPath}'.`);
+  }
+
+  return { enqueued, processedPath };
 }
 
 // ----- Prompt Generation -----
@@ -122,57 +241,82 @@ export const processBulkImportFromStorage = onObjectFinalized(
     memory: "512MiB",
   },
   async (event) => {
-    const { bucket, name } = event.data;
+    const bucket = event?.data?.bucket;
+    const name = event?.data?.name;
 
-    if (!name || !name.startsWith("bulk-import/") || !name.endsWith(".csv")) {
-      logger.info(`Ignoring file '${name}'.`);
+    if (!name || !name.endsWith(".csv")) {
+      logger.info(`Ignoring non-CSV file '${name}'.`);
+      return;
+    }
+    if (!name.startsWith("bulk-import/")) {
+      logger.info(`Ignoring file outside bulk-import/: '${name}'.`);
       return;
     }
 
-    logger.info(`Processing uploaded file: ${name}`);
-    const file = getStorage().bucket(bucket).file(name);
-    const [buf] = await file.download();
-    const contents = buf.toString("utf8");
-
-    const vesselNames = contents
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (vesselNames.length === 0) {
-      logger.warn(`File '${name}' is empty.`);
-      return;
+    try {
+      await enqueueFromGcsFile(bucket, name, true);
+    } catch (err) {
+      logger.error(`Error processing uploaded CSV '${name}':`, err);
+      throw err;
     }
-
-    logger.info(`Found ${vesselNames.length} names. Enqueuing...`);
-
-    const batch = db.batch();
-    for (const vesselName of vesselNames) {
-      const docId = normalizeId(vesselName);
-      if (!docId) continue;
-      const queueRef = db.doc(`${QUEUE_PATH}/${docId}`);
-      batch.set(
-        queueRef,
-        {
-          vesselName,
-          docId,
-          status: "pending",
-          attempts: 0,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }
-    await batch.commit();
-
-    const newName = name.replace("bulk-import/", "bulk-import/processed/");
-    await file.move(newName);
-    logger.info(`Moved processed file to '${newName}'.`);
   }
 );
 
-// 2) SCHEDULED: Process the Firestore queue (renamed to avoid clashing with your existing HTTP function)
+// 2) CALLABLE: Manual enqueue by specifying a GCS path or bucket/object
+//    This satisfies imports expecting an 'enqueueBulkImport' export.
+export const enqueueBulkImport = onCall(
+  {
+    region: REGION,
+    cors: true,
+    invoker: "public", // adjust if you want to restrict who can call it; remove to keep default IAM
+  },
+  async (request) => {
+    try {
+      const ref = parseGcsRefFromData(request.data);
+      if (!ref) {
+        throw new HttpsError(
+          "invalid-argument",
+          "Expected data with gsUri or { bucket, name | object }."
+        );
+      }
+
+      if (!ref.name.endsWith(".csv")) {
+        throw new HttpsError(
+          "invalid-argument",
+          "Provided object is not a .csv file."
+        );
+      }
+
+      // Keep behavior consistent with the storage trigger: only process bulk-import/* by default
+      if (!ref.name.startsWith("bulk-import/")) {
+        logger.info(`Callable: allowing non-standard path '${ref.name}'. Proceeding.`);
+      }
+
+      const { enqueued, processedPath } = await enqueueFromGcsFile(
+        ref.bucket,
+        ref.name,
+        true
+      );
+      return {
+        ok: true,
+        enqueued,
+        processedPath,
+      };
+    } catch (e) {
+      // Convert unexpected errors to a proper HttpsError
+      if (e instanceof HttpsError) {
+        throw e;
+      }
+      logger.error("enqueueBulkImport failed:", e);
+      throw new HttpsError(
+        "invalid-argument",
+        e?.message || "Invalid request, unable to process."
+      );
+    }
+  }
+);
+
+// 3) SCHEDULED: Process the Firestore queue (renamed to avoid clashing with your existing HTTP function)
 export const runBulkImportQueue = onSchedule(
   {
     region: REGION,
@@ -203,6 +347,16 @@ export const runBulkImportQueue = onSchedule(
       const vesselName = data.vesselName;
       const docId = data.docId;
       const attempts = data.attempts ?? 0;
+
+      if (!vesselName || !docId) {
+        logger.warn(`Skipping malformed queue doc ${qRef.path}`);
+        await qRef.update({
+          status: "failed",
+          error: "Missing vesselName or docId",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        continue;
+      }
 
       await qRef.update({
         status: "processing",
