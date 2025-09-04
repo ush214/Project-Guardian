@@ -23,7 +23,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ----- Config -----
 const REGION = "us-central1";
-const EXPECTED_BUCKET = "project-guardian-agent.firebasestorage.app"; // confirmed by you
+const EXPECTED_BUCKET = "project-guardian-agent.firebasestorage.app"; // confirmed
 const APP_ID = "guardian"; // adjust if needed
 const QUEUE_PATH = "system/bulkImport/queue";
 const BATCH_SIZE = 5;
@@ -177,12 +177,18 @@ async function enqueueFromGcsFile(bucket, name, moveToProcessed = true) {
   logger.info(`Found ${vesselNames.length} names. Enqueuing...`);
   const { enqueued } = await enqueueVessels(vesselNames);
 
+  // Only move if the source is not already under processed/
+  const isAlreadyProcessed = /^bulk-import\/processed\//.test(name);
+  const shouldMove = moveToProcessed && !isAlreadyProcessed && /^bulk-import\//.test(name);
+
   let processedPath = null;
-  if (moveToProcessed && name.startsWith("bulk-import/")) {
-    const newName = name.replace("bulk-import/", "bulk-import/processed/");
-    await file.move(newName);
-    processedPath = `gs://${bucket}/${newName}`;
+  if (shouldMove) {
+    const destName = name.replace(/^bulk-import\//, "bulk-import/processed/");
+    await file.move(destName);
+    processedPath = `gs://${bucket}/${destName}`;
     logger.info(`Moved processed file to '${processedPath}'.`);
+  } else if (isAlreadyProcessed) {
+    logger.info(`Not moving: file already under processed/: 'gs://${bucket}/${name}'`);
   }
 
   return { enqueued, processedPath };
@@ -224,7 +230,7 @@ async function performNewAnalysis(vesselName) {
 // ----- Cloud Functions -----
 // 1) STORAGE-TRIGGERED: Enqueue vessel names from CSV upload
 // No 'bucket' filter here to avoid Eventarc validation failures.
-// We filter by bucket at runtime instead.
+// We filter by bucket and path at runtime instead.
 export const processBulkImportFromStorage = onObjectFinalized(
   {
     region: REGION,
@@ -235,7 +241,6 @@ export const processBulkImportFromStorage = onObjectFinalized(
     const bucket = event?.data?.bucket;
     const name = event?.data?.name;
 
-    // Filter to only your desired bucket and path
     if (bucket !== EXPECTED_BUCKET) {
       logger.info(`Ignoring event from bucket ${bucket}. Expected ${EXPECTED_BUCKET}.`);
       return;
@@ -244,7 +249,12 @@ export const processBulkImportFromStorage = onObjectFinalized(
       logger.info(`Ignoring non-CSV file '${name}'.`);
       return;
     }
-    if (!name.startsWith("bulk-import/")) {
+    // Skip files already in processed/ to prevent re-trigger loops
+    if (/^bulk-import\/processed\//.test(name)) {
+      logger.info(`Ignoring already-processed file '${name}'.`);
+      return;
+    }
+    if (!/^bulk-import\//.test(name)) {
       logger.info(`Ignoring file outside bulk-import/: '${name}'.`);
       return;
     }
@@ -259,7 +269,6 @@ export const processBulkImportFromStorage = onObjectFinalized(
 );
 
 // 2) CALLABLE: Manual enqueue by specifying a GCS path or bucket/object
-// Keep this only if you still want a manual kick-off path. It requires Firebase Auth + role check.
 export const enqueueBulkImport = onCall(
   {
     region: REGION,
