@@ -10,6 +10,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "./admin.js";
 
 export { enqueueBulkImport, processBulkImportQueue } from "./bulkImport.js";
+export { processStorageImport } from "./storageImport.js";
 export { guardianSentry } from "./guardianSentry.js";
 
 const REGION = "us-central1";
