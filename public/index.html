@@ -804,7 +804,7 @@ Return JSON:
                     Enhance Report
                   </button>
                   <button id="repair-sections-btn"
-                          class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 transition" title="Re-run PHS/ESI if incomplete">
+                          class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 transition" title="Re-run PHS/ESI/RPM if incomplete">
                     Re-run Missing Sections
                   </button>
                 </div>
@@ -994,7 +994,8 @@ Return JSON:
       return `<div><strong>${name}</strong><br/>Risk: ${risk.label}</div>`;
     }
 
-    // Radar with benchmark band (expected range)
+    // Radar chart with explicit Low/Medium/High benchmark bands
+    // Scale: WCS 0..20, PHS 0..10 (scaled to 0..20), ESI 0..40 (scaled to 0..20), RPM 1.0..2.5 mapped to ~0..20
     function createOrUpdateSpiderChart(scores) {
       const ctx = document.getElementById('werSpiderChart').getContext('2d');
 
@@ -1005,14 +1006,58 @@ Return JSON:
 
       const profile = [wcs, phs, esi, rpm];
 
-      const MAX = [20, 20, 20, 20];
-      const benchLow = MAX.map(m => m * 0.3);
-      const benchHigh = MAX.map(m => m * 0.7);
+      // Benchmarks as concentric bands:
+      // Low: 0..6 (green), Medium: 6..12 (amber), High: 12..20 (red)
+      const lowCap = [6,6,6,6];
+      const medCap = [12,12,12,12];
+      const highCap = [20,20,20,20];
+
+      const datasets = [
+        // Low band (0 -> 6)
+        {
+          label: 'Low benchmark',
+          data: lowCap,
+          backgroundColor: 'rgba(16,185,129,0.18)',   // green-500 @ ~18%
+          borderColor: 'rgba(16,185,129,0.45)',
+          pointRadius: 0,
+          order: 1
+        },
+        // Medium band (6 -> 12), filled to previous (low)
+        {
+          label: 'Medium benchmark',
+          data: medCap,
+          backgroundColor: 'rgba(245,158,11,0.14)',   // amber-500 @ ~14%
+          borderColor: 'rgba(245,158,11,0.45)',
+          pointRadius: 0,
+          fill: '-1',
+          order: 2
+        },
+        // High band (12 -> 20), filled to previous (medium)
+        {
+          label: 'High benchmark',
+          data: highCap,
+          backgroundColor: 'rgba(239,68,68,0.12)',    // red-500 @ ~12%
+          borderColor: 'rgba(239,68,68,0.45)',
+          pointRadius: 0,
+          fill: '-1',
+          order: 3
+        },
+        // Actual profile
+        {
+          label: 'Risk Profile',
+          data: profile,
+          backgroundColor: 'rgba(30, 64, 175, 0.22)',  // indigo-800 @ ~22%
+          borderColor: 'rgba(30, 64, 175, 1)',
+          pointBackgroundColor: 'rgba(30, 64, 175, 1)',
+          order: 4
+        }
+      ];
 
       if (window.spiderChart) {
-        window.spiderChart.data.datasets[0].data = benchLow;
-        window.spiderChart.data.datasets[1].data = benchHigh;
-        window.spiderChart.data.datasets[2].data = profile;
+        window.spiderChart.data.datasets[0].data = lowCap;
+        window.spiderChart.data.datasets[1].data = medCap;
+        window.spiderChart.data.datasets[2].data = highCap;
+        window.spiderChart.data.datasets[3].data = profile;
         window.spiderChart.update();
         return;
       }
@@ -1021,36 +1066,13 @@ Return JSON:
         type: 'radar',
         data: {
           labels: ['WCS', 'PHS', 'ESI', 'RPM'],
-          datasets: [
-            {
-              label: 'Expected (low)',
-              data: benchLow,
-              borderColor: 'rgba(16,185,129,0)',
-              backgroundColor: 'rgba(16,185,129,0)',
-              pointRadius: 0
-            },
-            {
-              label: 'Expected Range',
-              data: benchHigh,
-              backgroundColor: 'rgba(16,185,129,0.18)',
-              borderColor: 'rgba(16,185,129,0.4)',
-              pointRadius: 0,
-              fill: "-1"
-            },
-            {
-              label: 'Risk Profile',
-              data: profile,
-              backgroundColor: 'rgba(30, 64, 175, 0.2)',
-              borderColor: 'rgba(30, 64, 175, 1)',
-              pointBackgroundColor: 'rgba(30, 64, 175, 1)'
-            }
-          ]
+          datasets
         },
         options: {
           responsive: true,
           plugins: { legend: { position: 'top' } },
           scales: {
-            r: { suggestedMin: 0, suggestedMax: 20, ticks: { stepSize: 5 } }
+            r: { suggestedMin: 0, suggestedMax: 20, ticks: { stepSize: 4 } }
           }
         }
       });

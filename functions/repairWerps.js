@@ -1,5 +1,28 @@
-// Repair incomplete WERP reports by re-running ONLY missing sections (PHS/ESI).
+// Repair incomplete WERP reports by re-running ONLY missing sections (PHS/ESI/RPM).
 // Supports time-budgeted paging and continuation tokens to avoid deadline-exceeded.
+//
+// Params:
+//   - dryRun?: boolean (default true)
+//   - pageSize?: number (50..450, default 150)
+//   - maxDocs?: number (1..pageSize, default pageSize)
+//   - startAfterId?: string (continue from this docId; used for paging)
+//   - docId?: string (if provided, repairs a single document)
+//   - timeBudgetSeconds?: number (10..480, default 45)
+//
+// Return example:
+// {
+//   ok: true,
+//   dryRun: false,
+//   scanned: 42,
+//   updated: 17,
+//   phsFixed: 9,
+//   esiFixed: 12,
+//   rpmFixed: 11,
+//   lastProcessedId: "some-doc-id",
+//   nextPageStartAfterId: "some-doc-id", // include to continue; absent when done
+//   tookMs: 31875,
+//   errors: []
+// }
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -89,6 +112,27 @@ function buildSchemas() {
         totalScore: { type: "number", minimum: 0, maximum: 40 }
       },
       required: ["parameters"]
+    },
+    rpm: {
+      type: "object",
+      properties: {
+        factors: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              rationale: { type: "string" },
+              value: { type: "number", minimum: 1.0, maximum: 2.5 }
+            },
+            required: ["name", "value"]
+          },
+          minItems: 4,
+          maxItems: 12
+        },
+        finalMultiplier: { type: "number", minimum: 1.0, maximum: 2.5 }
+      },
+      required: ["factors"]
     }
   };
 }
@@ -143,6 +187,7 @@ Rules:
 - Include weights for every parameter (default to 1 when uncertain).
 - totalWeightedScore is the weighted average of the scores (clamped 0..10).`;
 }
+
 function getEsiPrompt(v, loc) {
   return `You are a marine ecologist. For "${v}" near "${loc}", produce ESI.
 Return strictly valid JSON:
@@ -160,6 +205,23 @@ Rules:
 - totalScore equals the sum (0..40).`;
 }
 
+function getRpmPrompt(v, loc) {
+  return `You are a climate risk scientist. For the wreck "${v}" near "${loc}", evaluate RPM (Risk Pressure Modifiers).
+Return strictly valid JSON:
+{
+  "factors": [
+    {"name":"Thermal Stress","rationale":"... (use SST anomalies, marine heatwave frequency, depth)","value":1.0-2.5},
+    {"name":"Storm Exposure","rationale":"... (cyclone track density, fetch, wave climate)","value":1.0-2.5},
+    {"name":"Seismic Activity","rationale":"... (USGS/GCMT seismicity, subduction proximity)","value":1.0-2.5},
+    {"name":"Anthropogenic Disturbance","rationale":"... (shipping lanes, fishing pressure, coastal development)","value":1.0-2.5}
+  ],
+  "finalMultiplier": 1.0-2.5
+}
+Rules:
+- Provide a concrete rationale for each factor (no 'insufficient data').
+- finalMultiplier must equal the average of factor values (rounded to two decimals if necessary).`;
+}
+
 function recomputePhsTotal(phs) {
   const params = coerceParameterArray(phs?.parameters, ["score", "weight"]).map(p => ({
     ...p,
@@ -170,6 +232,7 @@ function recomputePhsTotal(phs) {
   const wval = params.reduce((s, p, i) => s + ((clamp(toNum(p.score) ?? 0, 0, 10)) * weights[i]), 0);
   return { parameters: params, totalWeightedScore: clamp(wval / wsum, 0, 10) ?? 0 };
 }
+
 function ensureEsiFour(esi) {
   const required = ["Proximity to Sensitive Ecosystems","Biodiversity Value","Protected Areas","Socioeconomic Sensitivity"];
   const raw = coerceParameterArray(esi?.parameters, ["score"]);
@@ -187,6 +250,24 @@ function ensureEsiFour(esi) {
   return { parameters: params, totalScore: total };
 }
 
+function ensureRpm(rpm) {
+  const required = ["Thermal Stress","Storm Exposure","Seismic Activity","Anthropogenic Disturbance"];
+  const raw = coerceParameterArray(rpm?.factors, ["value"]);
+  const by = {}; for (const f of raw) if (f?.name) by[f.name] = f;
+  const factors = required.map(name => {
+    const f = by[name];
+    const v = clamp(toNum(f?.value) ?? 1.0, 1.0, 2.5);
+    return f ? {
+      ...f,
+      name,
+      value: v,
+      rationale: (typeof f?.rationale === "string" && f.rationale.trim()) ? f.rationale : "Not specified."
+    } : { name, value: 1.0, rationale: "Insufficient data." };
+  });
+  const avg = clamp(factors.reduce((s, f) => s + (toNum(f.value) ?? 1.0), 0) / factors.length, 1.0, 2.5) ?? 1.0;
+  return { factors, finalMultiplier: avg };
+}
+
 function needsPhsRepair(data) {
   const p = data?.phs?.parameters;
   if (!Array.isArray(p) || p.length < 4) return true;
@@ -194,6 +275,7 @@ function needsPhsRepair(data) {
   const badTotal = !(typeof data?.phs?.totalWeightedScore === "number");
   return missingWeight || badTotal;
 }
+
 function needsEsiRepair(data) {
   const p = data?.esi?.parameters;
   if (!Array.isArray(p) || p.length < 4) return true;
@@ -203,6 +285,18 @@ function needsEsiRepair(data) {
   const tooManyInsufficient = p.filter(x => /insufficient data/i.test(String(x?.rationale || ""))).length >= 2;
   const badTotal = !(typeof data?.esi?.totalScore === "number");
   return missingAny || tooManyInsufficient || badTotal;
+}
+
+function needsRpmRepair(data) {
+  const f = data?.rpm?.factors;
+  if (!Array.isArray(f) || f.length < 4) return true;
+  const names = new Set(f.map(x => x?.name).filter(Boolean));
+  const required = ["Thermal Stress","Storm Exposure","Seismic Activity","Anthropogenic Disturbance"];
+  const missingAny = required.some(r => !names.has(r));
+  const tooManyInsufficient = f.filter(x => /insufficient data/i.test(String(x?.rationale || ""))).length >= 2;
+  const allDefaultOnes = f.every(x => (toNum(x?.value) ?? 1.0) <= 1.05);
+  const badFinal = !(typeof data?.rpm?.finalMultiplier === "number") || (data?.rpm?.finalMultiplier < 1.0 || data?.rpm?.finalMultiplier > 2.5);
+  return missingAny || tooManyInsufficient || allDefaultOnes || badFinal;
 }
 
 export const repairWerps = onCall(
@@ -245,7 +339,7 @@ export const repairWerps = onCall(
     const began = Date.now();
     const deadlineMs = began + (timeBudgetSeconds * 1000 - 2000);
 
-    let scanned = 0, updated = 0, phsFixed = 0, esiFixed = 0, pages = 0;
+    let scanned = 0, updated = 0, phsFixed = 0, esiFixed = 0, rpmFixed = 0, pages = 0;
     const errors = [];
     let lastProcessedId = "";
     let nextPageStartAfterId = "";
@@ -280,6 +374,13 @@ export const repairWerps = onCall(
           update["esi.totalScore"] = ensured.totalScore;
           esiFixed++;
         }
+        if (needsRpmRepair(data)) {
+          const rpm = await callGemini(getRpmPrompt(vesselName, location), schema.rpm);
+          const ensured = ensureRpm(rpm);
+          update["rpm.factors"] = ensured.factors;
+          update["rpm.finalMultiplier"] = ensured.finalMultiplier;
+          rpmFixed++;
+        }
 
         if (Object.keys(update).length > 0 && !dryRun) {
           await dref.update(update);
@@ -298,6 +399,7 @@ export const repairWerps = onCall(
         updated,
         phsFixed,
         esiFixed,
+        rpmFixed,
         lastProcessedId,
         tookMs: Date.now() - began,
         errors
@@ -306,9 +408,7 @@ export const repairWerps = onCall(
 
     // Batch with budgeted paging and immediate commits
     let q = col.orderBy(FieldPath.documentId()).limit(pageSize);
-    if (startAfterId) {
-      q = q.startAfter(startAfterId);
-    }
+    if (startAfterId) q = q.startAfter(startAfterId);
     const snap = await q.get();
 
     if (!snap.empty) {
@@ -329,9 +429,10 @@ export const repairWerps = onCall(
         scanned += 1;
 
         try {
-          const needsPhs = needsPhsRepair(data);
-          const needsEsi = needsEsiRepair(data);
-          if (!needsPhs && !needsEsi) {
+          const doPhs = needsPhsRepair(data);
+          const doEsi = needsEsiRepair(data);
+          const doRpm = needsRpmRepair(data);
+          if (!doPhs && !doEsi && !doRpm) {
             lastProcessedId = id;
             processedInThisCall += 1;
             continue;
@@ -339,19 +440,26 @@ export const repairWerps = onCall(
 
           const update = {};
 
-          if (needsPhs) {
+          if (doPhs) {
             const phs = await callGemini(getPhsPrompt(vesselName, context), schema.phs);
             const recomputed = recomputePhsTotal(phs);
             update["phs.parameters"] = recomputed.parameters;
             update["phs.totalWeightedScore"] = recomputed.totalWeightedScore;
             phsFixed++;
           }
-          if (needsEsi) {
+          if (doEsi) {
             const esi = await callGemini(getEsiPrompt(vesselName, location), schema.esi);
             const ensured = ensureEsiFour(esi);
             update["esi.parameters"] = ensured.parameters;
             update["esi.totalScore"] = ensured.totalScore;
             esiFixed++;
+          }
+          if (doRpm) {
+            const rpm = await callGemini(getRpmPrompt(vesselName, location), schema.rpm);
+            const ensured = ensureRpm(rpm);
+            update["rpm.factors"] = ensured.factors;
+            update["rpm.finalMultiplier"] = ensured.finalMultiplier;
+            rpmFixed++;
           }
 
           if (Object.keys(update).length > 0 && !dryRun) {
@@ -381,6 +489,7 @@ export const repairWerps = onCall(
       updated,
       phsFixed,
       esiFixed,
+      rpmFixed,
       lastProcessedId,
       nextPageStartAfterId: nextPageStartAfterId || undefined,
       tookMs: Date.now() - began,
