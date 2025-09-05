@@ -89,7 +89,6 @@ export const migrateWerps = onCall(
             batch.set(tgtRef, data, { merge: false });
             writesInBatch += 1;
 
-            // Commit in chunks to respect the 500 ops limit
             if (writesInBatch >= 450) {
               await batch.commit();
               batch = db.batch();

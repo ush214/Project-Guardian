@@ -24,13 +24,11 @@ function clamp(n, min, max) {
   if (typeof n !== "number" || Number.isNaN(n)) return undefined;
   return Math.min(max, Math.max(min, n));
 }
-
 function toNum(x) {
   if (typeof x === "number") return x;
   const n = parseFloat(String(x));
   return Number.isFinite(n) ? n : undefined;
 }
-
 function coerceParameterArray(arr, numericKeys) {
   if (!Array.isArray(arr)) return [];
   return arr.map(item => {
@@ -196,15 +194,6 @@ export const normalizeWerps = onCall(
             statusFixed += 1;
           }
 
-          // Deep compare key sections and copy if different
-          const keys = [
-            "wcs.parameters", "wcs.totalScore",
-            "phs.parameters", "phs.totalWeightedScore",
-            "esi.parameters", "esi.totalScore",
-            "rpm.factors", "rpm.finalMultiplier"
-          ];
-
-          // Helper to set nested if different
           function setIfDifferent(path, value) {
             const parts = path.split(".");
             let cur = data;

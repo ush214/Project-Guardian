@@ -1,9 +1,9 @@
-// Single Admin SDK initialization shared by all functions.
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+// Firebase Admin initialization (ESM)
+import admin from "firebase-admin";
 
-if (!getApps().length) {
-  initializeApp();
+if (!admin.apps.length) {
+  admin.initializeApp();
 }
 
-export const db = getFirestore();
+export const db = admin.firestore();
+export { admin };

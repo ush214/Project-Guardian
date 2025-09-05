@@ -3,10 +3,6 @@
  * - Storage trigger reads CSVs from gs://<bucket>/bulk-import/*.csv, enqueues names to Firestore, and moves CSV to bulk-import/processed/.
  * - Scheduled job processes the Firestore queue and writes analysis artifacts.
  * - Callables for manual enqueue and run-now.
- *
- * Prereqs:
- * - Secret GEMINI_API_KEY in Secret Manager, access granted to default runtime SA.
- * - db exported from ./admin.js (firebase-admin initialized).
  */
 
 import { onObjectFinalized } from "firebase-functions/v2/storage";
@@ -40,18 +36,15 @@ function normalizeId(name) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 }
-
 function clamp(n, min, max) {
   if (typeof n !== "number" || Number.isNaN(n)) return undefined;
   return Math.min(max, Math.max(min, n));
 }
-
 function toNum(x) {
   if (typeof x === "number") return x;
   const n = parseFloat(String(x));
   return Number.isFinite(n) ? n : undefined;
 }
-
 function coerceParameterArray(arr, numericKeys) {
   if (!Array.isArray(arr)) return [];
   return arr.map(item => {
@@ -63,12 +56,10 @@ function coerceParameterArray(arr, numericKeys) {
     return out;
   });
 }
-
-// Ensure ESI/WCS/PHS/RPM structure and recompute totals within expected ranges for charts
 function normalizeAndScore(report) {
   const out = { ...report };
 
-  // WCS: 4 params, score 0-5 each, total 0-20
+  // WCS
   const wcsParams = coerceParameterArray(out?.wcs?.parameters, ["score"]);
   const wcsTotal = clamp(
     wcsParams.reduce((s, p) => s + clamp(toNum(p?.score) ?? 0, 0, 5), 0),
@@ -81,32 +72,30 @@ function normalizeAndScore(report) {
     totalScore: wcsTotal ?? clamp(toNum(out?.wcs?.totalScore), 0, 20) ?? 0
   };
 
-  // PHS: weighted average of 0-10 scores to 0-10
+  // PHS (weighted average 0..10)
   const phsParams = coerceParameterArray(out?.phs?.parameters, ["score", "weight"]);
-  const phsWeights = phsParams.map(p => toNum(p?.weight) ?? 1).map(w => (w > 0 ? w : 1));
-  const phsWeighted = phsParams.reduce((s, p, i) => s + (clamp(toNum(p?.score) ?? 0, 0, 10) * phsWeights[i]), 0);
-  const phsWeightSum = phsWeights.reduce((s, w) => s + w, 0) || 1;
-  const phsTotal = clamp(phsWeighted / phsWeightSum, 0, 10);
+  const weights = phsParams.map(p => toNum(p?.weight) ?? 1).map(w => (w > 0 ? w : 1));
+  const wsum = weights.reduce((s, w) => s + w, 0) || 1;
+  const wval = phsParams.reduce((s, p, i) => s + (clamp(toNum(p?.score) ?? 0, 0, 10) * weights[i]), 0);
+  const phsTotal = clamp(wval / wsum, 0, 10);
   out.phs = {
     ...(out.phs || {}),
     parameters: phsParams,
     totalWeightedScore: phsTotal ?? clamp(toNum(out?.phs?.totalWeightedScore), 0, 10) ?? 0
   };
 
-  // ESI: ensure 4 named components exist, each 0-10; total 0-40
-  const requiredEsiNames = [
+  // ESI: 4 required components
+  const requiredEsi = [
     "Proximity to Sensitive Ecosystems",
     "Biodiversity Value",
     "Protected Areas",
     "Socioeconomic Sensitivity"
   ];
-  const esiParamsRaw = coerceParameterArray(out?.esi?.parameters, ["score"]);
-  const esiByName = {};
-  for (const p of esiParamsRaw) {
-    if (p?.name) esiByName[p.name] = p;
-  }
-  const esiParams = requiredEsiNames.map(name => {
-    const p = esiByName[name];
+  const esiRaw = coerceParameterArray(out?.esi?.parameters, ["score"]);
+  const byName = {};
+  for (const p of esiRaw) if (p?.name) byName[p.name] = p;
+  const esiParams = requiredEsi.map(name => {
+    const p = byName[name];
     return p
       ? { ...p, score: clamp(toNum(p.score) ?? 0, 0, 10) }
       : { name, rationale: "Insufficient data.", score: 0 };
@@ -118,20 +107,18 @@ function normalizeAndScore(report) {
     totalScore: esiTotal ?? clamp(toNum(out?.esi?.totalScore), 0, 40) ?? 0
   };
 
-  // RPM: ensure 4 factors, value 1.0-2.5; finalMultiplier as average
-  const requiredRpmFactors = [
+  // RPM: 4 factors, average 1.0..2.5
+  const requiredRpm = [
     "Thermal Stress",
     "Storm Exposure",
     "Seismic Activity",
     "Anthropogenic Disturbance"
   ];
   const rpmRaw = coerceParameterArray(out?.rpm?.factors, ["value"]);
-  const rpmByName = {};
-  for (const f of rpmRaw) {
-    if (f?.name) rpmByName[f.name] = f;
-  }
-  const rpmFactors = requiredRpmFactors.map(name => {
-    const f = rpmByName[name];
+  const rpmBy = {};
+  for (const f of rpmRaw) if (f?.name) rpmBy[f.name] = f;
+  const rpmFactors = requiredRpm.map(name => {
+    const f = rpmBy[name];
     const v = clamp(toNum(f?.value) ?? 1.0, 1.0, 2.5);
     return f
       ? { ...f, value: v, rationale: (typeof f?.rationale === "string" && f.rationale.trim()) ? f.rationale : "Not specified." }
@@ -144,7 +131,7 @@ function normalizeAndScore(report) {
     finalMultiplier: clamp(toNum(out?.rpm?.finalMultiplier), 1.0, 2.5) ?? rpmAvg
   };
 
-  // Status: completed only if Phase 2 content exists
+  // Status by presence of phase2
   const hasPhase2 = !!(out?.phase2 && (out.phase2.summary || Object.keys(out.phase2).length > 0));
   out.status = hasPhase2 ? "completed" : "initial";
 
@@ -162,9 +149,7 @@ function extractJsonCandidate(text) {
   if (first !== -1 && last !== -1 && last > first) return s.slice(first, last + 1).trim();
   return s.trim();
 }
-
 function buildSchemas() {
-  // Minimal schemas that force shape and ranges; model may still deviate, so we post-validate.
   return {
     wcs: {
       type: "object",
@@ -202,7 +187,7 @@ function buildSchemas() {
             },
             required: ["name", "score"]
           },
-          minItems: 3,
+          minItems: 4,
           maxItems: 10
         },
         totalWeightedScore: { type: "number", minimum: 0, maximum: 10 }
@@ -411,7 +396,6 @@ Return strictly valid JSON with:
   }
 }`;
 }
-
 function getWcsPrompt(v, c) {
   return `You are a naval architecture expert. For "${v}", analyze WCS based on context: ${c}.
 Return strictly valid JSON for the object:
@@ -426,7 +410,6 @@ Return strictly valid JSON for the object:
 }
 Make sure totalScore equals the sum of the parameter scores and does not exceed 20.`;
 }
-
 function getPhsPrompt(v, c) {
   return `You are a marine pollution expert. For "${v}", analyze PHS based on context: ${c}.
 Return strictly valid JSON for the object:
@@ -441,7 +424,6 @@ Return strictly valid JSON for the object:
 }
 totalWeightedScore must be the weighted average of the parameter scores (weights default 1), clamped 0..10.`;
 }
-
 function getEsiPrompt(v, l) {
   return `You are a marine ecologist. For "${v}" at "${l}", analyze ESI.
 Return strictly valid JSON for the object:
@@ -456,7 +438,6 @@ Return strictly valid JSON for the object:
 }
 Ensure all four parameters are included and totalScore equals the sum of their scores (0..40).`;
 }
-
 function getRpmPrompt(v, l) {
   return `You are a climate scientist. For "${v}" near "${l}", compute RPM (Risk Pressure Modifiers).
 Return strictly valid JSON for the object:
@@ -471,7 +452,6 @@ Return strictly valid JSON for the object:
 }
 finalMultiplier must be the average of the factor values and include rationales for each factor.`;
 }
-
 function getSummaryPrompt(v, d) {
   const c = JSON.stringify(d);
   return `You are a lead strategist. For "${v}", synthesize this data: ${c}.
@@ -492,30 +472,14 @@ async function performNewAnalysis(vesselName) {
   const report = { vesselName };
 
   report.phase1 = await callGemini(getPhase1Prompt(vesselName));
-
-  report.wcs = await callGemini(
-    getWcsPrompt(vesselName, report.phase1?.summary?.background || ""),
-    schema.wcs
-  );
-
-  report.phs = await callGemini(
-    getPhsPrompt(vesselName, report.phase1?.summary?.background || ""),
-    schema.phs
-  );
-
-  report.esi = await callGemini(
-    getEsiPrompt(vesselName, report.phase1?.summary?.location || ""),
-    schema.esi
-  );
-
-  report.rpm = await callGemini(
-    getRpmPrompt(vesselName, report.phase1?.summary?.location || ""),
-    schema.rpm
-  );
-
+  report.wcs = await callGemini(getWcsPrompt(vesselName, report.phase1?.summary?.background || ""), schema.wcs);
+  const phs = await callGemini(getPhsPrompt(vesselName, report.phase1?.summary?.background || ""), schema.phs);
+  report.phs = normalizeAndScore({ phs }).phs;
+  const esi = await callGemini(getEsiPrompt(vesselName, report.phase1?.summary?.location || ""), schema.esi);
+  report.esi = normalizeAndScore({ esi }).esi;
+  report.rpm = await callGemini(getRpmPrompt(vesselName, report.phase1?.summary?.location || ""), schema.rpm);
   report.finalSummary = await callGemini(getSummaryPrompt(vesselName, report));
 
-  // Post-validate, compute totals, clamp ranges, ensure required components
   return normalizeAndScore(report);
 }
 

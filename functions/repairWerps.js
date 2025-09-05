@@ -1,18 +1,26 @@
 // Admin-only callable to repair incomplete WERP reports by re-running ONLY the missing sections.
-// - Recomputes PHS (ensures weights and totalWeightedScore) when weights are missing or params < 4.
-// - Recomputes ESI when fewer than 4 required components or when many are "Insufficient data".
-// - Optionally backfills RPM rationales.
-// - Dry-run supported.
+// Now supports time-budgeted paging to avoid deadline-exceeded on large batches.
+// Params:
+//   - dryRun?: boolean (default true)
+//   - pageSize?: number (50..450, default 150)
+//   - maxDocs?: number (1..pageSize, default pageSize)
+//   - startAfterId?: string (continue from this docId; used for paging)
+//   - docId?: string (if provided, repairs a single document)
+//   - timeBudgetSeconds?: number (10..480, default 45) — processing stops before budget runs out, returns a continuation token.
 //
-// invoke examples:
-//   repairWerps({ dryRun: true })                      // preview across all docs
-//   repairWerps({ dryRun: false })                     // apply across all docs (paged)
-//   repairWerps({ docId: "ijn-kirishima", dryRun: false }) // repair a single doc
-//   repairWerps({ pageSize: 200, dryRun: true })
-//
-// Notes:
-// - Requires admin role (system/allowlist/users/{uid}.Role == 'admin')
-// - Uses the same prompts/schemas as bulkImport to ensure consistent shapes & ranges.
+// Return example:
+// {
+//   ok: true,
+//   dryRun: false,
+//   scanned: 42,
+//   updated: 17,
+//   phsFixed: 9,
+//   esiFixed: 12,
+//   lastProcessedId: "some-doc-id",
+//   nextPageStartAfterId: "some-doc-id", // include to continue; absent when done
+//   tookMs: 31875,
+//   errors: []
+// }
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -32,8 +40,7 @@ async function getRole(uid) {
     const snap = await db.doc(`system/allowlist/users/${uid}`).get();
     if (!snap.exists) return "user";
     return snap.get("Role") || "user";
-  } catch (e) {
-    console.error("Failed to read Role for uid:", uid, e);
+  } catch {
     return "user";
   }
 }
@@ -103,27 +110,6 @@ function buildSchemas() {
         totalScore: { type: "number", minimum: 0, maximum: 40 }
       },
       required: ["parameters"]
-    },
-    rpm: {
-      type: "object",
-      properties: {
-        factors: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              rationale: { type: "string" },
-              value: { type: "number", minimum: 1.0, maximum: 2.5 }
-            },
-            required: ["name", "value"]
-          },
-          minItems: 4,
-          maxItems: 12
-        },
-        finalMultiplier: { type: "number", minimum: 1.0, maximum: 2.5 }
-      },
-      required: ["factors"]
     }
   };
 }
@@ -159,7 +145,7 @@ async function callGemini(prompt, schema /* optional */) {
   const raw = res?.response?.text ? res.response.text() : "";
   const cand = extractJsonCandidate(raw);
   try { return JSON.parse(cand); }
-  catch (e) { console.error("Gemini JSON parse fail:", raw); throw new Error("Model did not return valid JSON."); }
+  catch (e) { throw new Error("Model did not return valid JSON."); }
 }
 
 function getPhsPrompt(v, context) {
@@ -176,9 +162,8 @@ Return strictly valid JSON:
 }
 Rules:
 - Include weights for every parameter (default to 1 when uncertain).
-- totalWeightedScore is the weighted average of scores (clamped 0..10).`;
+- totalWeightedScore is the weighted average of the scores (clamped 0..10).`;
 }
-
 function getEsiPrompt(v, loc) {
   return `You are a marine ecologist. For "${v}" near "${loc}", produce ESI.
 Return strictly valid JSON:
@@ -192,38 +177,31 @@ Return strictly valid JSON:
   "totalScore": 0-40
 }
 Rules:
-- Return all four parameters with specific rationales (do not use 'insufficient data' unless truly unknown).
-- totalScore equals the sum of the four scores (0..40).`;
+- Return all four parameters with specific rationales (avoid 'insufficient data' unless truly unknown).
+- totalScore equals the sum (0..40).`;
 }
 
 function recomputePhsTotal(phs) {
-  const params = coerceParameterArray(phs?.parameters, ["score", "weight"]);
-  const weights = params.map(p => toNum(p?.weight) ?? 1).map(w => (w > 0 ? w : 1));
+  const params = coerceParameterArray(phs?.parameters, ["score", "weight"]).map(p => ({
+    ...p,
+    weight: (p?.weight === undefined || p?.weight === null) ? 1 : p.weight
+  }));
+  const weights = params.map(p => (typeof p.weight === 'number' ? p.weight : 1)).map(w => (w > 0 ? w : 1));
   const wsum = weights.reduce((s, w) => s + w, 0) || 1;
-  const wval = params.reduce((s, p, i) => s + (clamp(toNum(p?.score) ?? 0, 0, 10) * weights[i]), 0);
-  return {
-    parameters: params.map((p, i) => ({ ...p, weight: weights[i] })),
-    totalWeightedScore: clamp(wval / wsum, 0, 10) ?? 0
-  };
+  const wval = params.reduce((s, p, i) => s + ((clamp(toNum(p.score) ?? 0, 0, 10)) * weights[i]), 0);
+  return { parameters: params, totalWeightedScore: clamp(wval / wsum, 0, 10) ?? 0 };
 }
-
 function ensureEsiFour(esi) {
-  const required = [
-    "Proximity to Sensitive Ecosystems",
-    "Biodiversity Value",
-    "Protected Areas",
-    "Socioeconomic Sensitivity"
-  ];
+  const required = ["Proximity to Sensitive Ecosystems","Biodiversity Value","Protected Areas","Socioeconomic Sensitivity"];
   const raw = coerceParameterArray(esi?.parameters, ["score"]);
-  const byName = {};
-  for (const p of raw) if (p?.name) byName[p.name] = p;
+  const by = {}; for (const p of raw) if (p?.name) by[p.name] = p;
   const params = required.map(name => {
-    const p = byName[name];
+    const p = by[name];
     return p ? {
       ...p,
       name,
       score: clamp(toNum(p.score) ?? 0, 0, 10),
-      rationale: (typeof p.rationale === "string" && p.rationale.trim()) ? p.rationale : "Not specified."
+      rationale: (typeof p?.rationale === "string" && p.rationale.trim()) ? p.rationale : "Not specified."
     } : { name, score: 0, rationale: "Insufficient data." };
   });
   const total = clamp(params.reduce((s, p) => s + (toNum(p.score) ?? 0), 0), 0, 40) ?? 0;
@@ -241,12 +219,7 @@ function needsEsiRepair(data) {
   const p = data?.esi?.parameters;
   if (!Array.isArray(p) || p.length < 4) return true;
   const names = new Set(p.map(x => x?.name).filter(Boolean));
-  const required = [
-    "Proximity to Sensitive Ecosystems",
-    "Biodiversity Value",
-    "Protected Areas",
-    "Socioeconomic Sensitivity"
-  ];
+  const required = ["Proximity to Sensitive Ecosystems","Biodiversity Value","Protected Areas","Socioeconomic Sensitivity"];
   const missingAny = required.some(r => !names.has(r));
   const tooManyInsufficient = p.filter(x => /insufficient data/i.test(String(x?.rationale || ""))).length >= 2;
   const badTotal = !(typeof data?.esi?.totalScore === "number");
@@ -256,6 +229,8 @@ function needsEsiRepair(data) {
 export const repairWerps = onCall(
   {
     region: REGION,
+    timeoutSeconds: 540,
+    memory: "1GiB",
     invoker: "public",
     secrets: [GEMINI_API_KEY],
     cors: [
@@ -274,26 +249,35 @@ export const repairWerps = onCall(
     if (role !== "admin") throw new HttpsError("permission-denied", "Admin access required.");
 
     const dryRun = req.data?.dryRun === undefined ? true : !!req.data.dryRun;
-    const pageSizeRaw = parseInt(String(req.data?.pageSize ?? "200"), 10);
-    const pageSize = Math.min(Math.max(Number.isFinite(pageSizeRaw) ? pageSizeRaw : 200, 50), 450);
+    const pageSizeRaw = parseInt(String(req.data?.pageSize ?? "150"), 10);
+    const pageSize = Math.min(Math.max(Number.isFinite(pageSizeRaw) ? pageSizeRaw : 150, 50), 450);
+
+    const maxDocsRaw = parseInt(String(req.data?.maxDocs ?? String(pageSize)), 10);
+    const maxDocs = Math.min(Math.max(Number.isFinite(maxDocsRaw) ? maxDocsRaw : pageSize, 1), pageSize);
+
+    const budgetRaw = parseInt(String(req.data?.timeBudgetSeconds ?? "45"), 10);
+    const timeBudgetSeconds = Math.min(Math.max(Number.isFinite(budgetRaw) ? budgetRaw : 45, 10), 480);
+
     const singleDocId = typeof req.data?.docId === "string" ? req.data.docId.trim() : "";
+    const startAfterId = typeof req.data?.startAfterId === "string" ? req.data.startAfterId.trim() : "";
 
     const schema = buildSchemas();
 
-    let scanned = 0;
-    let willWrite = 0;
-    let wrote = 0;
-    let phsFixed = 0;
-    let esiFixed = 0;
+    const began = Date.now();
+    const deadlineMs = began + (timeBudgetSeconds * 1000 - 2000); // stop ~2s before budget
+
+    let scanned = 0, updated = 0, phsFixed = 0, esiFixed = 0, pages = 0;
     const errors = [];
-    let pages = 0;
+    let lastProcessedId = "";
+    let nextPageStartAfterId = "";
 
     const col = db.collection(TARGET_PATH);
 
+    // Single doc path
     if (singleDocId) {
       const dref = col.doc(singleDocId);
       const d = await dref.get();
-      if (!d.exists) throw new HttpsError("not-found", `Doc ${singleDocId} not found.`);
+      if (!d.exists) throw new HttpsError("not-found", `Doc '${singleDocId}' not found.`);
       const data = d.data() || {};
       const vesselName = data?.vesselName || singleDocId;
       const context = data?.phase1?.summary?.background || "";
@@ -302,6 +286,8 @@ export const repairWerps = onCall(
       const update = {};
 
       try {
+        scanned += 1;
+
         if (needsPhsRepair(data)) {
           const phs = await callGemini(getPhsPrompt(vesselName, context), schema.phs);
           const recomputed = recomputePhsTotal(phs);
@@ -316,45 +302,67 @@ export const repairWerps = onCall(
           update["esi.totalScore"] = ensured.totalScore;
           esiFixed++;
         }
+
+        if (Object.keys(update).length > 0 && !dryRun) {
+          await dref.update(update);
+          updated += 1;
+        }
+        lastProcessedId = singleDocId;
       } catch (e) {
         errors.push({ id: singleDocId, message: e?.message || String(e) });
       }
 
-      if (Object.keys(update).length > 0) {
-        willWrite++;
-        if (!dryRun) {
-          await dref.update(update);
-          wrote++;
-        }
-      }
-
-      return { ok: errors.length === 0, dryRun, pages: 1, scanned: 1, willWrite, wrote, phsFixed, esiFixed, errors };
+      return {
+        ok: errors.length === 0,
+        dryRun,
+        pages: 1,
+        scanned,
+        updated,
+        phsFixed,
+        esiFixed,
+        lastProcessedId,
+        tookMs: Date.now() - began,
+        errors
+      };
     }
 
-    let last = null;
-    while (true) {
-      let q = col.orderBy(FieldPath.documentId()).limit(pageSize);
-      if (last) q = q.startAfter(last);
-      const snap = await q.get();
-      if (snap.empty) break;
+    // Batch path with budgeted paging
+    let lastDocInPage = null;
+    let q = col.orderBy(FieldPath.documentId()).limit(pageSize);
+    if (startAfterId) {
+      const startRef = col.doc(startAfterId);
+      const startSnap = await startRef.get();
+      if (startSnap.exists) q = q.startAfter(startSnap.id);
+      else q = q.startAfter(startAfterId); // fallback by id string
+    }
 
-      pages++;
-      scanned += snap.size;
+    const snap = await q.get();
+    if (!snap.empty) {
+      pages += 1;
+      const docs = snap.docs;
+      let processedInThisCall = 0;
 
-      let batch = db.batch();
-      let inBatch = 0;
+      for (const doc of docs) {
+        if (Date.now() > deadlineMs) { nextPageStartAfterId = lastProcessedId || startAfterId; break; }
+        if (processedInThisCall >= maxDocs) { nextPageStartAfterId = lastProcessedId || startAfterId; break; }
 
-      for (const doc of snap.docs) {
         const id = doc.id;
         const data = doc.data() || {};
         const vesselName = data?.vesselName || id;
         const context = data?.phase1?.summary?.background || "";
         const location = data?.phase1?.summary?.location || "";
 
+        scanned += 1;
+        lastDocInPage = id;
+
         try {
           const needsPhs = needsPhsRepair(data);
           const needsEsi = needsEsiRepair(data);
-          if (!needsPhs && !needsEsi) continue;
+          if (!needsPhs && !needsEsi) {
+            lastProcessedId = id;
+            processedInThisCall += 1;
+            continue;
+          }
 
           const update = {};
 
@@ -373,31 +381,43 @@ export const repairWerps = onCall(
             esiFixed++;
           }
 
-          willWrite++;
-          if (!dryRun) {
-            batch.update(doc.ref, update);
-            inBatch++;
-            if (inBatch >= 450) {
-              await batch.commit();
-              wrote += inBatch;
-              batch = db.batch();
-              inBatch = 0;
-            }
+          if (Object.keys(update).length > 0 && !dryRun) {
+            await doc.ref.update(update); // commit immediately to avoid losing work on timeout
+            updated += 1;
           }
+
+          lastProcessedId = id;
+          processedInThisCall += 1;
         } catch (e) {
           errors.push({ id, message: e?.message || String(e) });
+          lastProcessedId = id;
+          processedInThisCall += 1;
         }
       }
 
-      if (!dryRun && inBatch > 0) {
-        await batch.commit();
-        wrote += inBatch;
+      // If we still have remaining docs in the page and didn't hit budget/limit,
+      // provide a continuation token to continue from lastProcessedId.
+      if (!nextPageStartAfterId && lastProcessedId && lastProcessedId !== lastDocInPage) {
+        nextPageStartAfterId = lastProcessedId;
       }
-
-      last = snap.docs[snap.docs.length - 1];
-      if (snap.size < pageSize) break;
+      // If we finished this page but there might be more pages, also set continuation
+      if (!nextPageStartAfterId && docs.length === pageSize) {
+        nextPageStartAfterId = lastProcessedId || docs[docs.length - 1]?.id || startAfterId;
+      }
     }
 
-    return { ok: errors.length === 0, dryRun, pages, scanned, willWrite, wrote, phsFixed, esiFixed, errors };
+    return {
+      ok: errors.length === 0,
+      dryRun,
+      pages,
+      scanned,
+      updated,
+      phsFixed,
+      esiFixed,
+      lastProcessedId,
+      nextPageStartAfterId: nextPageStartAfterId || undefined,
+      tookMs: Date.now() - began,
+      errors
+    };
   }
 );

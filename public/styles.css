@@ -182,4 +182,8 @@ header h1 {
 input[type="text"]#vesselName:focus {
   box-shadow: 0 0 0 4px rgba(59,130,246,0.25);
   border-color: rgba(59,130,246,0.8);
+
+/* Minimal styles; Tailwind handles most UI */
+html, body { height: 100%; }
+.spinner { border-top-color: transparent; }
 }

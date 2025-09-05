@@ -7,7 +7,7 @@
   <style>
     :root { color-scheme: light; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 2rem; color: #111; }
-    .box { max-width: 900px; margin: 0 auto; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .box { max-width: 980px; margin: 0 auto; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 8px; }
     h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
     h2 { font-size: 1.125rem; margin: 1.5rem 0 0.5rem; }
     .muted { color: #6b7280; }
@@ -15,17 +15,20 @@
     .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     .col { display: flex; flex-direction: column; gap: 0.5rem; }
     label { font-size: 12px; color: #374151; }
-    input[type="text"], input[type="number"] {
-      border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.45rem 0.6rem; min-width: 240px;
+    input[type="text"], input[type="number"], input[type="checkbox"] {
+      border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.45rem 0.6rem; min-width: 220px;
     }
+    input[type="checkbox"] { min-width: auto; }
     button { background: #1e40af; color: #fff; border: 0; padding: 0.6rem 1rem; border-radius: 6px; cursor: pointer; }
     button.secondary { background: #065f46; }
     button.alt { background: #4f46e5; }
+    button.warn { background: #b45309; }
     button[disabled] { opacity: 0.6; cursor: not-allowed; }
     .badge { font-size: 12px; border: 1px solid #e5e7eb; padding: 0.15rem 0.5rem; border-radius: 999px; color: #374151; background: #f9fafb; }
     pre { background: #0b1020; color: #e5e7eb; padding: 1rem; border-radius: 6px; overflow: auto; font-size: 12px; }
     .section { border-top: 1px dashed #e5e7eb; margin-top: 1.25rem; padding-top: 1.25rem; }
-    a { color: #1e40af; }
+    .hint { font-size: 12px; color: #6b7280; }
+    .progress { font-size: 12px; color: #374151; }
   </style>
 </head>
 <body>
@@ -33,24 +36,15 @@
     <h1>Admin Tools</h1>
     <div id="authState" class="muted">Checking sign-in...</div>
     <div id="roleState" class="muted"></div>
-
-    <div id="notAdmin" class="warn" style="display:none;">
-      You must be an admin to use these tools.
-    </div>
+    <div id="notAdmin" class="warn" style="display:none;">You must be an admin to use these tools.</div>
 
     <div id="tools" style="display:none;">
       <!-- Normalize -->
       <div class="section">
         <h2>Normalize WERP Records</h2>
-        <p class="muted">
-          Sets status to "initial" unless Phase 2 exists; ensures totals are in-range; fills required ESI/RPM shapes for charting.
-        </p>
+        <p class="muted">Sets status to "initial" unless Phase 2 exists; ensures totals are in-range; fills required shapes for charting.</p>
         <div class="row" style="margin: 0.5rem 0 1rem;">
-          <div class="row">
-            <label>Page size
-              <input type="number" id="normPageSize" min="50" max="450" step="50" value="300" />
-            </label>
-          </div>
+          <label>Page size <input type="number" id="normPageSize" min="50" max="450" step="50" value="300" /></label>
           <button id="dryRunNormalizeBtn">Dry-run</button>
           <button id="applyNormalizeBtn" class="secondary">Apply changes</button>
           <span id="normBusy" class="badge" style="display:none;">Running...</span>
@@ -58,37 +52,54 @@
         <pre id="normOut">{ }</pre>
       </div>
 
-      <!-- Repair -->
+      <!-- Repair with continuation -->
       <div class="section">
         <h2>Repair Missing Sections (PHS weights, ESI components)</h2>
-        <p class="muted">
-          Re-runs only the incomplete sections using the model. Use docId for a single report, or run across all with pagination.
-        </p>
+        <p class="muted">Re-runs incomplete sections using the model. Use single Doc ID or run across all with budgeted paging.</p>
+
         <div class="row" style="margin: 0.5rem 0;">
           <div class="col">
             <label for="repairDocId">Doc ID (optional, repairs just this report)</label>
             <input id="repairDocId" type="text" placeholder="e.g., ijn-kirishima" />
+            <div class="row">
+              <button id="slugifyBtn" type="button" class="alt">Slugify</button>
+              <span id="slugHint" class="hint"></span>
+            </div>
           </div>
           <div class="col">
-            <label for="repairPageSize">Page size (for all-docs run)</label>
-            <input id="repairPageSize" type="number" min="50" max="450" step="50" value="200" />
+            <label for="repairStartAfter">Start After Doc ID (for paging)</label>
+            <input id="repairStartAfter" type="text" placeholder="leave blank to start at beginning" />
+            <div class="hint">Use this to continue from where the last run stopped.</div>
+          </div>
+          <div class="col">
+            <label for="repairPageSize">Page size</label>
+            <input id="repairPageSize" type="number" min="50" max="450" step="50" value="150" />
+          </div>
+          <div class="col">
+            <label for="repairMaxDocs">Max docs per call</label>
+            <input id="repairMaxDocs" type="number" min="1" max="450" step="1" value="50" />
+          </div>
+          <div class="col">
+            <label for="repairBudget">Time budget per call (seconds)</label>
+            <input id="repairBudget" type="number" min="10" max="480" step="5" value="45" />
           </div>
         </div>
-        <div class="row" style="margin: 0.5rem 0 1rem;">
-          <button id="dryRunRepairBtn" class="alt">Dry-run</button>
-          <button id="applyRepairBtn" class="secondary">Apply changes</button>
+
+        <div class="row" style="margin: 0.5rem 0 0.75rem;">
+          <button id="dryRunRepairBtn" class="alt">Dry-run (single page)</button>
+          <button id="applyRepairBtn" class="secondary">Apply (single page)</button>
+          <button id="autoRepairBtn" class="warn">Auto-continue until done</button>
           <span id="repairBusy" class="badge" style="display:none;">Running...</span>
         </div>
+        <div id="repairProgress" class="progress"></div>
         <pre id="repairOut">{ }</pre>
-        <p class="muted" id="repairHint" style="display:none;">
-          The repair function was not found. Make sure functions/index.js exports repairWerps and you've deployed functions.
+        <p class="hint" id="repairHint" style="display:none;">
+          The repair function was not found. Ensure functions export repairWerps and it’s deployed in us-central1.
         </p>
       </div>
     </div>
 
-    <p class="muted" style="margin-top:1rem;">
-      Back to app: <a href="/">Home</a>
-    </p>
+    <p class="muted" style="margin-top:1rem;">Back to app: <a href="/">Home</a></p>
   </div>
 
   <script type="module">
@@ -112,14 +123,9 @@
     const db = getFirestore(app);
     const functions = getFunctions(app, "us-central1");
 
-    // Callables
     const normalizeWerps = httpsCallable(functions, "normalizeWerps");
     let repairWerps = null;
-    try {
-      repairWerps = httpsCallable(functions, "repairWerps");
-    } catch (e) {
-      // If not exported, we'll show a hint later.
-    }
+    try { repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
 
     // UI refs
     const authState = document.getElementById("authState");
@@ -136,111 +142,176 @@
     const repairOut = document.getElementById("repairOut");
     const repairBusy = document.getElementById("repairBusy");
     const repairDocId = document.getElementById("repairDocId");
+    const repairStartAfter = document.getElementById("repairStartAfter");
     const repairPageSize = document.getElementById("repairPageSize");
+    const repairMaxDocs = document.getElementById("repairMaxDocs");
+    const repairBudget = document.getElementById("repairBudget");
     const dryRunRepairBtn = document.getElementById("dryRunRepairBtn");
     const applyRepairBtn = document.getElementById("applyRepairBtn");
+    const autoRepairBtn = document.getElementById("autoRepairBtn");
     const repairHint = document.getElementById("repairHint");
+    const slugifyBtn = document.getElementById("slugifyBtn");
+    const slugHint = document.getElementById("slugHint");
+    const repairProgress = document.getElementById("repairProgress");
 
     function setBusy(el, busy) { el.style.display = busy ? "" : "none"; }
     function print(el, obj) { el.textContent = JSON.stringify(obj, null, 2); }
+
+    function toSlug(name) {
+      return String(name || "")
+        .toLowerCase()
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+    }
 
     async function getRole(uid) {
       try {
         const ref = doc(db, "system", "allowlist", "users", uid);
         const snap = await getDoc(ref);
-        if (!snap.exists()) return "user";
+        if (!snap.exists) return "user";
         return snap.get("Role") || "user";
-      } catch {
-        return "user";
-      }
+      } catch { return "user"; }
     }
 
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
         authState.textContent = "Not signed in. Please sign in on the main app, then reload this page.";
-        tools.style.display = "none";
-        notAdmin.style.display = "";
-        roleState.textContent = "";
-        return;
+        tools.style.display = "none"; notAdmin.style.display = ""; roleState.textContent = ""; return;
       }
       authState.textContent = `Signed in as ${user.email || user.uid}`;
       const role = await getRole(user.uid);
       roleState.textContent = `Role: ${role}`;
-      if (role !== "admin") {
-        tools.style.display = "none";
-        notAdmin.style.display = "";
-        return;
-      }
-      notAdmin.style.display = "none";
-      tools.style.display = "";
+      if (role !== "admin") { tools.style.display = "none"; notAdmin.style.display = ""; return; }
+      notAdmin.style.display = "none"; tools.style.display = "";
 
-      // If repair callable missing, show hint
       if (!repairWerps) {
         repairHint.style.display = "";
-        dryRunRepairBtn.disabled = true;
-        applyRepairBtn.disabled = true;
+        dryRunRepairBtn.disabled = true; applyRepairBtn.disabled = true; autoRepairBtn.disabled = true;
       }
     });
 
-    // Normalize handlers
+    slugifyBtn.addEventListener("click", () => {
+      const input = repairDocId.value.trim();
+      const slug = toSlug(input);
+      repairDocId.value = slug;
+      slugHint.textContent = slug ? `Doc ID -> ${slug}` : "";
+    });
+
+    // Normalize
     dryRunNormalizeBtn.addEventListener("click", async () => {
-      setBusy(normBusy, true);
-      print(normOut, { status: "Running dry-run..." });
+      setBusy(normBusy, true); print(normOut, { status: "Running dry-run..." });
       try {
         const pageSize = Number(normPageSize.value || 300);
         const res = await normalizeWerps({ dryRun: true, pageSize });
         print(normOut, res.data || res);
-      } catch (e) {
-        print(normOut, { error: e?.message || String(e) });
-      } finally {
-        setBusy(normBusy, false);
-      }
+      } catch (e) { print(normOut, { error: e?.message || String(e) }); }
+      finally { setBusy(normBusy, false); }
     });
-
     applyNormalizeBtn.addEventListener("click", async () => {
       if (!confirm("Apply normalization changes now?")) return;
-      setBusy(normBusy, true);
-      print(normOut, { status: "Applying changes..." });
+      setBusy(normBusy, true); print(normOut, { status: "Applying changes..." });
       try {
         const pageSize = Number(normPageSize.value || 300);
         const res = await normalizeWerps({ dryRun: false, pageSize });
         print(normOut, res.data || res);
-      } catch (e) {
-        print(normOut, { error: e?.message || String(e) });
-      } finally {
-        setBusy(normBusy, false);
-      }
+      } catch (e) { print(normOut, { error: e?.message || String(e) }); }
+      finally { setBusy(normBusy, false); }
     });
 
-    // Repair handlers
-    async function runRepair(dryRun) {
-      if (!repairWerps) {
-        print(repairOut, { error: "repairWerps callable not found. Deploy functions with repairWerps export." });
-        return;
-      }
-      setBusy(repairBusy, true);
-      print(repairOut, { status: dryRun ? "Running dry-run..." : "Applying changes..." });
+    // Repair — single page
+    async function runRepairOnce(dryRun) {
+      if (!repairWerps) { print(repairOut, { error: "repairWerps not deployed in us-central1." }); return; }
+      setBusy(repairBusy, true); print(repairOut, { status: dryRun ? "Running dry-run (single page)..." : "Applying (single page)..." });
+      repairProgress.textContent = "";
       try {
         const payload = {
           dryRun,
-          pageSize: Number(repairPageSize.value || 200)
+          pageSize: Number(repairPageSize.value || 150),
+          maxDocs: Number(repairMaxDocs.value || 50),
+          timeBudgetSeconds: Number(repairBudget.value || 45)
         };
         const id = repairDocId.value.trim();
+        const startAfter = repairStartAfter.value.trim();
         if (id) payload.docId = id;
+        if (startAfter) payload.startAfterId = startAfter;
+
         const res = await repairWerps(payload);
-        print(repairOut, res.data || res);
+        const data = res.data || res;
+        print(repairOut, data);
+        if (data?.nextPageStartAfterId) {
+          repairProgress.textContent = `Next startAfterId: ${data.nextPageStartAfterId}`;
+        } else {
+          repairProgress.textContent = "Completed page; no continuation token returned.";
+        }
       } catch (e) {
-        // Common errors: permission-denied, not-found, internal
         print(repairOut, { error: e?.message || String(e) });
       } finally {
         setBusy(repairBusy, false);
       }
     }
 
-    dryRunRepairBtn.addEventListener("click", () => runRepair(true));
+    dryRunRepairBtn.addEventListener("click", () => runRepairOnce(true));
     applyRepairBtn.addEventListener("click", async () => {
-      if (!confirm("Re-run missing sections now? This will write to Firestore.")) return;
-      runRepair(false);
+      if (!confirm("Re-run missing sections for this page? This will write to Firestore.")) return;
+      runRepairOnce(false);
+    });
+
+    // Repair — auto-continue until done
+    autoRepairBtn.addEventListener("click", async () => {
+      if (!repairWerps) return;
+      if (!confirm("Auto-continue repair across pages until completed? This will write to Firestore.")) return;
+
+      const payloadBase = {
+        dryRun: false,
+        pageSize: Number(repairPageSize.value || 150),
+        maxDocs: Number(repairMaxDocs.value || 50),
+        timeBudgetSeconds: Number(repairBudget.value || 45)
+      };
+      let next = repairStartAfter.value.trim() || "";
+      const singleId = repairDocId.value.trim();
+      if (singleId) {
+        alert("Auto-continue is intended for multi-doc runs; for a single doc, use 'Apply (single page)'.");
+        return;
+      }
+
+      setBusy(repairBusy, true);
+      repairProgress.textContent = "Starting...";
+      let totalScanned = 0, totalUpdated = 0, totalPhs = 0, totalEsi = 0, calls = 0;
+
+      try {
+        while (true) {
+          const payload = { ...payloadBase };
+          if (next) payload.startAfterId = next;
+
+          const res = await repairWerps(payload);
+          const data = res.data || res;
+
+          calls += 1;
+          totalScanned += Number(data?.scanned || 0);
+          totalUpdated += Number(data?.updated || 0);
+          totalPhs += Number(data?.phsFixed || 0);
+          totalEsi += Number(data?.esiFixed || 0);
+
+          repairProgress.textContent = `Calls: ${calls} | Scanned: ${totalScanned} | Updated: ${totalUpdated} | PHS fixed: ${totalPhs} | ESI fixed: ${totalEsi}`;
+          print(repairOut, data);
+
+          if (data?.nextPageStartAfterId) {
+            next = data.nextPageStartAfterId;
+            // Small delay to avoid hammering
+            await new Promise(r => setTimeout(r, 750));
+            continue;
+          }
+          break;
+        }
+
+        repairProgress.textContent += " — Completed.";
+      } catch (e) {
+        print(repairOut, { error: e?.message || String(e) });
+      } finally {
+        setBusy(repairBusy, false);
+      }
     });
   </script>
 </body>

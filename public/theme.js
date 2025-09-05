@@ -1,24 +1,12 @@
-(function () {
+(function() {
   const root = document.documentElement;
-  const stored = localStorage.getItem('pg-theme');
-  const preferred = stored || 'light';
-  root.setAttribute('data-theme', preferred);
+  const saved = localStorage.getItem("pg-theme");
+  if (saved) root.setAttribute("data-theme", saved);
 
-  function apply(next) {
-    root.setAttribute('data-theme', next);
-    localStorage.setItem('pg-theme', next);
-    const btn = document.getElementById('themeToggle');
-    if (btn) btn.textContent = next === 'dark' ? '☀️' : '🌙';
-  }
-
-  window.toggleTheme = function () {
-    const current = root.getAttribute('data-theme') || 'light';
-    apply(current === 'light' ? 'dark' : 'light');
+  window.toggleTheme = function() {
+    const cur = root.getAttribute("data-theme") || "light";
+    const next = cur === "light" ? "dark" : "light";
+    root.setAttribute("data-theme", next);
+    localStorage.setItem("pg-theme", next);
   };
-
-  // Initialize button label on DOM ready
-  window.addEventListener('DOMContentLoaded', () => {
-    const current = root.getAttribute('data-theme') || 'light';
-    apply(current);
-  });
 })();
