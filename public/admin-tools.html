@@ -5,18 +5,26 @@
   <title>Admin Tools — Project Guardian</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
+    :root { color-scheme: light; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 2rem; color: #111; }
-    .box { max-width: 800px; margin: 0 auto; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .box { max-width: 900px; margin: 0 auto; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 8px; }
     h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
     h2 { font-size: 1.125rem; margin: 1.5rem 0 0.5rem; }
     .muted { color: #6b7280; }
+    .warn { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; padding: 0.75rem; border-radius: 6px; }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .col { display: flex; flex-direction: column; gap: 0.5rem; }
+    label { font-size: 12px; color: #374151; }
+    input[type="text"], input[type="number"] {
+      border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.45rem 0.6rem; min-width: 240px;
+    }
     button { background: #1e40af; color: #fff; border: 0; padding: 0.6rem 1rem; border-radius: 6px; cursor: pointer; }
     button.secondary { background: #065f46; }
+    button.alt { background: #4f46e5; }
     button[disabled] { opacity: 0.6; cursor: not-allowed; }
-    pre { background: #0b1020; color: #e5e7eb; padding: 1rem; border-radius: 6px; overflow: auto; font-size: 12px; }
-    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     .badge { font-size: 12px; border: 1px solid #e5e7eb; padding: 0.15rem 0.5rem; border-radius: 999px; color: #374151; background: #f9fafb; }
-    .warn { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; padding: 0.75rem; border-radius: 6px; }
+    pre { background: #0b1020; color: #e5e7eb; padding: 1rem; border-radius: 6px; overflow: auto; font-size: 12px; }
+    .section { border-top: 1px dashed #e5e7eb; margin-top: 1.25rem; padding-top: 1.25rem; }
     a { color: #1e40af; }
   </style>
 </head>
@@ -31,19 +39,51 @@
     </div>
 
     <div id="tools" style="display:none;">
-      <h2>Normalize WERP Records</h2>
-      <p class="muted">
-        Sets status to "initial" unless Phase 2 exists, and clamps metrics to expected ranges for charts.
-      </p>
-      <div class="row" style="margin: 0.5rem 0 1rem;">
-        <button id="dryRunBtn">Dry-run</button>
-        <button id="applyBtn" class="secondary">Apply changes</button>
-        <span id="busy" class="badge" style="display:none;">Running...</span>
+      <!-- Normalize -->
+      <div class="section">
+        <h2>Normalize WERP Records</h2>
+        <p class="muted">
+          Sets status to "initial" unless Phase 2 exists; ensures totals are in-range; fills required ESI/RPM shapes for charting.
+        </p>
+        <div class="row" style="margin: 0.5rem 0 1rem;">
+          <div class="row">
+            <label>Page size
+              <input type="number" id="normPageSize" min="50" max="450" step="50" value="300" />
+            </label>
+          </div>
+          <button id="dryRunNormalizeBtn">Dry-run</button>
+          <button id="applyNormalizeBtn" class="secondary">Apply changes</button>
+          <span id="normBusy" class="badge" style="display:none;">Running...</span>
+        </div>
+        <pre id="normOut">{ }</pre>
       </div>
-      <pre id="out">{ }</pre>
-      <p class="muted">
-        Tip: Run Dry-run first to preview, then Apply changes.
-      </p>
+
+      <!-- Repair -->
+      <div class="section">
+        <h2>Repair Missing Sections (PHS weights, ESI components)</h2>
+        <p class="muted">
+          Re-runs only the incomplete sections using the model. Use docId for a single report, or run across all with pagination.
+        </p>
+        <div class="row" style="margin: 0.5rem 0;">
+          <div class="col">
+            <label for="repairDocId">Doc ID (optional, repairs just this report)</label>
+            <input id="repairDocId" type="text" placeholder="e.g., ijn-kirishima" />
+          </div>
+          <div class="col">
+            <label for="repairPageSize">Page size (for all-docs run)</label>
+            <input id="repairPageSize" type="number" min="50" max="450" step="50" value="200" />
+          </div>
+        </div>
+        <div class="row" style="margin: 0.5rem 0 1rem;">
+          <button id="dryRunRepairBtn" class="alt">Dry-run</button>
+          <button id="applyRepairBtn" class="secondary">Apply changes</button>
+          <span id="repairBusy" class="badge" style="display:none;">Running...</span>
+        </div>
+        <pre id="repairOut">{ }</pre>
+        <p class="muted" id="repairHint" style="display:none;">
+          The repair function was not found. Make sure functions/index.js exports repairWerps and you've deployed functions.
+        </p>
+      </div>
     </div>
 
     <p class="muted" style="margin-top:1rem;">
@@ -71,25 +111,38 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const functions = getFunctions(app, "us-central1");
-    const normalizeWerps = httpsCallable(functions, "normalizeWerps");
 
+    // Callables
+    const normalizeWerps = httpsCallable(functions, "normalizeWerps");
+    let repairWerps = null;
+    try {
+      repairWerps = httpsCallable(functions, "repairWerps");
+    } catch (e) {
+      // If not exported, we'll show a hint later.
+    }
+
+    // UI refs
     const authState = document.getElementById("authState");
     const roleState = document.getElementById("roleState");
     const notAdmin = document.getElementById("notAdmin");
     const tools = document.getElementById("tools");
-    const out = document.getElementById("out");
-    const dryRunBtn = document.getElementById("dryRunBtn");
-    const applyBtn = document.getElementById("applyBtn");
-    const busy = document.getElementById("busy");
 
-    function setBusy(b) {
-      dryRunBtn.disabled = b;
-      applyBtn.disabled = b;
-      busy.style.display = b ? "" : "none";
-    }
-    function print(obj) {
-      out.textContent = JSON.stringify(obj, null, 2);
-    }
+    const normOut = document.getElementById("normOut");
+    const normBusy = document.getElementById("normBusy");
+    const normPageSize = document.getElementById("normPageSize");
+    const dryRunNormalizeBtn = document.getElementById("dryRunNormalizeBtn");
+    const applyNormalizeBtn = document.getElementById("applyNormalizeBtn");
+
+    const repairOut = document.getElementById("repairOut");
+    const repairBusy = document.getElementById("repairBusy");
+    const repairDocId = document.getElementById("repairDocId");
+    const repairPageSize = document.getElementById("repairPageSize");
+    const dryRunRepairBtn = document.getElementById("dryRunRepairBtn");
+    const applyRepairBtn = document.getElementById("applyRepairBtn");
+    const repairHint = document.getElementById("repairHint");
+
+    function setBusy(el, busy) { el.style.display = busy ? "" : "none"; }
+    function print(el, obj) { el.textContent = JSON.stringify(obj, null, 2); }
 
     async function getRole(uid) {
       try {
@@ -120,33 +173,74 @@
       }
       notAdmin.style.display = "none";
       tools.style.display = "";
-    });
 
-    dryRunBtn.addEventListener("click", async () => {
-      setBusy(true);
-      print({ status: "Running dry-run..." });
-      try {
-        const res = await normalizeWerps({ dryRun: true });
-        print(res.data || res);
-      } catch (e) {
-        print({ error: e?.message || String(e) });
-      } finally {
-        setBusy(false);
+      // If repair callable missing, show hint
+      if (!repairWerps) {
+        repairHint.style.display = "";
+        dryRunRepairBtn.disabled = true;
+        applyRepairBtn.disabled = true;
       }
     });
 
-    applyBtn.addEventListener("click", async () => {
+    // Normalize handlers
+    dryRunNormalizeBtn.addEventListener("click", async () => {
+      setBusy(normBusy, true);
+      print(normOut, { status: "Running dry-run..." });
+      try {
+        const pageSize = Number(normPageSize.value || 300);
+        const res = await normalizeWerps({ dryRun: true, pageSize });
+        print(normOut, res.data || res);
+      } catch (e) {
+        print(normOut, { error: e?.message || String(e) });
+      } finally {
+        setBusy(normBusy, false);
+      }
+    });
+
+    applyNormalizeBtn.addEventListener("click", async () => {
       if (!confirm("Apply normalization changes now?")) return;
-      setBusy(true);
-      print({ status: "Applying changes..." });
+      setBusy(normBusy, true);
+      print(normOut, { status: "Applying changes..." });
       try {
-        const res = await normalizeWerps({ dryRun: false });
-        print(res.data || res);
+        const pageSize = Number(normPageSize.value || 300);
+        const res = await normalizeWerps({ dryRun: false, pageSize });
+        print(normOut, res.data || res);
       } catch (e) {
-        print({ error: e?.message || String(e) });
+        print(normOut, { error: e?.message || String(e) });
       } finally {
-        setBusy(false);
+        setBusy(normBusy, false);
       }
+    });
+
+    // Repair handlers
+    async function runRepair(dryRun) {
+      if (!repairWerps) {
+        print(repairOut, { error: "repairWerps callable not found. Deploy functions with repairWerps export." });
+        return;
+      }
+      setBusy(repairBusy, true);
+      print(repairOut, { status: dryRun ? "Running dry-run..." : "Applying changes..." });
+      try {
+        const payload = {
+          dryRun,
+          pageSize: Number(repairPageSize.value || 200)
+        };
+        const id = repairDocId.value.trim();
+        if (id) payload.docId = id;
+        const res = await repairWerps(payload);
+        print(repairOut, res.data || res);
+      } catch (e) {
+        // Common errors: permission-denied, not-found, internal
+        print(repairOut, { error: e?.message || String(e) });
+      } finally {
+        setBusy(repairBusy, false);
+      }
+    }
+
+    dryRunRepairBtn.addEventListener("click", () => runRepair(true));
+    applyRepairBtn.addEventListener("click", async () => {
+      if (!confirm("Re-run missing sections now? This will write to Firestore.")) return;
+      runRepair(false);
     });
   </script>
 </body>
