@@ -1,6 +1,4 @@
-// Minimal placeholder for guardianSentry to keep deployments consistent.
-// You can extend this to generate or ingest environmental incidents and attach them to docs.
-
+// Placeholder scheduled function (extend for real incident ingestion if needed).
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
 export const guardianSentry = onSchedule(
@@ -10,8 +8,6 @@ export const guardianSentry = onSchedule(
     timeZone: "Etc/UTC"
   },
   async () => {
-    // TODO: Implement real sentry/incident ingestion if needed.
-    // For now, just a heartbeat.
     console.log("guardianSentry heartbeat OK");
   }
 );

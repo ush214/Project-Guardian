@@ -1,6 +1,5 @@
-// Normalize WERP docs: ensure correct status, ensure required ESI/RPM components,
-// recompute totals from parameters, and clamp numeric metrics so charts render correctly.
-// Usage: call normalizeWerps({ dryRun: true }) to preview, then dryRun: false to write.
+// Normalize WERP docs: recompute totals, enforce ranges, ensure component completeness.
+// Admin-only callable.
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { db } from "./admin.js";
@@ -14,8 +13,7 @@ async function getRole(uid) {
     const snap = await db.doc(`system/allowlist/users/${uid}`).get();
     if (!snap.exists) return "user";
     return snap.get("Role") || "user";
-  } catch (e) {
-    console.error("Failed to read Role for uid:", uid, e);
+  } catch {
     return "user";
   }
 }
@@ -55,14 +53,13 @@ function normalizeAndScore(doc) {
     0,
     20
   );
-  const wcsTotal = clamp(toNum(out?.wcs?.totalScore), 0, 20);
   out.wcs = {
     ...(out.wcs || {}),
     parameters: wcsParams,
-    totalScore: wcsTotalFromParams ?? wcsTotal ?? 0
+    totalScore: wcsTotalFromParams ?? clamp(toNum(out?.wcs?.totalScore), 0, 20) ?? 0
   };
 
-  // PHS
+  // PHS weighted avg 0..10
   const phsParams = coerceParameterArray(out?.phs?.parameters, ["score", "weight"]);
   const phsWeights = phsParams.map(p => toNum(p?.weight) ?? 1).map(w => (w > 0 ? w : 1));
   const phsWeighted = phsParams.reduce((s, p, i) => s + (clamp(toNum(p?.score) ?? 0, 0, 10) * phsWeights[i]), 0);
@@ -74,7 +71,7 @@ function normalizeAndScore(doc) {
     totalWeightedScore: phsAvg ?? clamp(toNum(out?.phs?.totalWeightedScore), 0, 10) ?? 0
   };
 
-  // ESI: ensure 4 required components, compute total
+  // ESI: ensure 4 required components, total 0..40
   const requiredEsiNames = [
     "Proximity to Sensitive Ecosystems",
     "Biodiversity Value",
@@ -99,7 +96,7 @@ function normalizeAndScore(doc) {
     totalScore: esiTotal ?? clamp(toNum(out?.esi?.totalScore), 0, 40) ?? 0
   };
 
-  // RPM: ensure factors and compute average; backfill rationales
+  // RPM: ensure 4 factors, finalMultiplier 1.0..2.5
   const requiredRpmFactors = [
     "Thermal Stress",
     "Storm Exposure",
@@ -145,11 +142,8 @@ export const normalizeWerps = onCall(
   async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
-
     const role = await getRole(uid);
-    if (role !== "admin") {
-      throw new HttpsError("permission-denied", "Admin access required.");
-    }
+    if (role !== "admin") throw new HttpsError("permission-denied", "Admin access required.");
 
     const dryRun = req.data?.dryRun === undefined ? true : !!req.data.dryRun;
     const pageSizeRaw = parseInt(String(req.data?.pageSize ?? "300"), 10);
@@ -231,7 +225,7 @@ export const normalizeWerps = onCall(
             }
           }
         } catch (e) {
-          console.error(`normalizeWerps: failed for ${id}`, e);
+          console.error(`normalizeWerps failed for ${id}`, e);
           errors.push({ id, message: e?.message || String(e) });
         }
       }

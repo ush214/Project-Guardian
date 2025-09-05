@@ -5,8 +5,6 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "eslint --ext .js .",
-    "build": "echo \"No build step for ESM\"",
     "deploy": "firebase deploy --only functions",
     "serve": "firebase emulators:start --only functions",
     "test": "echo \"No tests\" && exit 0"
@@ -15,12 +13,6 @@
     "@google/generative-ai": "^0.21.0",
     "firebase-admin": "^12.6.0",
     "firebase-functions": "^5.1.1"
-  },
-  "devDependencies": {
-    "eslint": "^9.9.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-import": "^2.29.1",
-    "prettier": "^3.3.3"
   },
   "private": true
 }

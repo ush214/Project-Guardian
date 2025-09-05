@@ -1,26 +1,5 @@
-// Admin-only callable to repair incomplete WERP reports by re-running ONLY the missing sections.
-// Now supports time-budgeted paging to avoid deadline-exceeded on large batches.
-// Params:
-//   - dryRun?: boolean (default true)
-//   - pageSize?: number (50..450, default 150)
-//   - maxDocs?: number (1..pageSize, default pageSize)
-//   - startAfterId?: string (continue from this docId; used for paging)
-//   - docId?: string (if provided, repairs a single document)
-//   - timeBudgetSeconds?: number (10..480, default 45) — processing stops before budget runs out, returns a continuation token.
-//
-// Return example:
-// {
-//   ok: true,
-//   dryRun: false,
-//   scanned: 42,
-//   updated: 17,
-//   phsFixed: 9,
-//   esiFixed: 12,
-//   lastProcessedId: "some-doc-id",
-//   nextPageStartAfterId: "some-doc-id", // include to continue; absent when done
-//   tookMs: 31875,
-//   errors: []
-// }
+// Repair incomplete WERP reports by re-running ONLY missing sections (PHS/ESI).
+// Supports time-budgeted paging and continuation tokens to avoid deadline-exceeded.
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -264,7 +243,7 @@ export const repairWerps = onCall(
     const schema = buildSchemas();
 
     const began = Date.now();
-    const deadlineMs = began + (timeBudgetSeconds * 1000 - 2000); // stop ~2s before budget
+    const deadlineMs = began + (timeBudgetSeconds * 1000 - 2000);
 
     let scanned = 0, updated = 0, phsFixed = 0, esiFixed = 0, pages = 0;
     const errors = [];
@@ -273,7 +252,7 @@ export const repairWerps = onCall(
 
     const col = db.collection(TARGET_PATH);
 
-    // Single doc path
+    // Single document path
     if (singleDocId) {
       const dref = col.doc(singleDocId);
       const d = await dref.get();
@@ -284,7 +263,6 @@ export const repairWerps = onCall(
       const location = data?.phase1?.summary?.location || "";
 
       const update = {};
-
       try {
         scanned += 1;
 
@@ -326,21 +304,17 @@ export const repairWerps = onCall(
       };
     }
 
-    // Batch path with budgeted paging
-    let lastDocInPage = null;
+    // Batch with budgeted paging and immediate commits
     let q = col.orderBy(FieldPath.documentId()).limit(pageSize);
     if (startAfterId) {
-      const startRef = col.doc(startAfterId);
-      const startSnap = await startRef.get();
-      if (startSnap.exists) q = q.startAfter(startSnap.id);
-      else q = q.startAfter(startAfterId); // fallback by id string
+      q = q.startAfter(startAfterId);
     }
-
     const snap = await q.get();
+
     if (!snap.empty) {
       pages += 1;
-      const docs = snap.docs;
       let processedInThisCall = 0;
+      const docs = snap.docs;
 
       for (const doc of docs) {
         if (Date.now() > deadlineMs) { nextPageStartAfterId = lastProcessedId || startAfterId; break; }
@@ -353,7 +327,6 @@ export const repairWerps = onCall(
         const location = data?.phase1?.summary?.location || "";
 
         scanned += 1;
-        lastDocInPage = id;
 
         try {
           const needsPhs = needsPhsRepair(data);
@@ -382,7 +355,7 @@ export const repairWerps = onCall(
           }
 
           if (Object.keys(update).length > 0 && !dryRun) {
-            await doc.ref.update(update); // commit immediately to avoid losing work on timeout
+            await doc.ref.update(update);
             updated += 1;
           }
 
@@ -395,12 +368,6 @@ export const repairWerps = onCall(
         }
       }
 
-      // If we still have remaining docs in the page and didn't hit budget/limit,
-      // provide a continuation token to continue from lastProcessedId.
-      if (!nextPageStartAfterId && lastProcessedId && lastProcessedId !== lastDocInPage) {
-        nextPageStartAfterId = lastProcessedId;
-      }
-      // If we finished this page but there might be more pages, also set continuation
       if (!nextPageStartAfterId && docs.length === pageSize) {
         nextPageStartAfterId = lastProcessedId || docs[docs.length - 1]?.id || startAfterId;
       }

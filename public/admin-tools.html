@@ -170,7 +170,7 @@
       try {
         const ref = doc(db, "system", "allowlist", "users", uid);
         const snap = await getDoc(ref);
-        if (!snap.exists) return "user";
+        if (!snap.exists()) return "user";
         return snap.get("Role") || "user";
       } catch { return "user"; }
     }
@@ -299,7 +299,6 @@
 
           if (data?.nextPageStartAfterId) {
             next = data.nextPageStartAfterId;
-            // Small delay to avoid hammering
             await new Promise(r => setTimeout(r, 750));
             continue;
           }

@@ -1,5 +1,5 @@
 // One-time migration: copy docs from artifacts/guardian/... to artifacts/guardian-agent-default/...
-// Only accessible to signed-in admins. Supports dry-run and pagination.
+// Admin-only. Supports dry-run and pagination.
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { db } from "./admin.js";
@@ -15,7 +15,7 @@ async function getRole(uid) {
     if (!snap.exists) return "user";
     return snap.get("Role") || "user";
   } catch (e) {
-    console.error("Failed to read Role for uid:", uid, e);
+    console.error("Failed to read Role:", e);
     return "user";
   }
 }
@@ -36,11 +36,8 @@ export const migrateWerps = onCall(
   async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
-
     const role = await getRole(uid);
-    if (role !== "admin") {
-      throw new HttpsError("permission-denied", "Admin access required.");
-    }
+    if (role !== "admin") throw new HttpsError("permission-denied", "Admin access required.");
 
     const dryRun = req.data?.dryRun === undefined ? true : !!req.data.dryRun;
     const pageSizeRaw = parseInt(String(req.data?.pageSize ?? "300"), 10);
@@ -65,11 +62,9 @@ export const migrateWerps = onCall(
       pages += 1;
       totalRead += snap.size;
 
-      // Prepare target refs and fetch existing in bulk
       const tgtRefs = snap.docs.map(d => tgtCol.doc(d.id));
       const existingSnaps = await db.getAll(...tgtRefs);
 
-      // Prepare batch
       let batch = db.batch();
       let writesInBatch = 0;
 
@@ -97,7 +92,7 @@ export const migrateWerps = onCall(
           }
           copied += 1;
         } catch (e) {
-          console.error(`Failed to queue copy for ${srcDoc.id}:`, e);
+          console.error(`Failed to copy ${srcDoc.id}:`, e);
           errors.push({ id: srcDoc.id, message: e?.message || String(e) });
         }
       }
