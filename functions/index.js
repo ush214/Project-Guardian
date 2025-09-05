@@ -4,7 +4,8 @@
 //   and back-compat alias: processBulkImportQueue
 // - guardianSentry
 // - migrateWerps (one-time migration)
-// - normalizeWerps (one-time normalization)
+// - normalizeWerps (normalizer)
+// - repairWerps (re-run missing sections)
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -21,6 +22,7 @@ export {
 export { guardianSentry } from "./guardianSentry.js";
 export { migrateWerps } from "./migrateAssessments.js";
 export { normalizeWerps } from "./normalizeWerps.js";
+export { repairWerps } from "./repairWerps.js";
 
 const REGION = "us-central1";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
