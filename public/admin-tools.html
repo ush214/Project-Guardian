@@ -7,28 +7,36 @@
   <style>
     :root { color-scheme: light; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 2rem; color: #111; }
-    .box { max-width: 980px; margin: 0 auto; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 8px; }
-    h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
-    h2 { font-size: 1.125rem; margin: 1.5rem 0 0.5rem; }
+    .box { max-width: 1080px; margin: 0 auto; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 8px; background:#fff; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.85rem; }
+    h2 { font-size: 1.175rem; margin: 1.6rem 0 0.6rem; }
     .muted { color: #6b7280; }
     .warn { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; padding: 0.75rem; border-radius: 6px; }
     .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     .col { display: flex; flex-direction: column; gap: 0.5rem; }
-    label { font-size: 12px; color: #374151; }
+    label { font-size: 12px; color: #374151; display:flex; flex-direction:column; gap:4px; }
     input[type="text"], input[type="number"], input[type="checkbox"] {
-      border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.45rem 0.6rem; min-width: 220px;
+      border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.45rem 0.6rem; min-width: 200px;
+      font-size: 14px;
     }
     input[type="checkbox"] { min-width: auto; }
-    button { background: #1e40af; color: #fff; border: 0; padding: 0.6rem 1rem; border-radius: 6px; cursor: pointer; }
+    button { background: #1e40af; color: #fff; border: 0; padding: 0.55rem 0.95rem; border-radius: 6px; cursor: pointer; font-size: 13px; }
     button.secondary { background: #065f46; }
     button.alt { background: #4f46e5; }
     button.warn { background: #b45309; }
-    button[disabled] { opacity: 0.6; cursor: not-allowed; }
-    .badge { font-size: 12px; border: 1px solid #e5e7eb; padding: 0.15rem 0.5rem; border-radius: 999px; color: #374151; background: #f9fafb; }
-    pre { background: #0b1020; color: #e5e7eb; padding: 1rem; border-radius: 6px; overflow: auto; font-size: 12px; }
-    .section { border-top: 1px dashed #e5e7eb; margin-top: 1.25rem; padding-top: 1.25rem; }
-    .hint { font-size: 12px; color: #6b7280; }
-    .progress { font-size: 12px; color: #374151; }
+    button.danger { background:#b91c1c; }
+    button[disabled] { opacity: 0.55; cursor: not-allowed; }
+    .badge { font-size: 12px; border: 1px solid #e5e7eb; padding: 0.15rem 0.55rem; border-radius: 999px; color: #374151; background: #f9fafb; }
+    pre { background: #0b1020; color: #e5e7eb; padding: 1rem; border-radius: 6px; overflow: auto; font-size: 12px; line-height:1.4; }
+    .section { border-top: 1px dashed #e5e7eb; margin-top: 1.4rem; padding-top: 1.25rem; }
+    .hint { font-size: 11px; color: #6b7280; }
+    .progress { font-size: 12px; color: #374151; margin-top:4px; }
+    .groupTitle { display:flex; align-items:center; gap:0.5rem; }
+    .inlineStat { background:#f3f4f6; padding:2px 6px; border-radius:4px; font-size:11px; }
+    a { color:#1d4ed8; }
+    .pill { background:#eef2ff; color:#4338ca; font-weight:500; padding:2px 8px; font-size:11px; border-radius:12px; border:1px solid #c7d2fe; }
+    .flexBetween { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; }
+    .mt8 { margin-top:0.5rem; }
   </style>
 </head>
 <body>
@@ -39,23 +47,102 @@
     <div id="notAdmin" class="warn" style="display:none;">You must be an admin to use these tools.</div>
 
     <div id="tools" style="display:none;">
-      <!-- Normalize -->
+      <div class="muted" style="margin-bottom:1rem;">
+        Schema Version Target: <span class="pill">WERP v2 (PHS 4-param weighted)</span>
+      </div>
+
+      <!-- 1. Schema Diff -->
+      <div class="section" id="schemaDiffSection">
+        <div class="flexBetween">
+          <h2 class="groupTitle">1. Schema Diff (Preview Changes) <span class="badge">schemaDiffReport</span></h2>
+          <span class="hint">Optional visibility before migration & normalization.</span>
+        </div>
+        <p class="muted">
+          Shows which documents would change if normalization were applied now (structure, weights, totals).
+        </p>
+        <div class="row" style="margin:0.5rem 0 0.75rem;">
+          <label>Limit per page
+            <input type="number" id="diffLimit" min="10" max="500" step="10" value="100" />
+          </label>
+          <label>Start After Doc ID
+            <input type="text" id="diffStartAfter" placeholder="optional paging token" />
+          </label>
+          <button id="runDiffBtn">Run Diff Page</button>
+          <button id="nextDiffBtn" class="secondary" disabled>Next Page</button>
+          <button id="resetDiffBtn" class="alt">Reset</button>
+          <span id="diffBusy" class="badge" style="display:none;">Running...</span>
+        </div>
+        <div id="diffProgress" class="progress"></div>
+        <pre id="diffOut">{ }</pre>
+      </div>
+
+      <!-- 2. Migrate to PHS v2 -->
+      <div class="section" id="migrateSection">
+        <div class="flexBetween">
+          <h2 class="groupTitle">2. Migrate Legacy PHS → PHS v2 <span class="badge">migrateToPHSv2</span></h2>
+          <span class="hint">Run dry-run first.</span>
+        </div>
+        <p class="muted">
+          Converts any legacy PHS variants (different parameter counts/names/weights) into the canonical 4-parameter weighted schema. Also normalizes ESI maxScore if missing.
+        </p>
+        <div class="row" style="margin:0.6rem 0 0.75rem;">
+          <button id="migrateDryBtn">Dry-run</button>
+          <button id="migrateApplyBtn" class="secondary">Apply Migration</button>
+          <span id="migrateBusy" class="badge" style="display:none;">Running...</span>
+        </div>
+        <pre id="migrateOut">{ }</pre>
+      </div>
+
+      <!-- 3. Normalize (already existed) -->
       <div class="section">
-        <h2>Normalize WERP Records</h2>
-        <p class="muted">Sets status to "initial" unless Phase 2 exists; ensures totals are in-range; fills required shapes for charting.</p>
+        <div class="flexBetween">
+          <h2 class="groupTitle">3. Normalize WERP Records <span class="badge">normalizeWerps</span></h2>
+          <span class="hint">Run after migration completes.</span>
+        </div>
+        <p class="muted">Ensures canonical shapes (WCS, PHS v2, ESI, RPM), recomputes totals, sets status=completed if Phase 2 present, else initial.</p>
         <div class="row" style="margin: 0.5rem 0 1rem;">
-          <label>Page size <input type="number" id="normPageSize" min="50" max="450" step="50" value="300" /></label>
+          <label>Page size
+            <input type="number" id="normPageSize" min="50" max="450" step="50" value="300" />
+          </label>
           <button id="dryRunNormalizeBtn">Dry-run</button>
-          <button id="applyNormalizeBtn" class="secondary">Apply changes</button>
+          <button id="applyNormalizeBtn" class="secondary">Apply Changes</button>
           <span id="normBusy" class="badge" style="display:none;">Running...</span>
         </div>
         <pre id="normOut">{ }</pre>
       </div>
 
-      <!-- Repair with continuation -->
+      <!-- 4. Backfill Rationales -->
+      <div class="section" id="backfillSection">
+        <div class="flexBetween">
+          <h2 class="groupTitle">4. Backfill Rationales <span class="badge">backfillRationales</span></h2>
+          <span class="hint">Fill "Not specified." or empty rationales.</span>
+        </div>
+        <p class="muted">Iterates through documents adding concise rationales to any missing items without changing scores. Always dry-run first to see potential updates.</p>
+        <div class="row" style="margin:0.6rem 0;">
+          <label>Page size
+            <input type="number" id="backfillPageSize" min="20" max="400" step="20" value="100" />
+          </label>
+          <label>Start After Doc ID
+            <input type="text" id="backfillStartAfter" placeholder="optional manual start" />
+          </label>
+          <button id="backfillDryBtn">Dry-run (one page)</button>
+          <button id="backfillApplyBtn" class="secondary">Apply (one page)</button>
+          <button id="backfillAutoDryBtn" class="alt">Auto All (Dry-run)</button>
+          <button id="backfillAutoApplyBtn" class="warn">Auto All (Apply)</button>
+          <button id="backfillStopBtn" class="danger" disabled>Stop</button>
+          <span id="backfillBusy" class="badge" style="display:none;">Running...</span>
+        </div>
+        <div id="backfillProgress" class="progress"></div>
+        <pre id="backfillOut">{ }</pre>
+      </div>
+
+      <!-- 5. Repair (existing section, re-numbered) -->
       <div class="section">
-        <h2>Repair Missing Sections (PHS weights, ESI components)</h2>
-        <p class="muted">Re-runs incomplete sections using the model. Use single Doc ID or run across all with budgeted paging.</p>
+        <div class="flexBetween">
+          <h2 class="groupTitle">5. Repair Missing Sections <span class="badge">repairWerps</span></h2>
+          <span class="hint">Use sparingly after above steps.</span>
+        </div>
+        <p class="muted">Re-runs incomplete/misaligned sections (PHS weights, ESI, RPM) using the model. Use for single doc or limited paging after ingestion anomalies.</p>
 
         <div class="row" style="margin: 0.5rem 0;">
           <div class="col">
@@ -69,13 +156,13 @@
           <div class="col">
             <label for="repairStartAfter">Start After Doc ID (for paging)</label>
             <input id="repairStartAfter" type="text" placeholder="leave blank to start at beginning" />
-            <div class="hint">Use this to continue from where the last run stopped.</div>
+            <div class="hint">Continue from a previous run token.</div>
           </div>
           <div class="col">
             <label for="repairPageSize">Page size</label>
             <input id="repairPageSize" type="number" min="50" max="450" step="50" value="150" />
           </div>
-          <div class="col">
+            <div class="col">
             <label for="repairMaxDocs">Max docs per call</label>
             <input id="repairMaxDocs" type="number" min="1" max="450" step="1" value="50" />
           </div>
@@ -94,7 +181,7 @@
         <div id="repairProgress" class="progress"></div>
         <pre id="repairOut">{ }</pre>
         <p class="hint" id="repairHint" style="display:none;">
-          The repair function was not found. Ensure functions export repairWerps and it’s deployed in us-central1.
+          The repair function was not found. Ensure the function <code>repairWerps</code> is deployed in <code>us-central1</code>.
         </p>
       </div>
     </div>
@@ -123,22 +210,30 @@
     const db = getFirestore(app);
     const functions = getFunctions(app, "us-central1");
 
+    // Existing callables
     const normalizeWerps = httpsCallable(functions, "normalizeWerps");
     let repairWerps = null;
     try { repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
+    // New callables
+    let schemaDiffReport = null, migrateToPHSv2 = null, backfillRationales = null;
+    try { schemaDiffReport = httpsCallable(functions, "schemaDiffReport"); } catch {}
+    try { migrateToPHSv2 = httpsCallable(functions, "migrateToPHSv2"); } catch {}
+    try { backfillRationales = httpsCallable(functions, "backfillRationales"); } catch {}
 
-    // UI refs
+    // Shared gating UI
     const authState = document.getElementById("authState");
     const roleState = document.getElementById("roleState");
     const notAdmin = document.getElementById("notAdmin");
     const tools = document.getElementById("tools");
 
+    /* ---------- NORMALIZE ELEMENTS (existing) ---------- */
     const normOut = document.getElementById("normOut");
     const normBusy = document.getElementById("normBusy");
     const normPageSize = document.getElementById("normPageSize");
     const dryRunNormalizeBtn = document.getElementById("dryRunNormalizeBtn");
     const applyNormalizeBtn = document.getElementById("applyNormalizeBtn");
 
+    /* ---------- REPAIR ELEMENTS (existing) ---------- */
     const repairOut = document.getElementById("repairOut");
     const repairBusy = document.getElementById("repairBusy");
     const repairDocId = document.getElementById("repairDocId");
@@ -154,9 +249,39 @@
     const slugHint = document.getElementById("slugHint");
     const repairProgress = document.getElementById("repairProgress");
 
-    function setBusy(el, busy) { el.style.display = busy ? "" : "none"; }
-    function print(el, obj) { el.textContent = JSON.stringify(obj, null, 2); }
+    /* ---------- NEW: SCHEMA DIFF ---------- */
+    const diffLimit = document.getElementById("diffLimit");
+    const diffStartAfter = document.getElementById("diffStartAfter");
+    const runDiffBtn = document.getElementById("runDiffBtn");
+    const nextDiffBtn = document.getElementById("nextDiffBtn");
+    const resetDiffBtn = document.getElementById("resetDiffBtn");
+    const diffOut = document.getElementById("diffOut");
+    const diffBusy = document.getElementById("diffBusy");
+    const diffProgress = document.getElementById("diffProgress");
 
+    /* ---------- NEW: MIGRATE PHS V2 ---------- */
+    const migrateDryBtn = document.getElementById("migrateDryBtn");
+    const migrateApplyBtn = document.getElementById("migrateApplyBtn");
+    const migrateOut = document.getElementById("migrateOut");
+    const migrateBusy = document.getElementById("migrateBusy");
+
+    /* ---------- NEW: BACKFILL RATIONALES ---------- */
+    const backfillPageSize = document.getElementById("backfillPageSize");
+    const backfillStartAfter = document.getElementById("backfillStartAfter");
+    const backfillDryBtn = document.getElementById("backfillDryBtn");
+    const backfillApplyBtn = document.getElementById("backfillApplyBtn");
+    const backfillAutoDryBtn = document.getElementById("backfillAutoDryBtn");
+    const backfillAutoApplyBtn = document.getElementById("backfillAutoApplyBtn");
+    const backfillStopBtn = document.getElementById("backfillStopBtn");
+    const backfillOut = document.getElementById("backfillOut");
+    const backfillBusy = document.getElementById("backfillBusy");
+    const backfillProgress = document.getElementById("backfillProgress");
+
+    let backfillCancel = false;
+    let diffPaging = { nextToken: "", page: 0 };
+
+    function setBusy(el, busy) { el.style.display = busy ? "" : "none"; }
+    function print(el, obj) { el.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2); }
     function toSlug(name) {
       return String(name || "")
         .toLowerCase()
@@ -190,16 +315,78 @@
         repairHint.style.display = "";
         dryRunRepairBtn.disabled = true; applyRepairBtn.disabled = true; autoRepairBtn.disabled = true;
       }
+      if (!schemaDiffReport) {
+        runDiffBtn.disabled = true; nextDiffBtn.disabled = true; resetDiffBtn.disabled = true;
+        diffProgress.textContent = "schemaDiffReport not deployed.";
+      }
+      if (!migrateToPHSv2) {
+        migrateDryBtn.disabled = true; migrateApplyBtn.disabled = true;
+        print(migrateOut, { error: "migrateToPHSv2 not deployed." });
+      }
+      if (!backfillRationales) {
+        backfillDryBtn.disabled = backfillApplyBtn.disabled = backfillAutoDryBtn.disabled = backfillAutoApplyBtn.disabled = true;
+        backfillProgress.textContent = "backfillRationales not deployed.";
+      }
     });
 
-    slugifyBtn.addEventListener("click", () => {
-      const input = repairDocId.value.trim();
-      const slug = toSlug(input);
-      repairDocId.value = slug;
-      slugHint.textContent = slug ? `Doc ID -> ${slug}` : "";
+    /* ---------- SCHEMA DIFF HANDLERS ---------- */
+    runDiffBtn.addEventListener("click", async () => {
+      if (!schemaDiffReport) return;
+      setBusy(diffBusy, true);
+      diffProgress.textContent = "Running diff...";
+      try {
+        const limit = Number(diffLimit.value || 100);
+        const payload = { limit };
+        const token = diffStartAfter.value.trim() || diffPaging.nextToken;
+        if (token) payload.startAfterId = token;
+        const res = await schemaDiffReport(payload);
+        const data = res.data || res;
+        diffPaging.page += 1;
+        diffPaging.nextToken = data.nextPageStartAfterId || "";
+        diffProgress.textContent = `Page: ${diffPaging.page} | Changes this page: ${data.count || (data.diffs?.length||0)} | Next token: ${diffPaging.nextToken || "—"}`;
+        print(diffOut, data);
+        nextDiffBtn.disabled = !diffPaging.nextToken;
+      } catch (e) {
+        print(diffOut, { error: e?.message || String(e) });
+        diffProgress.textContent = "Error.";
+      } finally {
+        setBusy(diffBusy, false);
+      }
+    });
+    nextDiffBtn.addEventListener("click", () => runDiffBtn.click());
+    resetDiffBtn.addEventListener("click", () => {
+      diffPaging = { nextToken: "", page: 0 };
+      diffStartAfter.value = "";
+      nextDiffBtn.disabled = true;
+      diffProgress.textContent = "Reset.";
+      print(diffOut, { });
     });
 
-    // Normalize
+    /* ---------- MIGRATION HANDLERS ---------- */
+    migrateDryBtn.addEventListener("click", async () => {
+      if (!migrateToPHSv2) return;
+      setBusy(migrateBusy, true); print(migrateOut, { status: "Running dry-run..." });
+      try {
+        const res = await migrateToPHSv2({ dryRun: true });
+        print(migrateOut, res.data || res);
+      } catch (e) {
+        print(migrateOut, { error: e?.message || String(e) });
+      } finally { setBusy(migrateBusy, false); }
+    });
+
+    migrateApplyBtn.addEventListener("click", async () => {
+      if (!migrateToPHSv2) return;
+      if (!confirm("Apply PHS v2 migration? This will write changes.")) return;
+      setBusy(migrateBusy, true); print(migrateOut, { status: "Applying migration..." });
+      try {
+        const res = await migrateToPHSv2({ dryRun: false });
+        print(migrateOut, res.data || res);
+      } catch (e) {
+        print(migrateOut, { error: e?.message || String(e) });
+      } finally { setBusy(migrateBusy, false); }
+    });
+
+    /* ---------- NORMALIZE (existing) ---------- */
     dryRunNormalizeBtn.addEventListener("click", async () => {
       setBusy(normBusy, true); print(normOut, { status: "Running dry-run..." });
       try {
@@ -220,7 +407,85 @@
       finally { setBusy(normBusy, false); }
     });
 
-    // Repair — single page
+    /* ---------- BACKFILL RATIONALES ---------- */
+    async function runBackfillSingle(dryRun, auto=false) {
+      if (!backfillRationales) { print(backfillOut, { error: "backfillRationales not deployed." }); return; }
+      setBusy(backfillBusy, true);
+      if (!auto) print(backfillOut, { status: dryRun ? "Dry-run backfill..." : "Applying backfill..." });
+      try {
+        const payload = {
+          dryRun,
+          pageSize: Number(backfillPageSize.value || 100)
+        };
+        const start = backfillStartAfter.value.trim();
+        if (start) payload.startAfterId = start;
+        const res = await backfillRationales(payload);
+        const data = res.data || res;
+        print(backfillOut, data);
+        backfillProgress.textContent = `Scanned: ${data.scanned} Updated: ${data.updated} Next: ${data.nextPageStartAfterId || "—"}`;
+        if (data.nextPageStartAfterId) {
+          backfillStartAfter.value = data.nextPageStartAfterId;
+        }
+      } catch (e) {
+        print(backfillOut, { error: e?.message || String(e) });
+      } finally {
+        if (!auto) setBusy(backfillBusy, false);
+      }
+    }
+
+    async function runBackfillAuto(dryRun) {
+      if (!backfillRationales) return;
+      if (!dryRun && !confirm("Run full APPLY pass across all pages? This will write rationales.")) return;
+      backfillCancel = false;
+      backfillStopBtn.disabled = false;
+      setBusy(backfillBusy, true);
+      print(backfillOut, { status: `Starting auto pagination (dryRun=${dryRun})...` });
+      backfillProgress.textContent = "Starting...";
+      let totalUpdated = 0, loops = 0;
+      let next = backfillStartAfter.value.trim() || "";
+      const pageSize = Number(backfillPageSize.value || 100);
+
+      try {
+        while (!backfillCancel) {
+          loops++;
+            const payload = { dryRun, pageSize };
+          if (next) payload.startAfterId = next;
+          const res = await backfillRationales(payload);
+          const data = res.data || res;
+          totalUpdated += (data.updated || 0);
+          print(backfillOut, data);
+          backfillProgress.textContent = `Loops: ${loops} TotalUpdated: ${totalUpdated} LastPageUpdated: ${data.updated} Next: ${data.nextPageStartAfterId || "—"}`;
+          if (!data.nextPageStartAfterId) break;
+          next = data.nextPageStartAfterId;
+          await new Promise(r => setTimeout(r, 400));
+        }
+        if (backfillCancel) {
+          backfillProgress.textContent += " — Stopped by user.";
+        } else {
+          backfillProgress.textContent += " — Completed.";
+        }
+      } catch (e) {
+        print(backfillOut, { error: e?.message || String(e) });
+      } finally {
+        backfillStopBtn.disabled = true;
+        setBusy(backfillBusy, false);
+      }
+    }
+
+    backfillDryBtn.addEventListener("click", () => runBackfillSingle(true));
+    backfillApplyBtn.addEventListener("click", () => runBackfillSingle(false));
+    backfillAutoDryBtn.addEventListener("click", () => runBackfillAuto(true));
+    backfillAutoApplyBtn.addEventListener("click", () => runBackfillAuto(false));
+    backfillStopBtn.addEventListener("click", () => { backfillCancel = true; backfillStopBtn.disabled = true; });
+
+    /* ---------- REPAIR HANDLERS (existing) ---------- */
+    slugifyBtn.addEventListener("click", () => {
+      const input = repairDocId.value.trim();
+      const slug = toSlug(input);
+      repairDocId.value = slug;
+      slugHint.textContent = slug ? `Doc ID -> ${slug}` : "";
+    });
+
     async function runRepairOnce(dryRun) {
       if (!repairWerps) { print(repairOut, { error: "repairWerps not deployed in us-central1." }); return; }
       setBusy(repairBusy, true); print(repairOut, { status: dryRun ? "Running dry-run (single page)..." : "Applying (single page)..." });
@@ -258,7 +523,6 @@
       runRepairOnce(false);
     });
 
-    // Repair — auto-continue until done
     autoRepairBtn.addEventListener("click", async () => {
       if (!repairWerps) return;
       if (!confirm("Auto-continue repair across pages until completed? This will write to Firestore.")) return;
@@ -278,23 +542,22 @@
 
       setBusy(repairBusy, true);
       repairProgress.textContent = "Starting...";
-      let totalScanned = 0, totalUpdated = 0, totalPhs = 0, totalEsi = 0, calls = 0;
+      let totalScanned = 0, totalUpdated = 0, totalPhs = 0, totalEsi = 0, totalRpm = 0, calls = 0;
 
       try {
         while (true) {
           const payload = { ...payloadBase };
           if (next) payload.startAfterId = next;
-
           const res = await repairWerps(payload);
           const data = res.data || res;
-
           calls += 1;
           totalScanned += Number(data?.scanned || 0);
           totalUpdated += Number(data?.updated || 0);
           totalPhs += Number(data?.phsFixed || 0);
           totalEsi += Number(data?.esiFixed || 0);
+          totalRpm += Number(data?.rpmFixed || 0);
 
-          repairProgress.textContent = `Calls: ${calls} | Scanned: ${totalScanned} | Updated: ${totalUpdated} | PHS fixed: ${totalPhs} | ESI fixed: ${totalEsi}`;
+          repairProgress.textContent = `Calls:${calls} Scanned:${totalScanned} Updated:${totalUpdated} PHS:${totalPhs} ESI:${totalEsi} RPM:${totalRpm}`;
           print(repairOut, data);
 
           if (data?.nextPageStartAfterId) {
@@ -304,7 +567,6 @@
           }
           break;
         }
-
         repairProgress.textContent += " — Completed.";
       } catch (e) {
         print(repairOut, { error: e?.message || String(e) });
