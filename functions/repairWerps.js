@@ -123,14 +123,14 @@ function buildSchemas() {
             properties: {
               name: { type: "string" },
               rationale: { type: "string" },
-              value: { type: "number", minimum: 1.0, maximum: 2.5 }
+              value: { type: "number", minimum: 0.5, maximum: 2.5 }
             },
             required: ["name", "value"]
           },
           minItems: 4,
           maxItems: 12
         },
-        finalMultiplier: { type: "number", minimum: 1.0, maximum: 2.5 }
+        finalMultiplier: { type: "number", minimum: 0.5, maximum: 2.5 }
       },
       required: ["factors"]
     }
@@ -177,19 +177,20 @@ Return strictly valid JSON:
 {
   "parameters": [
     {"name":"Fuel Volume & Type","rationale":"...","weight":1,"score":0-10},
-    {"name":"Cargo Risk","rationale":"...","weight":1,"score":0-10},
-    {"name":"Residual Oils","rationale":"...","weight":1,"score":0-10},
-    {"name":"Leak Likelihood","rationale":"...","weight":1,"score":0-10}
+    {"name":"Ordnance","rationale":"...","weight":1,"score":0-10},
+    {"name":"Vessel Integrity & Sinking Dynamics","rationale":"...","weight":1,"score":0-10},
+    {"name":"Hazardous Materials (Non-Fuel/Ordnance)","rationale":"...","weight":1,"score":0-10}
   ],
   "totalWeightedScore": 0-10
 }
 Rules:
+- Higher score = higher risk.
 - Include weights for every parameter (default to 1 when uncertain).
 - totalWeightedScore is the weighted average of the scores (clamped 0..10).`;
 }
 
 function getEsiPrompt(v, loc) {
-  return `You are a marine ecologist. For "${v}" near "${loc}", produce ESI.
+  return `You are a marine ecologist. For "${v}" near "${loc}", produce ESI (higher score = higher sensitivity).
 Return strictly valid JSON:
 {
   "parameters": [
@@ -201,7 +202,7 @@ Return strictly valid JSON:
   "totalScore": 0-40
 }
 Rules:
-- Return all four parameters with specific rationales (avoid 'insufficient data' unless truly unknown).
+- Provide concrete rationales (no 'insufficient data' unless truly unknown).
 - totalScore equals the sum (0..40).`;
 }
 
@@ -210,16 +211,16 @@ function getRpmPrompt(v, loc) {
 Return strictly valid JSON:
 {
   "factors": [
-    {"name":"Thermal Stress","rationale":"... (use SST anomalies, marine heatwave frequency, depth)","value":1.0-2.5},
-    {"name":"Storm Exposure","rationale":"... (cyclone track density, fetch, wave climate)","value":1.0-2.5},
-    {"name":"Seismic Activity","rationale":"... (USGS/GCMT seismicity, subduction proximity)","value":1.0-2.5},
-    {"name":"Anthropogenic Disturbance","rationale":"... (shipping lanes, fishing pressure, coastal development)","value":1.0-2.5}
+    {"name":"Thermal Stress","rationale":"... (SST anomalies, MHW frequency, depth)","value":0.5-2.5},
+    {"name":"Storm Exposure","rationale":"... (cyclone tracks, fetch, wave climate)","value":0.5-2.5},
+    {"name":"Seismic Activity","rationale":"... (regional seismicity, subduction proximity)","value":0.5-2.5},
+    {"name":"Anthropogenic Disturbance","rationale":"... (shipping lanes, fishing pressure, development)","value":0.5-2.5}
   ],
-  "finalMultiplier": 1.0-2.5
+  "finalMultiplier": 0.5-2.5
 }
 Rules:
 - Provide a concrete rationale for each factor (no 'insufficient data').
-- finalMultiplier must equal the average of factor values (rounded to two decimals if necessary).`;
+- finalMultiplier must equal the average of factor values (rounded to two decimals).`;
 }
 
 function recomputePhsTotal(phs) {
@@ -232,7 +233,6 @@ function recomputePhsTotal(phs) {
   const wval = params.reduce((s, p, i) => s + ((clamp(toNum(p.score) ?? 0, 0, 10)) * weights[i]), 0);
   return { parameters: params, totalWeightedScore: clamp(wval / wsum, 0, 10) ?? 0 };
 }
-
 function ensureEsiFour(esi) {
   const required = ["Proximity to Sensitive Ecosystems","Biodiversity Value","Protected Areas","Socioeconomic Sensitivity"];
   const raw = coerceParameterArray(esi?.parameters, ["score"]);
@@ -249,14 +249,13 @@ function ensureEsiFour(esi) {
   const total = clamp(params.reduce((s, p) => s + (toNum(p.score) ?? 0), 0), 0, 40) ?? 0;
   return { parameters: params, totalScore: total };
 }
-
 function ensureRpm(rpm) {
   const required = ["Thermal Stress","Storm Exposure","Seismic Activity","Anthropogenic Disturbance"];
   const raw = coerceParameterArray(rpm?.factors, ["value"]);
   const by = {}; for (const f of raw) if (f?.name) by[f.name] = f;
   const factors = required.map(name => {
     const f = by[name];
-    const v = clamp(toNum(f?.value) ?? 1.0, 1.0, 2.5);
+    const v = clamp(toNum(f?.value) ?? 1.0, 0.5, 2.5);
     return f ? {
       ...f,
       name,
@@ -264,8 +263,8 @@ function ensureRpm(rpm) {
       rationale: (typeof f?.rationale === "string" && f.rationale.trim()) ? f.rationale : "Not specified."
     } : { name, value: 1.0, rationale: "Insufficient data." };
   });
-  const avg = clamp(factors.reduce((s, f) => s + (toNum(f.value) ?? 1.0), 0) / factors.length, 1.0, 2.5) ?? 1.0;
-  return { factors, finalMultiplier: avg };
+  const avg = clamp(factors.reduce((s, f) => s + (toNum(f.value) ?? 1.0), 0) / factors.length, 0.5, 2.5) ?? 1.0;
+  return { factors, finalMultiplier: Math.round(avg * 100) / 100 };
 }
 
 function needsPhsRepair(data) {
@@ -275,7 +274,6 @@ function needsPhsRepair(data) {
   const badTotal = !(typeof data?.phs?.totalWeightedScore === "number");
   return missingWeight || badTotal;
 }
-
 function needsEsiRepair(data) {
   const p = data?.esi?.parameters;
   if (!Array.isArray(p) || p.length < 4) return true;
@@ -286,7 +284,6 @@ function needsEsiRepair(data) {
   const badTotal = !(typeof data?.esi?.totalScore === "number");
   return missingAny || tooManyInsufficient || badTotal;
 }
-
 function needsRpmRepair(data) {
   const f = data?.rpm?.factors;
   if (!Array.isArray(f) || f.length < 4) return true;
@@ -294,9 +291,8 @@ function needsRpmRepair(data) {
   const required = ["Thermal Stress","Storm Exposure","Seismic Activity","Anthropogenic Disturbance"];
   const missingAny = required.some(r => !names.has(r));
   const tooManyInsufficient = f.filter(x => /insufficient data/i.test(String(x?.rationale || ""))).length >= 2;
-  const allDefaultOnes = f.every(x => (toNum(x?.value) ?? 1.0) <= 1.05);
-  const badFinal = !(typeof data?.rpm?.finalMultiplier === "number") || (data?.rpm?.finalMultiplier < 1.0 || data?.rpm?.finalMultiplier > 2.5);
-  return missingAny || tooManyInsufficient || allDefaultOnes || badFinal;
+  const badFinal = !(typeof data?.rpm?.finalMultiplier === "number") || data.rpm.finalMultiplier < 0.5 || data.rpm.finalMultiplier > 2.5;
+  return missingAny || tooManyInsufficient || badFinal;
 }
 
 export const repairWerps = onCall(

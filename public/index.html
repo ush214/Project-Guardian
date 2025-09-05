@@ -32,6 +32,7 @@
     th { background: #f9fafb; font-weight: 600; }
     .wreck-list-item.active { background: #e0f2fe !important; }
     .badge { font-size: 12px; border: 1px solid #e5e7eb; padding: 0.15rem 0.5rem; border-radius: 999px; color: #374151; background: #f9fafb; }
+    .note { font-size: 12px; color: #6b7280; }
   </style>
 </head>
 <body class="text-gray-800" style="font-family: 'Inter', sans-serif;">
@@ -108,7 +109,10 @@
       <!-- Analyze New Vessel -->
       <div class="bg-white rounded-lg shadow-lg p-6 mb-8 max-w-2xl mx-auto">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-semibold text-gray-700">Analyze New Vessel</h2>
+          <div class="flex items-center gap-3">
+            <h2 class="text-xl font-semibold text-gray-700">Analyze New Vessel</h2>
+            <span id="modelNote" class="note"></span>
+          </div>
           <span id="contribHint" class="text-xs text-gray-500 hidden">Contributor access required</span>
         </div>
         <div class="flex flex-col sm:flex-row gap-4">
@@ -241,6 +245,7 @@
     // --- UI Elements ---
     const ui = {
       themeToggle: document.getElementById('themeToggle'),
+      modelNote: document.getElementById('modelNote'),
       vesselNameInput: document.getElementById('vesselName'),
       analyzeBtn: document.getElementById('analyzeBtn'),
       analyzeText: document.getElementById('analyzeText'),
@@ -295,6 +300,9 @@
       listenForPreviousAnalyses();
       ui.statusMessage.textContent = "";
       applyPermissions();
+
+      // Clarify model intent: high score = higher risk/sensitivity
+      ui.modelNote.textContent = "Scales: WCS 0–20, PHS 0–10, ESI 0–40 (or 0–10 auto-detected), RPM 0.5×–2.5× (1.0× baseline). Higher = higher risk.";
     }
 
     // --- Auth UI helpers ---
@@ -692,7 +700,7 @@ Return JSON:
   ],
   "totalScore": 0-20
 }
-Ensure totalScore is the sum of parameter scores (0..20).`;
+Higher score = higher risk. Ensure totalScore is the sum of parameter scores (0..20).`;
     }
     function getPhsPrompt(v, context) {
       return `You are a marine pollution expert. For "${v}", analyze PHS using context: ${context}.
@@ -700,13 +708,13 @@ Return JSON:
 {
   "parameters": [
     {"name":"Fuel Volume & Type","rationale":"...","weight":1,"score":0-10},
-    {"name":"Cargo Risk","rationale":"...","weight":1,"score":0-10},
-    {"name":"Residual Oils","rationale":"...","weight":1,"score":0-10},
-    {"name":"Leak Likelihood","rationale":"...","weight":1,"score":0-10}
+    {"name":"Ordnance","rationale":"...","weight":1,"score":0-10},
+    {"name":"Vessel Integrity & Sinking Dynamics","rationale":"...","weight":1,"score":0-10},
+    {"name":"Hazardous Materials (Non-Fuel/Ordnance)","rationale":"...","weight":1,"score":0-10}
   ],
   "totalWeightedScore": 0-10
 }
-Rules: include weights (default 1) and totalWeightedScore computed as weighted average 0..10.`;
+Higher score = higher risk. totalWeightedScore is the weighted average 0..10.`;
     }
     function getEsiPrompt(v, loc) {
       return `You are a marine ecologist. For "${v}" near "${loc}", analyze ESI.
@@ -720,21 +728,21 @@ Return JSON:
   ],
   "totalScore": 0-40
 }
-Ensure all four parameters are present with rationales; totalScore is the sum 0..40.`;
+Higher score = higher sensitivity. totalScore is the sum 0..40.`;
     }
     function getRpmPrompt(v, loc) {
       return `You are a climate scientist. For "${v}" near "${loc}", analyze RPM.
 Return JSON:
 {
   "factors": [
-    {"name":"Thermal Stress","rationale":"...","value":1.0-2.5},
-    {"name":"Storm Exposure","rationale":"...","value":1.0-2.5},
-    {"name":"Seismic Activity","rationale":"...","value":1.0-2.5},
-    {"name":"Anthropogenic Disturbance","rationale":"...","value":1.0-2.5}
+    {"name":"Thermal Stress","rationale":"...","value":0.5-2.5},
+    {"name":"Storm Exposure","rationale":"...","value":0.5-2.5},
+    {"name":"Seismic Activity","rationale":"...","value":0.5-2.5},
+    {"name":"Anthropogenic Disturbance","rationale":"...","value":0.5-2.5}
   ],
-  "finalMultiplier": 1.0-2.5
+  "finalMultiplier": 0.5-2.5
 }
-Ensure each factor includes a rationale and finalMultiplier is the average of values.`;
+Higher value = higher external pressure. finalMultiplier is the average of values.`;
     }
     function getSummaryPrompt(v, d) {
       const c = JSON.stringify(d);
@@ -763,6 +771,26 @@ Return JSON:
     function setRateLimit() {
       isRateLimited = true;
       setTimeout(() => { isRateLimited = false; updateStatus(""); }, 30000);
+    }
+
+    // Scale helpers: make front-end respect back-end scales (no misrepresentation).
+    function normalizeTo20(value, detectedMax) {
+      const v = Number(value ?? 0);
+      const max = detectedMax || 20;
+      if (!Number.isFinite(v) || max <= 0) return 0;
+      return Math.max(0, Math.min(20, (v / max) * 20));
+    }
+    function detectMaxFromTotals(total, expected20 = true) {
+      const t = Number(total ?? 0);
+      if (!Number.isFinite(t)) return expected20 ? 20 : 10;
+      // If clearly 0..10 style totals, use 10; else default to 20.
+      return t <= 10 ? 10 : 20;
+    }
+    function rpmTo20(mult) {
+      const m = Number(mult ?? 1);
+      // Map 0.5..2.5 -> 0..20 linearly; 1.0 -> 10 (baseline)
+      const clamped = Math.max(0.5, Math.min(2.5, m));
+      return ((clamped - 0.5) / 2.0) * 20;
     }
 
     function renderReport(data, docId) {
@@ -833,10 +861,47 @@ Return JSON:
         return table;
       }
 
-      const wcsTotal = Number(data?.wcs?.totalScore ?? 0);
-      const phsTotal = Number(data?.phs?.totalWeightedScore ?? 0);
-      const esiTotal = Number(data?.esi?.totalScore ?? 0);
-      const rpmMult = Number(data?.rpm?.finalMultiplier ?? 1.0);
+      // Respect stored totals and scales; compute if missing.
+      const wcsParams = Array.isArray(data?.wcs?.parameters) ? data.wcs.parameters : [];
+      const wcsStoredTotal = Number(data?.wcs?.totalScore);
+      const wcsDetectedMax = detectMaxFromTotals(wcsStoredTotal, true); // expect 20, but detect 10 if needed
+      const wcsTotal = Number.isFinite(wcsStoredTotal)
+        ? wcsStoredTotal
+        : wcsParams.reduce((s, p) => s + (Number(p?.score) || 0), 0);
+      const wcsDisplayDenom = wcsDetectedMax;
+      const wcsForRadar = normalizeTo20(wcsTotal, wcsDetectedMax);
+
+      const phsParams = Array.isArray(data?.phs?.parameters) ? data.phs.parameters : [];
+      const phsStoredTotal = Number(data?.phs?.totalWeightedScore);
+      const phsTotal = Number.isFinite(phsStoredTotal)
+        ? phsStoredTotal
+        : (() => {
+            const weights = phsParams.map(p => Number(p?.weight) || 1).map(w => (w > 0 ? w : 1));
+            const wsum = weights.reduce((s, w) => s + w, 0) || 1;
+            const wval = phsParams.reduce((s, p, i) => s + ((Math.max(0, Math.min(10, Number(p?.score) || 0))) * weights[i]), 0);
+            return Math.max(0, Math.min(10, wval / wsum));
+          })();
+      const phsForRadar = normalizeTo20(phsTotal, 10);
+
+      const esiParams = Array.isArray(data?.esi?.parameters) ? data.esi.parameters : [];
+      const esiStoredTotal = Number(data?.esi?.totalScore);
+      // Detect 0..10 vs 0..40 for ESI
+      const esiDetectedMax = (Number.isFinite(esiStoredTotal) && esiStoredTotal <= 10) ? 10 : 40;
+      const esiTotal = Number.isFinite(esiStoredTotal)
+        ? esiStoredTotal
+        : esiParams.reduce((s, p) => s + (Math.max(0, Math.min(10, Number(p?.score) || 0))), 0);
+      const esiForRadar = normalizeTo20(esiTotal, esiDetectedMax);
+
+      const rpmFactors = Array.isArray(data?.rpm?.factors) ? data.rpm.factors : [];
+      const rpmStoredFinal = Number(data?.rpm?.finalMultiplier);
+      const rpmFinal = Number.isFinite(rpmStoredFinal)
+        ? rpmStoredFinal
+        : (() => {
+            const vals = rpmFactors.map(f => Number(f?.value)).filter(v => Number.isFinite(v));
+            const avg = (vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 1.0);
+            return Math.max(0.5, Math.min(2.5, avg));
+          })();
+      const rpmForRadar = rpmTo20(rpmFinal);
 
       ui.reportContent.innerHTML = `
         <section>
@@ -862,18 +927,19 @@ Return JSON:
         <section>
           <h3>Phase 3: WCS (Hull & Structure)</h3>
           ${createTable(
-            data?.wcs?.parameters ?? [],
+            wcsParams,
             ['Parameter', 'Rationale', 'Score'],
             ['name', 'rationale', 'score'],
             { score: (v) => (v ?? '') }
           )}
-          <p class="mt-2"><strong>Total Score:</strong> ${Number.isFinite(wcsTotal) ? wcsTotal : '—'} / 20</p>
+          <p class="mt-2"><strong>Total:</strong> ${Number.isFinite(wcsTotal) ? wcsTotal : '—'} / ${wcsDisplayDenom}</p>
+          ${wcsDetectedMax === 10 ? '<p class="note">Detected a 0–10 scale for WCS in this record; normalized for chart.</p>' : ''}
         </section>
 
         <section>
           <h3>Phase 3: PHS (Pollution Hazard)</h3>
           ${createTable(
-            (data?.phs?.parameters ?? []).map(p => ({ ...p, weight: (p?.weight ?? 1) })),
+            phsParams.map(p => ({ ...p, weight: (p?.weight ?? 1) })),
             ['Parameter', 'Rationale', 'Weight', 'Score'],
             ['name', 'rationale', 'weight', 'score'],
             {
@@ -887,25 +953,26 @@ Return JSON:
         <section>
           <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
           ${createTable(
-            data?.esi?.parameters ?? [],
+            esiParams,
             ['Parameter', 'Rationale', 'Score'],
             ['name', 'rationale', 'score'],
             { score: (v) => (v ?? '') }
           )}
-          <p class="mt-2"><strong>Total Score:</strong> ${Number.isFinite(esiTotal) ? esiTotal : '—'} / 40</p>
+          <p class="mt-2"><strong>Total:</strong> ${Number.isFinite(esiTotal) ? esiTotal : '—'} / ${esiDetectedMax}</p>
+          ${esiDetectedMax === 10 ? '<p class="note">Detected a 0–10 ESI scale in this record; normalized for chart.</p>' : ''}
         </section>
 
         <section>
           <h3>Phase 3: RPM (Risk Pressure Modifiers)</h3>
           ${createTable(
-            (data?.rpm?.factors ?? []).map(f => ({
+            rpmFactors.map(f => ({
               ...f,
               rationale: (typeof f?.rationale === 'string' && f.rationale.trim()) ? f.rationale : 'Not specified.'
             })),
             ['Factor', 'Rationale', 'Value'],
             ['name', 'rationale', 'value']
           )}
-          <p class="mt-2"><strong>Final Multiplier:</strong> ${Number.isFinite(rpmMult) ? rpmMult.toFixed(2) : '—'}×</p>
+          <p class="mt-2"><strong>Final Multiplier:</strong> ${Number.isFinite(rpmFinal) ? rpmFinal.toFixed(2) : '—'}× <span class="note">(0.5×–2.5×, 1.0× baseline)</span></p>
         </section>
 
         <section>
@@ -963,23 +1030,27 @@ Return JSON:
         }
       }
 
+      // Radar chart with explicit Low/Medium/High benchmark bands
       createOrUpdateSpiderChart({
-        wcs: wcsTotal,
-        phs: phsTotal,
-        esi: esiTotal,
-        rpm: rpmMult
+        wcs20: wcsForRadar,   // already normalized to 0..20
+        phs20: phsForRadar,   // 0..20
+        esi20: esiForRadar,   // 0..20
+        rpm20: rpmForRadar    // 0..20 (0.5..2.5 -> 0..20)
       });
+
       ui.reportContainer.classList.remove('hidden');
     }
 
     function getRiskProfile(data) {
       try {
-        const wcs = data?.wcs?.totalScore ? data.wcs.totalScore / 20 : 0;
-        const phs = data?.phs?.totalWeightedScore ? data.phs.totalWeightedScore / 10 : 0;
-        const esi = data?.esi?.totalScore ? data.esi.totalScore / 40 : 0;
-        const rpm = data?.rpm?.finalMultiplier ? (data.rpm.finalMultiplier - 1) / 1.5 : 0;
+        // Normalize to 0..1 for rough color coding
+        const wcs20 = normalizeTo20(Number(data?.wcs?.totalScore ?? 0), detectMaxFromTotals(data?.wcs?.totalScore, true));
+        const phs20 = normalizeTo20(Number(data?.phs?.totalWeightedScore ?? 0), 10);
+        const esiMax = (Number(data?.esi?.totalScore ?? 0) <= 10 ? 10 : 40);
+        const esi20 = normalizeTo20(Number(data?.esi?.totalScore ?? 0), esiMax);
+        const rpm20 = rpmTo20(Number(data?.rpm?.finalMultiplier ?? 1.0));
 
-        const avg = (wcs + phs + esi + rpm) / 4;
+        const avg = (wcs20 + phs20 + esi20 + rpm20) / (4 * 20); // 0..1
         const color = avg >= 0.66 ? 'red' : avg >= 0.33 ? 'orange' : 'green';
         const label = avg >= 0.66 ? 'High' : avg >= 0.33 ? 'Medium' : 'Low';
 
@@ -995,63 +1066,21 @@ Return JSON:
     }
 
     // Radar chart with explicit Low/Medium/High benchmark bands
-    // Scale: WCS 0..20, PHS 0..10 (scaled to 0..20), ESI 0..40 (scaled to 0..20), RPM 1.0..2.5 mapped to ~0..20
-    function createOrUpdateSpiderChart(scores) {
+    function createOrUpdateSpiderChart({ wcs20, phs20, esi20, rpm20 }) {
       const ctx = document.getElementById('werSpiderChart').getContext('2d');
 
-      const wcs = Number(scores?.wcs ?? 0);          // 0..20
-      const phs = Number(scores?.phs ?? 0) * 2;      // 0..10 -> 0..20
-      const esi = Number(scores?.esi ?? 0) / 2;      // 0..40 -> 0..20
-      const rpm = Math.max(0, Math.min(20, ((Number(scores?.rpm ?? 1) - 1) * (20 / 1.5)))); // approx 0..20
-
-      const profile = [wcs, phs, esi, rpm];
+      const profile = [
+        Number(wcs20 ?? 0),
+        Number(phs20 ?? 0),
+        Number(esi20 ?? 0),
+        Number(rpm20 ?? 0)
+      ].map(v => Math.max(0, Math.min(20, v)));
 
       // Benchmarks as concentric bands:
       // Low: 0..6 (green), Medium: 6..12 (amber), High: 12..20 (red)
-      const lowCap = [6,6,6,6];
-      const medCap = [12,12,12,12];
-      const highCap = [20,20,20,20];
-
-      const datasets = [
-        // Low band (0 -> 6)
-        {
-          label: 'Low benchmark',
-          data: lowCap,
-          backgroundColor: 'rgba(16,185,129,0.18)',   // green-500 @ ~18%
-          borderColor: 'rgba(16,185,129,0.45)',
-          pointRadius: 0,
-          order: 1
-        },
-        // Medium band (6 -> 12), filled to previous (low)
-        {
-          label: 'Medium benchmark',
-          data: medCap,
-          backgroundColor: 'rgba(245,158,11,0.14)',   // amber-500 @ ~14%
-          borderColor: 'rgba(245,158,11,0.45)',
-          pointRadius: 0,
-          fill: '-1',
-          order: 2
-        },
-        // High band (12 -> 20), filled to previous (medium)
-        {
-          label: 'High benchmark',
-          data: highCap,
-          backgroundColor: 'rgba(239,68,68,0.12)',    // red-500 @ ~12%
-          borderColor: 'rgba(239,68,68,0.45)',
-          pointRadius: 0,
-          fill: '-1',
-          order: 3
-        },
-        // Actual profile
-        {
-          label: 'Risk Profile',
-          data: profile,
-          backgroundColor: 'rgba(30, 64, 175, 0.22)',  // indigo-800 @ ~22%
-          borderColor: 'rgba(30, 64, 175, 1)',
-          pointBackgroundColor: 'rgba(30, 64, 175, 1)',
-          order: 4
-        }
-      ];
+      const lowCap = [6, 6, 6, 6];
+      const medCap = [12, 12, 12, 12];
+      const highCap = [20, 20, 20, 20];
 
       if (window.spiderChart) {
         window.spiderChart.data.datasets[0].data = lowCap;
@@ -1066,7 +1095,42 @@ Return JSON:
         type: 'radar',
         data: {
           labels: ['WCS', 'PHS', 'ESI', 'RPM'],
-          datasets
+          datasets: [
+            {
+              label: 'Low benchmark',
+              data: lowCap,
+              backgroundColor: 'rgba(16,185,129,0.18)',   // green-500 @ ~18%
+              borderColor: 'rgba(16,185,129,0.45)',
+              pointRadius: 0,
+              order: 1
+            },
+            {
+              label: 'Medium benchmark',
+              data: medCap,
+              backgroundColor: 'rgba(245,158,11,0.14)',   // amber-500 @ ~14%
+              borderColor: 'rgba(245,158,11,0.45)',
+              pointRadius: 0,
+              fill: '-1',
+              order: 2
+            },
+            {
+              label: 'High benchmark',
+              data: highCap,
+              backgroundColor: 'rgba(239,68,68,0.12)',    // red-500 @ ~12%
+              borderColor: 'rgba(239,68,68,0.45)',
+              pointRadius: 0,
+              fill: '-1',
+              order: 3
+            },
+            {
+              label: 'Risk Profile',
+              data: profile,
+              backgroundColor: 'rgba(30, 64, 175, 0.22)',  // indigo-800 @ ~22%
+              borderColor: 'rgba(30, 64, 175, 1)',
+              pointBackgroundColor: 'rgba(30, 64, 175, 1)',
+              order: 4
+            }
+          ]
         },
         options: {
           responsive: true,
@@ -1127,12 +1191,12 @@ ${text}`;
       const c = JSON.stringify({ existing, phase2Text });
       return `Given this existing WERP data and new Phase 2 notes:
 ${c}
-Recompute only numeric scoring fields (WCS.totalScore 0-20, PHS.totalWeightedScore 0-10, ESI.totalScore 0-40, RPM.finalMultiplier 1.0-2.5). Return JSON:
+Recompute only numeric scoring fields (WCS.totalScore 0-20 or 0-10 if used, PHS.totalWeightedScore 0-10, ESI.totalScore 0-40 or 0-10, RPM.finalMultiplier 0.5-2.5). Return JSON:
 {
-  "wcs": { "totalScore": 0-20 },
-  "phs": { "totalWeightedScore": 0-10 },
-  "esi": { "totalScore": 0-40 },
-  "rpm": { "finalMultiplier": 1.0-2.5 }
+  "wcs": { "totalScore": <number> },
+  "phs": { "totalWeightedScore": <number> },
+  "esi": { "totalScore": <number> },
+  "rpm": { "finalMultiplier": <number> }
 }`;
     }
 
@@ -1165,6 +1229,11 @@ Recompute only numeric scoring fields (WCS.totalScore 0-20, PHS.totalWeightedSco
       return { parameters: params, totalScore: Math.max(0, Math.min(40, total)) };
     }
 
+    function setLoading(isLoading, text = 'Analyzing...') {
+      ui.analyzeBtn.disabled = isLoading || !(currentRole === 'contributor' || currentRole === 'admin');
+      ui.spinner.classList.toggle('hidden', !isLoading);
+      ui.analyzeText.textContent = isLoading ? text : 'Analyze Wreck';
+    }
   </script>
 </body>
 </html>
