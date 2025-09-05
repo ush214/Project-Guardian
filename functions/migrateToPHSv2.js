@@ -2,10 +2,8 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { db } from "./admin.js";
 import { FieldPath } from "firebase-admin/firestore";
 import {
-  normalizeWCS,
   normalizeToPHSV2,
-  normalizeESI,
-  normalizeRPM
+  normalizeESI
 } from "./schemaMapping.js";
 
 const REGION = "us-central1";
@@ -21,31 +19,27 @@ async function getRole(uid) {
   }
 }
 
-function deriveStatus(doc) {
-  const hasPhase2 = !!(doc.phase2 && (doc.phase2.summary || Object.keys(doc.phase2).length > 0));
-  return hasPhase2 ? "completed" : "initial";
-}
-
-export const normalizeWerps = onCall(
+export const migrateToPHSv2 = onCall(
   {
     region: REGION,
     invoker: "public",
-    cors: true
+    cors: true,
+    timeoutSeconds: 540,
+    memory: "512MiB"
   },
   async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
     const role = await getRole(uid);
-    if (role !== "admin") throw new HttpsError("permission-denied", "Admin access required.");
+    if (role !== "admin") throw new HttpsError("permission-denied", "Admin only.");
 
     const dryRun = req.data?.dryRun === undefined ? true : !!req.data.dryRun;
-    const pageSizeRaw = parseInt(String(req.data?.pageSize ?? "300"), 10);
-    const pageSize = Math.min(Math.max(Number.isFinite(pageSizeRaw) ? pageSizeRaw : 300, 50), 450);
+    const pageSize = 300;
 
     const col = db.collection(TARGET_PATH);
-    let last = null;
-    let pages = 0, scanned = 0, wrote = 0, planWrites = 0;
+    let pages = 0, scanned = 0, upgraded = 0, wrote = 0;
     const errors = [];
+    let last = null;
 
     while (true) {
       let q = col.orderBy(FieldPath.documentId()).limit(pageSize);
@@ -58,29 +52,19 @@ export const normalizeWerps = onCall(
         scanned++;
         try {
           const data = d.data() || {};
-          const newWcs = normalizeWCS(data.wcs || {});
+          // Upgrade PHS
           const newPhs = normalizeToPHSV2(data.phs || {});
+          const phsChanged = JSON.stringify(data.phs) !== JSON.stringify(newPhs);
+          // Align ESI maxScore if missing
           const newEsi = normalizeESI(data.esi || {});
-          const newRpm = normalizeRPM(data.rpm || {});
-          const newStatus = deriveStatus(data);
+          const esiChanged = JSON.stringify(data.esi) !== JSON.stringify(newEsi);
 
-            // Only update changed sections
-          const update = {};
-          const changed = (field, newVal) => {
-            const oldVal = data[field];
-            if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-              update[field] = newVal;
-            }
-          };
-          changed("wcs", newWcs);
-          changed("phs", newPhs);
-          changed("esi", newEsi);
-          changed("rpm", newRpm);
-          if (data.status !== newStatus) update.status = newStatus;
-
-          if (Object.keys(update).length > 0) {
-            planWrites++;
+          if (phsChanged || esiChanged) {
+            upgraded++;
             if (!dryRun) {
+              const update = {};
+              if (phsChanged) update.phs = newPhs;
+              if (esiChanged) update.esi = newEsi;
               await d.ref.update(update);
               wrote++;
             }
@@ -89,7 +73,6 @@ export const normalizeWerps = onCall(
           errors.push({ id: d.id, message: e.message || String(e) });
         }
       }
-
       last = snap.docs[snap.docs.length - 1];
       if (snap.size < pageSize) break;
     }
@@ -99,7 +82,7 @@ export const normalizeWerps = onCall(
       dryRun,
       pages,
       scanned,
-      planWrites,
+      upgraded,
       wrote,
       errors
     };

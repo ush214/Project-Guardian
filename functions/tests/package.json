@@ -1,0 +1,8 @@
+{
+  "name": "guardian-root",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:prompt-schema": "node scripts/tests/promptValidation.test.mjs"
+  }
+}

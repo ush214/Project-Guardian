@@ -1,32 +1,36 @@
-// Functions entry (ESM).
-// - callGeminiApi
-// - enqueueBulkImport, processBulkImportFromStorage, runBulkImportQueue, runBulkImportQueueNow
-//   and back-compat alias: processBulkImportQueue
-// - guardianSentry
-// - migrateWerps (one-time migration)
-// - normalizeWerps (normalizer)
-// - repairWerps (re-run missing sections)
+/**
+ * Functions entrypoint (ESM).
+ *
+ * Exports:
+ *  - callGeminiApi               (ad‑hoc model call for contributors/admins)
+ *  - guardianSentry              (scheduled heartbeat / future telemetry hook)
+ *  - migrateWerps                (legacy path migration if still needed)
+ *  - bulk import pipeline:
+ *      enqueueBulkImport
+ *      processBulkImportFromStorage
+ *      runBulkImportQueue
+ *      runBulkImportQueueNow
+ *  - normalizeWerps              (schema + score normalization, v2 aware)
+ *  - repairWerps                 (model re-generation for incomplete/misaligned sections)
+ *  - migrateToPHSv2              (batch upgrade legacy PHS/ESI to new schema)
+ *  - backfillRationales          (LLM pass to enrich missing "Not specified." rationales)
+ *  - schemaDiffReport            (dry-run diff of prospective normalization changes)
+ *
+ *  Support libraries in separate modules:
+ *    schemaMapping.js  (canonical schema constants & mapping helpers)
+ */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "./admin.js";
 
-export {
-  enqueueBulkImport,
-  processBulkImportFromStorage,
-  runBulkImportQueue,
-  runBulkImportQueueNow,
-  runBulkImportQueue as processBulkImportQueue
-} from "./bulkImport.js";
-export { guardianSentry } from "./guardianSentry.js";
-export { migrateWerps } from "./migrateAssessments.js";
-export { normalizeWerps } from "./normalizeWerps.js";
-export { repairWerps } from "./repairWerps.js";
-
-const REGION = "us-central1";
+// ---------------------------------------------------------------------------
+// Secrets / Config
+// ---------------------------------------------------------------------------
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
+const REGION = "us-central1";
 
 const ALLOWED_ORIGINS = [
   "https://project-guardian-agent.web.app",
@@ -37,31 +41,27 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5000"
 ];
 
+// ---------------------------------------------------------------------------
+// Role utility
+// ---------------------------------------------------------------------------
 async function getRole(uid) {
   try {
     const snap = await db.doc(`system/allowlist/users/${uid}`).get();
     if (!snap.exists) return "user";
     return snap.get("Role") || "user";
-  } catch (e) {
-    console.error("Failed to read Role for uid:", uid, e);
+  } catch {
     return "user";
   }
 }
 
+// ---------------------------------------------------------------------------
+// callGeminiApi (general purpose prompt -> JSON passthrough)
+// ---------------------------------------------------------------------------
 function createGeminiClient() {
   const key = GEMINI_API_KEY.value();
-  if (!key) throw new Error("GEMINI_API_KEY secret is not available at runtime.");
+  if (!key) throw new Error("GEMINI_API_KEY secret missing at runtime.");
   const genAI = new GoogleGenerativeAI(key);
   return genAI.getGenerativeModel({ model: GEMINI_MODEL });
-}
-
-async function generateGeminiJSON(prompt) {
-  const model = createGeminiClient();
-  const res = await model.generateContent(prompt);
-  const textFn = res?.response && typeof res.response.text === "function" ? res.response.text : null;
-  const raw = (textFn ? textFn.call(res.response) : "").trim();
-  const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  return cleaned;
 }
 
 export const callGeminiApi = onCall(
@@ -74,7 +74,6 @@ export const callGeminiApi = onCall(
   async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
-
     const role = await getRole(uid);
     if (!["contributor", "admin"].includes(role)) {
       throw new HttpsError("permission-denied", "Contributor access required.");
@@ -84,11 +83,43 @@ export const callGeminiApi = onCall(
     if (!prompt) throw new HttpsError("invalid-argument", "Missing 'prompt' string.");
 
     try {
-      const result = await generateGeminiJSON(prompt);
-      return result;
+      const model = createGeminiClient();
+      const res = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
+      });
+      const text = res?.response?.text() || "";
+      return text;
     } catch (err) {
-      console.error("callGeminiApi failed:", err);
+      console.error("callGeminiApi failure:", err);
       throw new HttpsError("internal", err?.message || "Model invocation failed.");
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// Exported domain-specific functions (imported from their modules)
+// ---------------------------------------------------------------------------
+
+// Bulk import (queue + triggers)
+export {
+  enqueueBulkImport,
+  processBulkImportFromStorage,
+  runBulkImportQueue,
+  runBulkImportQueueNow
+} from "./bulkImport.js";
+
+// Guardian sentry (scheduler / placeholder)
+export { guardianSentry } from "./guardianSentry.js";
+
+// Legacy migration (if still present for earlier artifact path)
+export { migrateWerps } from "./migrateAssessments.js";
+
+// Normalization & repair (v2-aware)
+export { normalizeWerps } from "./normalizeWerps.js";
+export { repairWerps } from "./repairWerps.js";
+
+// New schema-oriented migrations & utilities
+export { migrateToPHSv2 } from "./migrateToPHSv2.js";
+export { backfillRationales } from "./backfillRationales.js";
+export { schemaDiffReport } from "./schemaDiffReport.js";
