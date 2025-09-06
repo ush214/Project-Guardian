@@ -1,23 +1,38 @@
 /**
  * Functions entrypoint (ESM).
  *
- * Exports:
- *  - callGeminiApi               (ad‑hoc model call for contributors/admins)
- *  - guardianSentry              (scheduled heartbeat / future telemetry hook)
- *  - migrateWerps                (legacy path migration if still needed)
- *  - bulk import pipeline:
- *      enqueueBulkImport
- *      processBulkImportFromStorage
- *      runBulkImportQueue
- *      runBulkImportQueueNow
- *  - normalizeWerps              (schema + score normalization, v2 aware)
- *  - repairWerps                 (model re-generation for incomplete/misaligned sections)
- *  - migrateToPHSv2              (batch upgrade legacy PHS/ESI to new schema)
- *  - backfillRationales          (LLM pass to enrich missing "Not specified." rationales)
- *  - schemaDiffReport            (dry-run diff of prospective normalization changes)
+ * Exports (callable / triggered):
+ *  - callGeminiApi                  (ad‑hoc model call for contributors/admins)
+ *  - guardianSentry                 (scheduled heartbeat / telemetry hook)
+ *  - migrateWerps                   (legacy artifact path migration, if still needed)
  *
- *  Support libraries in separate modules:
- *    schemaMapping.js  (canonical schema constants & mapping helpers)
+ *  Bulk import pipeline:
+ *    - enqueueBulkImport
+ *    - processBulkImportFromStorage
+ *    - runBulkImportQueue
+ *    - runBulkImportQueueNow
+ *
+ *  Schema + data maintenance:
+ *    - schemaDiffReport             (dry-run diff of prospective normalization changes)
+ *    - normalizeWerps               (canonical shape & totals enforcement)
+ *    - migrateToPHSv2               (legacy → PHS v2 upgrade; 4-param weighted)
+ *    - migrateToPHSv3               (remove Vessel Integrity → 3-param weights 0.50/0.30/0.20)
+ *    - migrateAgeScores             (recompute WCS Age from buildYear metadata)
+ *    - backfillRationales           (LLM pass to enrich placeholder / missing rationales)
+ *    - repairWerps                  (targeted regeneration of incomplete/misaligned PHS/ESI/RPM)
+ *
+ * Support libraries (not exported here) live in separate modules:
+ *  - bulkImport.js
+ *  - backfillRationales.js
+ *  - repairWerps.js
+ *  - normalizeWerps.js
+ *  - migrateToPHSv2.js
+ *  - migrateToPHSv3.js
+ *  - migrateAgeScores.js
+ *  - schemaDiffReport.js
+ *  - migrateAssessments.js (legacy)
+ *  - guardianSentry.js
+ *  - admin.js (Firebase Admin initialization)
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -64,6 +79,10 @@ function createGeminiClient() {
   return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }
 
+/**
+ * Generic callable for experimentation (returns raw model JSON text).
+ * Restricted to contributor + admin roles.
+ */
 export const callGeminiApi = onCall(
   {
     region: REGION,
@@ -98,7 +117,7 @@ export const callGeminiApi = onCall(
 );
 
 // ---------------------------------------------------------------------------
-// Exported domain-specific functions (imported from their modules)
+// Domain-specific exports (imported from their modules)
 // ---------------------------------------------------------------------------
 
 // Bulk import (queue + triggers)
@@ -109,17 +128,21 @@ export {
   runBulkImportQueueNow
 } from "./bulkImport.js";
 
-// Guardian sentry (scheduler / placeholder)
+// Scheduled / sentinel
 export { guardianSentry } from "./guardianSentry.js";
 
-// Legacy migration (if still present for earlier artifact path)
+// Legacy collection path migration
 export { migrateWerps } from "./migrateAssessments.js";
 
-// Normalization & repair (v2-aware)
+// Normalization & structural diff
 export { normalizeWerps } from "./normalizeWerps.js";
-export { repairWerps } from "./repairWerps.js";
-
-// New schema-oriented migrations & utilities
-export { migrateToPHSv2 } from "./migrateToPHSv2.js";
-export { backfillRationales } from "./backfillRationales.js";
 export { schemaDiffReport } from "./schemaDiffReport.js";
+
+// Migrations & scoring updates
+export { migrateToPHSv2 } from "./migrateToPHSv2.js";
+export { migrateToPHSv3 } from "./migrateToPHSv3.js";
+export { migrateAgeScores } from "./migrateAgeScores.js";
+
+// Content enhancement & repair
+export { backfillRationales } from "./backfillRationales.js";
+export { repairWerps } from "./repairWerps.js";

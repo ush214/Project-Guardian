@@ -3,28 +3,45 @@
  *
  * Responsibilities:
  *  - Storage finalize trigger: watches bulk-import/*.csv and enqueues vessel names.
- *  - Firestore queue collection (system/bulkImport/queue) processing via scheduled function.
- *  - Callable endpoints to enqueue an arbitrary CSV (by GCS ref) and to run the queue immediately.
- *  - performNewAnalysis() generating v2 schema assessments (WCS, PHS 4‑param weighted, ESI 3‑param, RPM 3‑factor).
+ *  - Queue processor: generates unified WERP assessment docs.
+ *  - Callable enqueue & immediate queue-run utilities.
  *
- * NOTE: PHS weights fixed: Fuel Volume & Type 0.40, Ordnance 0.25, Vessel Integrity 0.20, Hazardous Materials 0.15.
- * High score/value => higher risk.
+ * Schema (PHS v3):
+ *  phs.version = 3
+ *  PHS parameters (exactly 3):
+ *    - Fuel Volume & Type (weight 0.50)
+ *    - Ordnance (weight 0.30)
+ *    - Hazardous Materials (weight 0.20)
+ *
+ * Age Scoring:
+ *  - If metadata.buildYear present:
+ *      If buildYear <= 1950 => set Age score = 5 (WW2 era or earlier).
+ *      Else band by (currentYear - buildYear):
+ *        >=120: 5
+ *        >=90: 4
+ *        >=60: 3
+ *        >=30: 2
+ *        <30: 1
+ *  - If buildYear missing, retain model-provided score.
+ *
+ * RPM factors canonical (3):
+ *  - Thermal Stress (Ocean Warming)
+ *  - Seismic Activity
+ *  - Anthropogenic Disturbance
  */
 
 import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
-import * as functions from "firebase-functions"; // for logger
+import * as functions from "firebase-functions";
 import { getStorage } from "firebase-admin/storage";
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "./admin.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
 const logger = functions.logger;
+
 const REGION = "us-central1";
 const APP_ID = "guardian-agent-default";
 const TARGET_COLLECTION = `artifacts/${APP_ID}/public/data/werpassessments`;
@@ -34,13 +51,10 @@ const EXPECTED_BUCKET = "project-guardian-agent.firebasestorage.app";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
 
-// Batch sizes
 const QUEUE_PROCESS_BATCH_LIMIT = 5;
 const FIRESTORE_BATCH_LIMIT = 450;
 
-// ---------------------------------------------------------------------------
 // Role helper
-// ---------------------------------------------------------------------------
 async function getRole(uid) {
   try {
     const snap = await db.doc(`system/allowlist/users/${uid}`).get();
@@ -52,9 +66,7 @@ async function getRole(uid) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Model helpers
-// ---------------------------------------------------------------------------
+// ---- Model helpers ----
 function extractJsonCandidate(text) {
   let s = String(text || "");
   let m = s.match(/```json([\s\S]*?)```/i);
@@ -85,18 +97,16 @@ async function callGemini(prompt) {
   return JSON.parse(cand);
 }
 
-function clampScore(v, min, max) {
+function clamp(v, lo, hi) {
   if (typeof v !== "number") v = parseFloat(String(v));
-  if (!Number.isFinite(v)) return min;
-  return Math.min(max, Math.max(min, v));
+  if (!Number.isFinite(v)) return lo;
+  return Math.min(hi, Math.max(lo, v));
 }
 
-// ---------------------------------------------------------------------------
-// Unified assessment prompt (schema v2)
-// ---------------------------------------------------------------------------
+// ---- Prompt ----
 function buildUnifiedAssessmentPrompt(vesselName) {
-  return `You are an expert OSINT analyst and marine environmental risk assessor.
-Return ONLY JSON (no markdown):
+  return `You are an expert OSINT marine environmental risk assessor.
+Return ONLY JSON (no markdown fences):
 
 {
   "wcs_hull_structure": {
@@ -109,11 +119,11 @@ Return ONLY JSON (no markdown):
     "maxScore": 20
   },
   "phs_pollution_hazard": {
+    "version": 3,
     "parameters": [
-      {"parameter":"Fuel Volume & Type","weight":0.40,"rationale":"...","score":0},
-      {"parameter":"Ordnance","weight":0.25,"rationale":"...","score":0},
-      {"parameter":"Vessel Integrity","weight":0.20,"rationale":"...","score":0},
-      {"parameter":"Hazardous Materials","weight":0.15,"rationale":"...","score":0}
+      {"parameter":"Fuel Volume & Type","weight":0.50,"rationale":"...","score":0},
+      {"parameter":"Ordnance","weight":0.30,"rationale":"...","score":0},
+      {"parameter":"Hazardous Materials","weight":0.20,"rationale":"...","score":0}
     ]
   },
   "esi_environmental_sensitivity": {
@@ -142,67 +152,109 @@ Return ONLY JSON (no markdown):
 }
 
 Rules:
-- High score/value => higher risk/sensitivity.
-- WCS 0–5 each (sum 0–20).
-- PHS scores 0–10 each; weights fixed 0.40,0.25,0.20,0.15; weighted sum 0–10 (no re-normalization).
+- DO NOT include structural integrity inside pollution hazard (that's WCS).
+- Age = years since original build/launch date (not years in service). If era clearly pre-1950, acknowledge advanced age degradation risk.
+- WCS scores 0–5 each (sum 0–20).
+- PHS scores 0–10 each with weights given (sum weighted 0–10).
 - ESI scores 0–10 each (sum 0–30).
-- RPM values 0.5–2.5 (1 = baseline).
-- Provide concrete rationales (no placeholders).
+- RPM values 0.5–2.5 (1 baseline). Avoid placeholders like "Insufficient data" unless justified; then explain why data is sparse.
+- Rationales must be specific and evidence based (e.g., known fuel capacities, documented munitions, environmental context).
 Vessel: ${vesselName}`;
 }
 
-// ---------------------------------------------------------------------------
-// Analysis builder
-// ---------------------------------------------------------------------------
-export async function performNewAnalysis(vesselName) {
+// ---- Age Scoring Helper ----
+function rescoreAgeParam(ageParam, buildYear) {
+  if (!buildYear || !ageParam) return;
+  const year = new Date().getUTCFullYear();
+  // Force WWII or earlier ≤1950 => 5
+  if (buildYear <= 1950) {
+    ageParam.score = 5;
+    ageParam.rationale += " (WWII-era or earlier hull; extreme chronological age => elevated structural degradation risk.)";
+    return;
+  }
+  const age = year - buildYear;
+  let score;
+  if (age >= 120) score = 5;
+  else if (age >= 90) score = 4;
+  else if (age >= 60) score = 3;
+  else if (age >= 30) score = 2;
+  else score = 1;
+  ageParam.score = clamp(score, 0, 5);
+  ageParam.rationale += ` (Adjusted for build year ${buildYear}, age ≈ ${age} years.)`;
+}
+
+// ---- Main Analysis ----
+export async function performNewAnalysis(vesselName, metadata = {}) {
   const obj = await callGemini(buildUnifiedAssessmentPrompt(vesselName));
 
+  // WCS
   const wcsParams = (obj.wcs_hull_structure?.parameters || []).map(p => ({
     name: p.parameter,
     rationale: p.rationale,
-    score: clampScore(p.score, 0, 5)
+    score: clamp(p.score, 0, 5)
   }));
+
+  // Age rescore if buildYear provided
+  if (metadata.buildYear) {
+    const ageParam = wcsParams.find(p => p.name === "Age");
+    rescoreAgeParam(ageParam, parseInt(metadata.buildYear, 10));
+  }
   const wcsTotal = wcsParams.reduce((s, p) => s + p.score, 0);
 
-  const phsParams = (obj.phs_pollution_hazard?.parameters || []).map(p => ({
-    name: p.parameter,
-    rationale: p.rationale,
-    weight: p.weight,
-    score: clampScore(p.score, 0, 10)
-  }));
-  const phsWeighted = phsParams.reduce((s, p) => s + (p.score * p.weight), 0);
+  // PHS v3
+  const phsRaw = obj.phs_pollution_hazard || {};
+  const phsVersion = phsRaw.version || 3;
+  const phsParams = (phsRaw.parameters || [])
+    .map(p => ({
+      name: p.parameter,
+      rationale: p.rationale,
+      weight: p.weight,
+      score: clamp(p.score, 0, 10)
+    }))
+    .filter(p => ["Fuel Volume & Type", "Ordnance", "Hazardous Materials"].includes(p.name));
+  // Ensure weights (in case model drift)
+  const enforcedWeights = {
+    "Fuel Volume & Type": 0.50,
+    "Ordnance": 0.30,
+    "Hazardous Materials": 0.20
+  };
+  phsParams.forEach(p => { p.weight = enforcedWeights[p.name]; });
+  const phsWeighted = phsParams.reduce((s, p) => s + p.score * p.weight, 0);
 
+  // ESI
   const esiParams = (obj.esi_environmental_sensitivity?.parameters || []).map(p => ({
     name: p.parameter,
     rationale: p.rationale,
-    score: clampScore(p.score, 0, 10)
+    score: clamp(p.score, 0, 10)
   }));
   const esiTotal = esiParams.reduce((s, p) => s + p.score, 0);
 
+  // RPM
   const rpmFactors = (obj.rpm_risk_pressure_modifiers?.factors || []).map(f => ({
     name: f.factor,
     rationale: f.rationale,
-    value: clampScore(f.value, 0.5, 2.5)
+    value: clamp(f.value, 0.5, 2.5)
   }));
-  const rpmAvg = rpmFactors.length ? rpmFactors.reduce((s, f) => s + f.value, 0) / rpmFactors.length : 1.0;
+  const rpmAvg = rpmFactors.length
+    ? rpmFactors.reduce((s, f) => s + f.value, 0) / rpmFactors.length
+    : 1.0;
 
   return {
     vesselName,
     wcs: { parameters: wcsParams, totalScore: wcsTotal },
-    phs: { parameters: phsParams, totalWeightedScore: clampScore(phsWeighted, 0, 10) },
-    esi: { parameters: esiParams, totalScore: clampScore(esiTotal, 0, 30), maxScore: 30 },
+    phs: { version: phsVersion, parameters: phsParams, totalWeightedScore: clamp(phsWeighted, 0, 10) },
+    esi: { parameters: esiParams, totalScore: clamp(esiTotal, 0, 30), maxScore: 30 },
     rpm: { factors: rpmFactors, finalMultiplier: parseFloat(rpmAvg.toFixed(2)) },
     finalSummary: {
       summativeAssessment: obj.final_summary?.summativeAssessment || "",
       remediationSuggestions: obj.final_summary?.remediationSuggestions || []
     },
+    metadata: { ...metadata },
     status: "initial"
   };
 }
 
-// ---------------------------------------------------------------------------
-// CSV ingestion & queue
-// ---------------------------------------------------------------------------
+// ---- CSV / Queue helpers ----
 function normalizeId(name) {
   return String(name || "")
     .toLowerCase()
@@ -221,7 +273,6 @@ function splitLinesToVessels(contents) {
 
 async function enqueueVessels(vesselNames) {
   if (!Array.isArray(vesselNames) || vesselNames.length === 0) return { enqueued: 0 };
-
   let batch = db.batch();
   let count = 0;
   let enqueued = 0;
@@ -229,14 +280,18 @@ async function enqueueVessels(vesselNames) {
     const id = normalizeId(name);
     if (!id) continue;
     const ref = db.doc(`${QUEUE_PATH}/${id}`);
-    batch.set(ref, {
-      docId: id,
-      vesselName: name,
-      status: "pending",
-      attempts: 0,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
+    batch.set(
+      ref,
+      {
+        docId: id,
+        vesselName: name,
+        status: "pending",
+        attempts: 0,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
     count++;
     enqueued++;
     if (count >= FIRESTORE_BATCH_LIMIT) {
@@ -256,7 +311,11 @@ async function enqueueFromGcsFile(bucket, objectName, moveToProcessed = true) {
   const { enqueued } = await enqueueVessels(vessels);
 
   let processedPath = null;
-  if (moveToProcessed && !/^bulk-import\/processed\//.test(objectName) && /^bulk-import\//.test(objectName)) {
+  if (
+    moveToProcessed &&
+    !/^bulk-import\/processed\//.test(objectName) &&
+    /^bulk-import\//.test(objectName)
+  ) {
     const dest = objectName.replace(/^bulk-import\//, "bulk-import/processed/");
     await file.move(dest);
     processedPath = `gs://${bucket}/${dest}`;
@@ -264,15 +323,13 @@ async function enqueueFromGcsFile(bucket, objectName, moveToProcessed = true) {
   return { enqueued, processedPath };
 }
 
-// ---------------------------------------------------------------------------
-// Queue processor
-// ---------------------------------------------------------------------------
+// ---- Queue processor ----
 async function processQueueBatch(limit = QUEUE_PROCESS_BATCH_LIMIT) {
   logger.info("Starting queue batch...");
   const out = [];
 
-  // Prioritize pending
-  const pendingSnap = await db.collection(QUEUE_PATH)
+  const pendingSnap = await db
+    .collection(QUEUE_PATH)
     .where("status", "==", "pending")
     .orderBy("createdAt", "asc")
     .limit(limit)
@@ -280,7 +337,8 @@ async function processQueueBatch(limit = QUEUE_PROCESS_BATCH_LIMIT) {
   out.push(...pendingSnap.docs);
 
   if (out.length < limit) {
-    const retrySnap = await db.collection(QUEUE_PATH)
+    const retrySnap = await db
+      .collection(QUEUE_PATH)
       .where("status", "==", "retry")
       .orderBy("createdAt", "asc")
       .limit(limit - out.length)
@@ -311,15 +369,19 @@ async function processQueueBatch(limit = QUEUE_PROCESS_BATCH_LIMIT) {
       continue;
     }
 
-    await qRef.update({ status: "processing", updatedAt: FieldValue.serverTimestamp() });
+    await qRef.update({
+      status: "processing",
+      updatedAt: FieldValue.serverTimestamp()
+    });
 
     try {
+      // (Optional future: pass buildYear if collected externally)
       const analysis = await performNewAnalysis(vesselName);
       const assessRef = db.doc(`${TARGET_COLLECTION}/${docId}`);
       await assessRef.set(
         {
           vesselName,
-          ...analysis,
+            ...analysis,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp()
         },
@@ -344,11 +406,9 @@ async function processQueueBatch(limit = QUEUE_PROCESS_BATCH_LIMIT) {
   return { processed };
 }
 
-// ---------------------------------------------------------------------------
-// Triggers & Callable Functions
-// ---------------------------------------------------------------------------
+// ---- Triggers & Callables ----
 
-// 1) Storage finalize trigger for CSVs
+// Storage finalize trigger
 export const processBulkImportFromStorage = onObjectFinalized(
   { region: REGION, memory: "256MiB" },
   async (event) => {
@@ -365,7 +425,6 @@ export const processBulkImportFromStorage = onObjectFinalized(
       return;
     }
 
-    // Promote root CSV into bulk-import/ if user uploaded to root
     if (/^[^/]+\.csv$/i.test(name)) {
       const dest = `bulk-import/${name}`;
       await getStorage().bucket(bucket).file(name).move(dest);
@@ -393,7 +452,7 @@ export const processBulkImportFromStorage = onObjectFinalized(
   }
 );
 
-// 2) Scheduled queue runner
+// Scheduled queue runner
 export const runBulkImportQueue = onSchedule(
   {
     region: REGION,
@@ -414,7 +473,7 @@ export const runBulkImportQueue = onSchedule(
   }
 );
 
-// 3) Callable: immediate queue processing
+// Callable: Immediate queue processing
 export const runBulkImportQueueNow = onCall(
   {
     region: REGION,
@@ -442,7 +501,7 @@ export const runBulkImportQueueNow = onCall(
   }
 );
 
-// 4) Callable: enqueue CSV by reference
+// Callable: enqueue a CSV by reference
 export const enqueueBulkImport = onCall(
   {
     region: REGION,
@@ -456,7 +515,6 @@ export const enqueueBulkImport = onCall(
       throw new HttpsError("permission-denied", "Contributor access required.");
     }
 
-    // Accept gsUri or bucket/name
     let bucket, name;
     if (typeof req.data?.gsUri === "string" && req.data.gsUri.startsWith("gs://")) {
       const without = req.data.gsUri.slice("gs://".length);

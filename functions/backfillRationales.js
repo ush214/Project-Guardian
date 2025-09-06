@@ -1,156 +1,345 @@
-// Fill missing or "Not specified." rationales using the model without altering scores.
-import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { defineSecret } from "firebase-functions/params";
-import { db } from "./admin.js";
-import { FieldPath } from "firebase-admin/firestore";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { clamp } from "./schemaMapping.js";
+/**
+ * backfillRationales.js
+ *
+ * Adds/improves missing or placeholder rationales across WCS, PHS, ESI, RPM.
+ * - Placeholder detection: "", "Not specified.", "Insufficient data.", "Unknown."
+ * - Does NOT change scores or weights.
+ * - Paginates by ordered vesselName.
+ *
+ * Approach:
+ *  1. Scan a page (limit = pageSize).
+ *  2. Collect all items needing improvements (capped to MAX_ITEMS_PER_MODEL to keep prompt size sane).
+ *  3. Single model call generates rationales in structured JSON.
+ *  4. Merge results back & write batch.
+ *
+ * Supports:
+ *   dryRun (boolean)
+ *   pageSize (default 100)
+ *   startAfterId (pagination anchor)
+ *   timeBudgetSeconds (optional early exit)
+ *
+ * Return fields:
+ *   scanned, updated, wrote, placeholdersFound, nextPageStartAfterId, modelItemsRequested
+ */
 
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import * as functions from "firebase-functions";
+import { FieldValue } from "firebase-admin/firestore";
+import { db } from "./admin.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { defineSecret } from "firebase-functions/params";
+
+const logger = functions.logger;
 const REGION = "us-central1";
-const TARGET_PATH = "artifacts/guardian-agent-default/public/data/werpassessments";
+const APP_ID = "guardian-agent-default";
+const COLLECTION = `artifacts/${APP_ID}/public/data/werpassessments`;
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
 
-async function getRole(uid){
-  try{
-    const snap=await db.doc(`system/allowlist/users/${uid}`).get();
-    if(!snap.exists)return"user";
-    return snap.get("Role")||"user";
-  }catch{return"user";}
+const PLACEHOLDERS = new Set(["", "not specified.", "insufficient data.", "unknown."]);
+const MAX_ITEMS_PER_MODEL = 70; // conservative to keep prompt compact
+const DEFAULT_PAGE_SIZE = 100;
+
+async function getRole(uid) {
+  try {
+    const snap = await db.doc(`system/allowlist/users/${uid}`).get();
+    if (!snap.exists) return "user";
+    return snap.get("Role") || "user";
+  } catch {
+    return "user";
+  }
 }
 
-function createModel(){
-  const key=GEMINI_API_KEY.value();
-  if(!key) throw new Error("Missing GEMINI_API_KEY");
+function isPlaceholder(r) {
+  if (!r) return true;
+  const t = r.trim().toLowerCase();
+  return PLACEHOLDERS.has(t);
+}
+
+function extractJsonCandidate(text) {
+  let s = String(text || "");
+  let m = s.match(/```json([\s\S]*?)```/i);
+  if (m) return m[1].trim();
+  m = s.match(/```([\s\S]*?)```/i);
+  if (m) return m[1].trim();
+  const first = s.indexOf("{");
+  const last = s.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) return s.slice(first, last + 1).trim();
+  return s.trim();
+}
+
+function createModel() {
+  const key = GEMINI_API_KEY.value();
+  if (!key) throw new Error("Missing GEMINI_API_KEY secret.");
   const genAI = new GoogleGenerativeAI(key);
-  return genAI.getGenerativeModel({model:GEMINI_MODEL});
+  return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }
 
-function extractJsonCandidate(t){
-  t=String(t||"");
-  let m=t.match(/```json([\s\S]*?)```/i); if(m) return m[1].trim();
-  m=t.match(/```([\s\S]*?)```/i); if(m) return m[1].trim();
-  const f=t.indexOf("{"), l=t.lastIndexOf("}");
-  if(f!==-1 && l!==-1 && l>f) return t.slice(f,l+1).trim();
-  return t.trim();
+/**
+ * Build a minimal instruction to fill only missing/placeholder rationales.
+ * Format requests as array to ease mapping back.
+ */
+function buildPrompt(items) {
+  const req = items.map(it => ({
+    docId: it.docId,
+    section: it.section,
+    key: it.key,
+    currentScoreOrValue: it.scoreOrValue
+  }));
+  return `You are improving missing rationales for vessel WERP assessments.
+Return JSON ONLY with structure:
+{
+  "updates":[
+    {"docId":"...","section":"wcs|phs|esi|rpm","key":"(parameter-or-factor-name)","rationale":"Improved concise rationale..."}
+  ]
 }
 
-function buildRationalePrompt(vesselName, section, items){
-  const listing = items.map(i => `{"name":"${i.name}","existing":${JSON.stringify(i.rationale)}}`).join("\n");
-  return `Provide improved concise rationales for each ${section} item below (avoid redundancy, 1-2 sentences):
-Return ONLY JSON: {"items":[{"name":"...","rationale":"..."}...]}
-Items:
-${listing}
-Vessel: ${vesselName}`;
+Guidelines:
+- Provide factual, concise rationales (1–3 sentences) using generic OSINT knowledge about shipwreck aging, fuel/ordnance persistence, environmental sensitivity, or pressure factors.
+- DO NOT invent precise quantitative data (capacities, tonnages) unless widely typical; prefer qualitative phrasing.
+- For RPM factors, explain risk driver succinctly (e.g., 'Regional seismicity elevates structural disturbance probability').
+- Avoid placeholders like 'Not specified.' or 'Insufficient data.'
+
+Requests:
+${JSON.stringify(req, null, 2)}`;
 }
 
-async function getImprovedRationales(model, vesselName, section, items){
-  const prompt = buildRationalePrompt(vesselName, section, items);
+async function runModel(items) {
+  if (items.length === 0) return { updates: [] };
+  const prompt = buildPrompt(items);
+  const model = createModel();
   const res = await model.generateContent({
-    contents:[{role:"user",parts:[{text:prompt}]}],
-    generationConfig:{responseMimeType:"application/json"}
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: "application/json" }
   });
   const raw = res?.response?.text() || "";
-  const cand = extractJsonCandidate(raw);
-  const parsed = JSON.parse(cand);
-  const outMap = {};
-  for (const it of (parsed.items||[])) {
-    outMap[it.name] = it.rationale;
+  let parsed;
+  try {
+    parsed = JSON.parse(extractJsonCandidate(raw));
+  } catch (e) {
+    throw new Error("Model JSON parse failed: " + (e.message || e));
   }
-  return outMap;
+  if (!parsed || !Array.isArray(parsed.updates)) {
+    throw new Error("Model response missing updates array.");
+  }
+  return parsed;
 }
 
-export const backfillRationales = onCall(
-  {
-    region: REGION,
-    timeoutSeconds: 540,
-    memory: "1GiB",
-    invoker: "public",
-    secrets:[GEMINI_API_KEY],
-    cors:true
-  },
-  async (req)=>{
-    const uid=req.auth?.uid;
-    if(!uid) throw new HttpsError("unauthenticated","Sign-in required.");
-    const role=await getRole(uid);
-    if(role!=="admin") throw new HttpsError("permission-denied","Admin only.");
+function collectTargets(docId, data) {
+  const out = [];
+  // WCS
+  if (data?.wcs?.parameters) {
+    for (const p of data.wcs.parameters) {
+      if (isPlaceholder(p.rationale)) {
+        out.push({
+          docId,
+          section: "wcs",
+          key: p.name,
+          scoreOrValue: p.score
+        });
+      }
+    }
+  }
+  // PHS
+  if (data?.phs?.parameters) {
+    for (const p of data.phs.parameters) {
+      if (isPlaceholder(p.rationale)) {
+        out.push({
+          docId,
+          section: "phs",
+          key: p.name,
+          scoreOrValue: p.score
+        });
+      }
+    }
+  }
+  // ESI
+  if (data?.esi?.parameters) {
+    for (const p of data.esi.parameters) {
+      if (isPlaceholder(p.rationale)) {
+        out.push({
+          docId,
+          section: "esi",
+          key: p.name,
+          scoreOrValue: p.score
+        });
+      }
+    }
+  }
+  // RPM
+  if (data?.rpm?.factors) {
+    for (const f of data.rpm.factors) {
+      if (isPlaceholder(f.rationale)) {
+        out.push({
+          docId,
+          section: "rpm",
+          key: f.name,
+          scoreOrValue: f.value
+        });
+      }
+    }
+  }
+  return out;
+}
 
-    const dryRun = req.data?.dryRun===undefined?true:!!req.data.dryRun;
-    const pageSizeRaw = parseInt(String(req.data?.pageSize ?? "100"),10);
-    const pageSize = Math.min(Math.max(Number.isFinite(pageSizeRaw)?pageSizeRaw:100,20),400);
-    const maxDocsRaw = parseInt(String(req.data?.maxDocs ?? pageSize),10);
-    const maxDocs = Math.min(Math.max(Number.isFinite(maxDocsRaw)?maxDocsRaw:pageSize,1),pageSize);
-    const startAfterId = typeof req.data?.startAfterId==="string"?req.data.startAfterId.trim():"";
+async function processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds }) {
+  const startTime = Date.now();
+  const deadline = timeBudgetSeconds
+    ? startTime + Math.max(5, Math.min(timeBudgetSeconds, 500)) * 1000
+    : null;
 
-    const began=Date.now();
-    const col=db.collection(TARGET_PATH);
-    let q = col.orderBy(FieldPath.documentId()).limit(pageSize);
-    if(startAfterId) q=q.startAfter(startAfterId);
-    const snap=await q.get();
+  let q = db.collection(COLLECTION).orderBy("vesselName");
+  if (startAfterId) {
+    const anchor = await db.collection(COLLECTION).doc(startAfterId).get();
+    if (anchor.exists) {
+      const vesselName = anchor.get("vesselName");
+      if (vesselName) {
+        q = q.startAfter(vesselName);
+      }
+    }
+  }
+  q = q.limit(pageSize);
 
-    if(snap.empty){
-      return {ok:true,dryRun,pages:0,scanned:0,updated:0,nextPageStartAfterId:undefined,tookMs:Date.now()-began};
+  const snap = await q.get();
+  const result = {
+    scanned: 0,
+    updated: 0,
+    wrote: 0,
+    placeholdersFound: 0,
+    modelItemsRequested: 0,
+    nextPageStartAfterId: ""
+  };
+  if (snap.empty) return result;
+
+  const allTargets = [];
+  for (const docSnap of snap.docs) {
+    if (deadline && Date.now() > deadline - 500) {
+      // time nearly exhausted; break early
+      break;
+    }
+    result.scanned++;
+    const data = docSnap.data();
+    const docTargets = collectTargets(docSnap.id, data);
+    if (docTargets.length) {
+      result.placeholdersFound += docTargets.length;
+      allTargets.push(...docTargets);
+    }
+  }
+
+  // Slice to max model capacity
+  const modelTargets = allTargets.slice(0, MAX_ITEMS_PER_MODEL);
+  result.modelItemsRequested = modelTargets.length;
+
+  let updates = [];
+  if (modelTargets.length > 0) {
+    try {
+      const modelRes = await runModel(modelTargets);
+      updates = modelRes.updates || [];
+    } catch (e) {
+      logger.error("Model call failed:", e);
+      // fail gracefully: no updates this page
+    }
+  }
+
+  if (updates.length && !dryRun) {
+    // Group updates by docId
+    const map = new Map();
+    for (const u of updates) {
+      if (!u.docId || !u.section || !u.key || !u.rationale) continue;
+      if (!map.has(u.docId)) map.set(u.docId, []);
+      map.get(u.docId).push(u);
     }
 
-    const model = createModel();
-    let scanned=0, updated=0;
-    let processed=0;
-    let lastId="";
-    for(const doc of snap.docs){
-      if(processed>=maxDocs) break;
-      scanned++;
-      lastId=doc.id;
-      try{
-        const data=doc.data()||{};
-        const vesselName = data.vesselName || doc.id;
-        const update={};
+    const batch = db.batch();
+    for (const [docId, list] of map.entries()) {
+      const ref = db.collection(COLLECTION).doc(docId);
+      const snapDoc = await ref.get();
+      if (!snapDoc.exists) continue;
+      const data = snapDoc.data();
 
-        // Sections to fill: wcs.parameters, phs.parameters, esi.parameters, rpm.factors
-        const targets = [
-          { path:"wcs.parameters", list:data?.wcs?.parameters, section:"hull_structure" },
-          { path:"phs.parameters", list:data?.phs?.parameters, section:"pollution_hazard" },
-          { path:"esi.parameters", list:data?.esi?.parameters, section:"environmental_sensitivity" },
-          { path:"rpm.factors", list:data?.rpm?.factors, section:"risk_pressure_modifiers" }
-        ];
+      let mutated = false;
 
-        let changed = false;
-        for(const t of targets){
-          if(!Array.isArray(t.list) || t.list.length===0) continue;
-          const needing = t.list.filter(x=>!x.rationale || /^not specified\.$/i.test(x.rationale.trim()));
-          if(needing.length===0) continue;
-          const improvedMap = await getImprovedRationales(model, vesselName, t.section, needing);
-          const newList = t.list.map(item => {
-            if(improvedMap[item.name]) {
-              changed = true;
-              return {...item, rationale: improvedMap[item.name]};
-            }
-            return item;
-          });
-          update[t.path] = newList;
+      function apply(section, key, rationale) {
+        if (section === "wcs" && data?.wcs?.parameters) {
+          const item = data.wcs.parameters.find(p => p.name === key);
+          if (item && isPlaceholder(item.rationale)) {
+            item.rationale = rationale;
+            mutated = true;
+          }
+        } else if (section === "phs" && data?.phs?.parameters) {
+          const item = data.phs.parameters.find(p => p.name === key);
+            if (item && isPlaceholder(item.rationale)) {
+            item.rationale = rationale;
+            mutated = true;
+          }
+        } else if (section === "esi" && data?.esi?.parameters) {
+          const item = data.esi.parameters.find(p => p.name === key);
+          if (item && isPlaceholder(item.rationale)) {
+            item.rationale = rationale;
+            mutated = true;
+          }
+        } else if (section === "rpm" && data?.rpm?.factors) {
+          const item = data.rpm.factors.find(f => f.name === key);
+          if (item && isPlaceholder(item.rationale)) {
+            item.rationale = rationale;
+            mutated = true;
+          }
         }
+      }
 
-        if(changed && !dryRun){
-          await doc.ref.update(update);
-          updated++;
-        }
-        processed++;
-      }catch(e){
-        // continue
+      for (const u of list) {
+        apply(u.section, u.key, u.rationale);
+      }
+
+      if (mutated) {
+        result.updated++;
+        batch.set(
+          ref,
+          {
+            wcs: data.wcs,
+            phs: data.phs,
+            esi: data.esi,
+            rpm: data.rpm,
+            updatedAt: FieldValue.serverTimestamp()
+          },
+          { merge: true }
+        );
       }
     }
 
-    let nextToken;
-    if(processed>=maxDocs || snap.size===pageSize){
-      nextToken = lastId;
+    if (result.updated > 0) {
+      await batch.commit();
+      result.wrote = result.updated;
     }
+  }
 
-    return {
-      ok:true,
-      dryRun,
-      scanned,
-      updated,
-      nextPageStartAfterId: nextToken,
-      tookMs: Date.now()-began
-    };
+  // Paging token if room/time left and we processed full page size
+  if (snap.size === pageSize) {
+    const last = snap.docs[snap.docs.length - 1];
+    result.nextPageStartAfterId = last.id;
+  }
+  return result;
+}
+
+export const backfillRationales = onCall(
+  { region: REGION, timeoutSeconds: 540, memory: "1GiB", secrets: [GEMINI_API_KEY] },
+  async (req) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
+    const role = await getRole(uid);
+    if (role !== "admin") throw new HttpsError("permission-denied", "Admin role required.");
+
+    const dryRun = !!req.data?.dryRun;
+    const pageSize = Math.min(Math.max(parseInt(req.data?.pageSize ?? DEFAULT_PAGE_SIZE, 10), 10), 400);
+    const startAfterId = typeof req.data?.startAfterId === "string" ? req.data.startAfterId.trim() : "";
+    const timeBudgetSeconds = req.data?.timeBudgetSeconds ? parseInt(req.data.timeBudgetSeconds, 10) : undefined;
+
+    try {
+      const res = await processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds });
+      return { ok: true, dryRun, ...res };
+    } catch (e) {
+      logger.error("backfillRationales error:", e);
+      throw new HttpsError("internal", e?.message || "Backfill failed.");
+    }
   }
 );
