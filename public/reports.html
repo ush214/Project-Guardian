@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <title>Project Guardian – WERP Reports</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- CSP is managed by Hosting headers -->
   <style>
     :root { color-scheme: light; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 0; color: #111; background: #f5f7fa; }
@@ -60,6 +59,7 @@
         <h1>WERP Reports</h1>
       </div>
       <nav class="row">
+        <a href="/login.html">Login</a>
         <a href="/admin-tools.html">Admin Tools</a>
       </nav>
       <div class="auth">
@@ -139,7 +139,6 @@
 
     const COL_PATH = "artifacts/guardian-agent-default/public/data/werpassessments";
 
-    // UI refs
     const authStatus = document.getElementById("authStatus");
     const signInBtn = document.getElementById("signInBtn");
     const signOutBtn = document.getElementById("signOutBtn");
@@ -161,16 +160,10 @@
     const visibleCounts = document.getElementById("visibleCounts");
 
     let allDocs = [];
-    let loadedOnce = false;
 
     function setAuthError(msg){
-      if (msg) {
-        authError.textContent = msg;
-        authError.style.display = "";
-      } else {
-        authError.textContent = "";
-        authError.style.display = "none";
-      }
+      if (msg) { authError.textContent = msg; authError.style.display = ""; }
+      else { authError.textContent = ""; authError.style.display = "none"; }
     }
 
     function clamp(n, lo, hi){
@@ -203,7 +196,6 @@
       if (band === "high" && !sevHigh.checked) return false;
       if (band === "medium" && !sevMedium.checked) return false;
       if (band === "low" && !sevLow.checked) return false;
-
       const q = (searchBox?.value || "").trim().toLowerCase();
       if (q) {
         const name = String(item?.vesselName || item?.id || "").toLowerCase();
@@ -243,7 +235,6 @@
         const sevClass = d?.severity?.band || "low";
         const p2Updates = Array.isArray(d?.phase2?.updates) ? d.phase2.updates.length : 0;
         const p2LatestAt = dateIso(d?.phase2?.latest?.updatedAt || d?.updatedAt);
-
         div.innerHTML = `
           <div style="flex:1;">
             <h3>${escapeHtml(d.vesselName || d.id || "Unknown")} <span class="pill ${sevClass}">${(d?.severity?.band || "LOW").toUpperCase()} ${num(d?.severity?.value)}</span></h3>
@@ -289,25 +280,10 @@
     }
 
     async function loadData(){
-      try {
-        const qy = query(collection(db, COL_PATH), orderBy("vesselName"), limit(500));
-        const snap = await getDocs(qy);
-        allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        render();
-        loadedOnce = true;
-        setAuthError("");
-      } catch (e) {
-        console.error("Failed to load reports:", e);
-        if (String(e?.code||"").includes("permission-denied")) {
-          setAuthError("Sign-in required to view reports. Please use the Sign in button.");
-        } else {
-          setAuthError("Failed to load reports. Try reloading the page.");
-        }
-        completedEmpty.textContent = "No data.";
-        reassessEmpty.textContent = "No data.";
-        completedEmpty.style.display = "";
-        reassessEmpty.style.display = "";
-      }
+      const qy = query(collection(db, COL_PATH), orderBy("vesselName"), limit(500));
+      const snap = await getDocs(qy);
+      allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      render();
     }
 
     [sevHigh, sevMedium, sevLow].forEach(cb => cb?.addEventListener("change", render));
@@ -319,17 +295,30 @@
       catch (e) { console.error("Sign-in failed:", e); setAuthError(e?.message || "Sign-in failed."); }
     });
     signOutBtn?.addEventListener("click", async () => {
-      try { setAuthError(""); await signOut(auth); }
+      try { setAuthError(""); await signOut(auth); allDocs = []; render(); }
       catch (e) { console.error("Sign-out failed:", e); setAuthError(e?.message || "Sign-out failed."); }
     });
 
     onAuthStateChanged(auth, async (user) => {
-      if (user) { authStatus.textContent = `Signed in as ${user.email || user.uid}`; signInBtn.style.display = "none"; signOutBtn.style.display = ""; }
-      else { authStatus.textContent = "Not signed in"; signInBtn.style.display = ""; signOutBtn.style.display = "none"; }
-      if (!loadedOnce || user) await loadData();
+      if (user) {
+        authStatus.textContent = `Signed in as ${user.email || user.uid}`;
+        signInBtn.style.display = "none";
+        signOutBtn.style.display = "";
+        setAuthError("");
+        try { await loadData(); }
+        catch (e) {
+          console.error("Failed to load reports:", e);
+          setAuthError("Failed to load reports. You might not have permission to this dataset.");
+          allDocs = []; render();
+        }
+      } else {
+        authStatus.textContent = "Not signed in";
+        signInBtn.style.display = "";
+        signOutBtn.style.display = "none";
+        setAuthError("Sign-in required to view reports. Use the Sign in button.");
+        allDocs = []; render();
+      }
     });
-
-    loadData();
   </script>
 </body>
 </html>

@@ -22,7 +22,7 @@
         "headers": [
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com https://www.googleapis.com https://accounts.google.com blob:; script-src-elem 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://www.googleapis.com https://accounts.google.com blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.googleusercontent.com https://maps.gstatic.com https://maps.googleapis.com https://firebasestorage.googleapis.com https://project-guardian-agent.firebasestorage.app; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://project-guardian-agent.firebasestorage.app; frame-src 'self' https://accounts.google.com; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none';"
+            "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com https://www.googleapis.com https://accounts.google.com blob:; script-src-elem 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://www.googleapis.com https://accounts.google.com blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.googleusercontent.com https://maps.gstatic.com https://maps.googleapis.com https://firebasestorage.googleapis.com https://project-guardian-agent.firebasestorage.app; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://project-guardian-agent.firebasestorage.app; frame-src 'self' https://accounts.google.com https://apis.google.com https://project-guardian-agent.firebaseapp.com https://project-guardian-agent.web.app; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none';"
           },
           { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
           { "key": "X-Content-Type-Options", "value": "nosniff" }
@@ -31,7 +31,7 @@
     ],
     "rewrites": [
       {
-        "source": "!(/admin-tools.html|/reports.html)",
+        "source": "!(/admin-tools.html|/reports.html|/login.html)",
         "destination": "/index.html"
       }
     ]
