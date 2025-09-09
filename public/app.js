@@ -110,7 +110,6 @@ let chartConfig = {
 // Utilities
 function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function isFiniteNum(n){ return typeof n === 'number' && Number.isFinite(n); }
-function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function getText(v) { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; }
 function deepGet(obj, path) { return path.split('.').reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj); }
 function toTitleCase(s) {
@@ -139,6 +138,29 @@ function flattenEntries(obj, maxDepth = 4) {
   return out;
 }
 
+// Sanitize/markdown
+function sanitizeReportHtml(html) {
+  let safe = DOMPurify.sanitize(html || '', {
+    RETURN_TRUSTED_TYPE: false,
+    WHOLE_DOCUMENT: false,
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['script', 'style', 'link'],
+    FORBID_ATTR: ['style', 'onerror', 'onload']
+  });
+  safe = safe
+    .replace(/<(p|div)>\s*(?:&nbsp;|\u00A0|\s|<br\s*\/?>)*<\/\1>/gi, '')
+    .replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>');
+  return safe;
+}
+function renderMarkdown(md) {
+  try {
+    const html = marked.parse(md || '');
+    return sanitizeReportHtml(html);
+  } catch {
+    return `<p>${escapeHtml(md || '').replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`;
+  }
+}
+
 // Robust text extraction to avoid [object Object]
 function extractHtml(val) {
   if (typeof val === 'string') {
@@ -156,9 +178,7 @@ function extractHtml(val) {
     if (md) return renderMarkdown(md);
 
     const text = getText(val.text ?? val.content ?? val.value ?? val.body ?? val.summary);
-    if (text) {
-      return sanitizeReportHtml(`<p>${escapeHtml(text).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
-    }
+    if (text) return sanitizeReportHtml(`<p>${escapeHtml(text).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
 
     const parts = Array.isArray(val.parts) ? val.parts : Array.isArray(val.content) ? val.content : null;
     if (parts) {
@@ -474,29 +494,6 @@ function renderRadar(item) {
   renderBenchLegend();
 }
 
-// Sanitize/markdown
-function sanitizeReportHtml(html) {
-  let safe = DOMPurify.sanitize(html || '', {
-    RETURN_TRUSTED_TYPE: false,
-    WHOLE_DOCUMENT: false,
-    USE_PROFILES: { html: true },
-    FORBID_TAGS: ['script', 'style', 'link'],
-    FORBID_ATTR: ['style', 'onerror', 'onload']
-  });
-  safe = safe
-    .replace(/<(p|div)>\s*(?:&nbsp;|\u00A0|\s|<br\s*\/?>)*<\/\1>/gi, '')
-    .replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>');
-  return safe;
-}
-function renderMarkdown(md) {
-  try {
-    const html = marked.parse(md || '');
-    return sanitizeReportHtml(html);
-  } catch {
-    return `<p>${escapeHtml(md || '').replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`;
-  }
-}
-
 // Vessel name resolver
 function getVesselName(it) {
   const direct = [
@@ -515,13 +512,13 @@ function getVesselName(it) {
   return getText(it.id) || 'Unknown';
 }
 
-// Axis details (scores + rationale)
+// Axis basics (score + rationale)
 function extractAxisDetails(item) {
   const axes = ['WCS','PHS','ESI','RPM'];
   const flat = flattenEntries(item, 4);
   const details = {};
   for (const ax of axes) details[ax] = { score: readNumberByPaths(item, [
-    `scores.${ax}`, ax.toLowerCase(), ax, `phase1.screening.${ax}`, `screening.${ax}`
+    `scores.${ax}`, ax.toLowerCase(), ax, `phase1.screening.${ax}`, `screening.${ax}`, `phase2.scores.${ax}`
   ]), rationale: null };
 
   const ratRx = /(rationale|justification|reason|explanation|basis|notes|comment|detail|narrative)/i;
@@ -534,7 +531,7 @@ function extractAxisDetails(item) {
       if (t) { details[ax].rationale = t; break; }
     }
     if (!details[ax].rationale) {
-      const obj = deepGet(item, ax.toLowerCase()) || deepGet(item, `scores.${ax}`) || deepGet(item, `phase1.screening.${ax}`) || deepGet(item, `screening.${ax}`);
+      const obj = deepGet(item, ax.toLowerCase()) || deepGet(item, `scores.${ax}`) || deepGet(item, `phase1.screening.${ax}`) || deepGet(item, `screening.${ax}`) || deepGet(item, `phase2.scores.${ax}`);
       if (obj && typeof obj === 'object') {
         const t = extractPlain(obj.rationale || obj.justification || obj.reason || obj.explanation || obj.notes || obj.detail || obj.comment);
         if (t) details[ax].rationale = t;
@@ -544,7 +541,114 @@ function extractAxisDetails(item) {
   return details;
 }
 
-// Screening narratives (de-duplicated; exclude metadata and score fields)
+// Find likely axis containers for a given axis key (WCS/PHS/ESI/RPM)
+function findAxisNodes(item, ax) {
+  const lower = ax.toLowerCase();
+  const candidates = [
+    deepGet(item, lower),
+    deepGet(item, `scores.${ax}`),
+    deepGet(item, `risk.${ax}`),
+    deepGet(item, `phase1.screening.${ax}`),
+    deepGet(item, `screening.${ax}`),
+    deepGet(item, `phase2.scores.${ax}`),
+    deepGet(item, `details.${ax}`),
+    deepGet(item, `analysis.${ax}`),
+    deepGet(item, `werp.${ax}`)
+  ];
+  return candidates.filter(x => x && typeof x === 'object');
+}
+
+// Extract detailed breakdown for an axis (components, subscores, evidence)
+function extractAxisBreakdown(item, ax) {
+  const nodes = findAxisNodes(item, ax);
+  const components = []; // {label, value, notes}
+  const evidence = [];   // array of strings
+  const seenComp = new Set();
+  const pushComp = (label, value, notes) => {
+    const lab = getText(label) || 'Component';
+    const val = value != null && value !== '' ? String(value) : '';
+    const nts = getText(notes) || '';
+    const key = `${lab}|${val}|${nts}`.toLowerCase();
+    if (seenComp.has(key)) return;
+    components.push({ label: lab, value: val, notes: nts });
+    seenComp.add(key);
+  };
+  const pushEv = (txt) => {
+    const t = extractPlain(txt);
+    if (!t) return;
+    if (evidence.includes(t)) return;
+    evidence.push(t);
+  };
+
+  const valueKeys = ['score','value','points','rating','val','v','s','weight','band','level'];
+  const nameKeys = ['label','name','title','key','id','component','criterion','factor','dimension','aspect','class'];
+  const noteKeys = ['rationale','justification','reason','explanation','notes','comment','detail','narrative','why','basis','evidence','driver'];
+
+  function scanNode(node) {
+    // Direct known aggregations
+    const collections = [
+      node.subscores, node.subScores, node.sub_scores,
+      node.components, node.criteria, node.factors, node.breakdown, node.details, node.items, node.parts, node.points, node.dimensions
+    ].filter(Boolean);
+
+    for (const coll of collections) {
+      if (Array.isArray(coll)) {
+        for (const el of coll) {
+          if (el == null) continue;
+          if (typeof el === 'string') { pushEv(el); continue; }
+          if (typeof el === 'object') {
+            const label = nameKeys.map(k => el[k]).find(getText) ?? '';
+            const value = valueKeys.map(k => el[k]).map(coerceToNumber).find(v => v != null);
+            const notes = noteKeys.map(k => el[k]).find(extractPlain);
+            if (label || value != null || notes) pushComp(label, value ?? '', notes ?? '');
+            // If element has nested evidence list
+            const ev = el.evidence || el.reasons || el.notes || el.comments || el.findings;
+            if (Array.isArray(ev)) ev.forEach(pushEv);
+          }
+        }
+      } else if (typeof coll === 'object') {
+        for (const [k, v] of Object.entries(coll)) {
+          if (v == null) continue;
+          if (typeof v === 'object') {
+            const value = valueKeys.map(x => v[x]).map(coerceToNumber).find(x => x != null);
+            const notes = noteKeys.map(x => v[x]).find(extractPlain);
+            const label = nameKeys.map(x => v[x]).find(getText) ?? k;
+            if (label || value != null || notes) pushComp(label, value ?? '', notes ?? '');
+            const ev = v.evidence || v.reasons || v.notes || v.comments || v.findings;
+            if (Array.isArray(ev)) ev.forEach(pushEv);
+          } else if (typeof v === 'string' || typeof v === 'number') {
+            // Keyed scalar could be a component
+            const maybeNum = coerceToNumber(v);
+            if (maybeNum != null) pushComp(k, maybeNum, '');
+            else pushEv(`${toTitleCase(k)}: ${String(v)}`);
+          }
+        }
+      }
+    }
+
+    // Generic pass over node's own keys
+    if (typeof node === 'object') {
+      for (const [k, v] of Object.entries(node)) {
+        const kl = String(k).toLowerCase();
+        if (['rationale','justification','reason','explanation'].includes(kl)) { pushEv(v); continue; }
+        if (['sources','evidence','reasons','notes','comments','findings'].includes(kl) && Array.isArray(v)) { v.forEach(pushEv); continue; }
+        if (/(component|criterion|factor|dimension|aspect)/i.test(k) && typeof v === 'object') {
+          // Try to lift component-like structures
+          const label = nameKeys.map(x => v[x]).find(getText) ?? toTitleCase(k);
+          const value = valueKeys.map(x => v[x]).map(coerceToNumber).find(x => x != null);
+          const notes = noteKeys.map(x => v[x]).find(extractPlain);
+          if (label || value != null || notes) pushComp(label, value ?? '', notes ?? '');
+        }
+      }
+    }
+  }
+
+  nodes.forEach(scanNode);
+
+  return { components, evidence };
+}
+
+// Render screening narratives (de-duplicated; exclude metadata and score fields)
 function renderScreeningSections(item) {
   const sections = [];
   const carriers = [ item?.screening, item?.phase1?.screening ];
@@ -651,7 +755,7 @@ function buildReportHtml(item) {
     blocks.push('</tbody></table>');
   }
 
-  // Factors and rationale
+  // Factor scores and rationale (overview)
   const detailsAxes = extractAxisDetails(item);
   const row = (label, d) => {
     const scoreTxt = isFiniteNum(d.score) ? d.score.toFixed(2) : '—';
@@ -671,6 +775,41 @@ function buildReportHtml(item) {
     </table>
   `);
 
+  // Detailed WERP breakdown per axis (components + evidence)
+  const axes = ['WCS','PHS','ESI','RPM'];
+  const axisSections = [];
+  for (const ax of axes) {
+    const { components, evidence } = extractAxisBreakdown(item, ax);
+    const axDet = detailsAxes[ax] || {};
+    const parts = [];
+    // Header and rationale
+    parts.push(`<h4>${ax} – Breakdown</h4>`);
+    const ratHtml = extractHtml(axDet.rationale);
+    if (ratHtml) parts.push(ratHtml);
+
+    // Components table
+    if (components.length) {
+      parts.push('<table><thead><tr><th>Component</th><th>Value</th><th>Notes</th></tr></thead><tbody>');
+      for (const c of components) {
+        parts.push(`<tr><th style="white-space:nowrap">${escapeHtml(c.label)}</th><td style="width:80px">${escapeHtml(c.value)}</td><td>${escapeHtml(c.notes)}</td></tr>`);
+      }
+      parts.push('</tbody></table>');
+    }
+    // Evidence bullets
+    if (evidence.length) {
+      parts.push('<ul>');
+      for (const e of evidence) parts.push(`<li>${escapeHtml(e)}</li>`);
+      parts.push('</ul>');
+    }
+    const sec = parts.join('\n');
+    // Only include if anything beyond the header exists
+    if (components.length || evidence.length || ratHtml) axisSections.push(sec);
+  }
+  if (axisSections.length) {
+    blocks.push('<h3>WERP Score Breakdown</h3>');
+    blocks.push(axisSections.join('\n'));
+  }
+
   // Screening narratives
   const screeningHtml = renderScreeningSections(item);
   if (screeningHtml) blocks.push(screeningHtml);
@@ -679,7 +818,7 @@ function buildReportHtml(item) {
   return blocks.join('\n');
 }
 
-// Markdown version (object-aware)
+// Markdown version (object-aware + detailed breakdown)
 function buildReportMarkdown(item) {
   const lines = [];
   const vessel = getVesselName(item);
@@ -694,29 +833,29 @@ function buildReportMarkdown(item) {
   const c = extractPlain(item?.conclusion);
   if (c) { lines.push('\n## Conclusion'); lines.push(c); }
 
+  // Key facts
   const vesselType = readTextByPaths(item, ['vesselType','vessel_type','type','shipType','class','metadata.vesselType','meta.vesselType']);
   const sunkDate = readTextByPaths(item, ['sunkDate','sunk_date','dateSunk','sunkdate','phase1.screening.sunkDate']);
   const sinkingCause = readTextByPaths(item, ['sinkingCause','causeOfSinking','sinking_cause','cause','phase1.screening.sinkingCause']);
   const coords = (() => {
-    const c = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
-    const lat = c?.latitude ?? c?.lat ?? c?.y;
-    const lng = c?.longitude ?? c?.lng ?? c?.x;
+    const c0 = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
+    const lat = c0?.latitude ?? c0?.lat ?? c0?.y;
+    const lng = c0?.longitude ?? c0?.lng ?? c0?.x;
     if (lat == null || lng == null) return null;
     return `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`;
   })();
-
   const facts = [];
   const pushFact = (k, v) => { const t = extractPlain(v); if (t && !facts.some(f => f.k === k && f.v === t)) facts.push({k, v: t}); };
   if (vesselType) pushFact('Vessel Type', vesselType);
   if (sunkDate) pushFact('Sunk Date', sunkDate);
   if (sinkingCause) pushFact('Sinking Cause', sinkingCause);
   if (coords) pushFact('Coordinates', coords);
-
   if (facts.length) {
     lines.push('\n## Key Facts');
     for (const f of facts) lines.push(`- ${f.k}: ${f.v}`);
   }
 
+  // Overview table
   const d = extractAxisDetails(item);
   lines.push('\n## Factor Scores and Rationale');
   lines.push('| Factor | Score | Rationale |');
@@ -727,6 +866,29 @@ function buildReportMarkdown(item) {
   lines.push(row('ESI', d.ESI));
   lines.push(row('RPM', d.RPM));
 
+  // Detailed breakdown
+  const axes = ['WCS','PHS','ESI','RPM'];
+  lines.push('\n## WERP Score Breakdown');
+  for (const ax of axes) {
+    const { components, evidence } = extractAxisBreakdown(item, ax);
+    const rat = extractPlain(d[ax]?.rationale);
+    if (!components.length && !evidence.length && !rat) continue;
+    lines.push(`\n### ${ax} – Breakdown`);
+    if (rat) { lines.push('\nRationale'); lines.push(rat); }
+    if (components.length) {
+      lines.push('\n| Component | Value | Notes |');
+      lines.push('|---|---:|---|');
+      for (const c of components) {
+        lines.push(`| ${c.label || ''} | ${c.value || ''} | ${c.notes || ''} |`);
+      }
+    }
+    if (evidence.length) {
+      lines.push('\nEvidence');
+      for (const e of evidence) lines.push(`- ${e}`);
+    }
+  }
+
+  // Screening sections
   const carriers = [ item?.screening, item?.phase1?.screening ];
   const addIf = (title, v) => { const t = extractPlain(v); if (t) { lines.push(`\n## ${title}`); lines.push(t); } };
   for (const sc of carriers) {
@@ -1015,10 +1177,11 @@ function exportPdf() {
       <title>${escapeHtml(vessel)}</title>
       <style>
         body { font-family: Inter, Arial, sans-serif; color:#111; line-height:1.5; padding:24px; }
-        h1,h2,h3 { margin: 0 0 8px; }
+        h1,h2,h3,h4 { margin: 0 0 8px; }
         h1 { font-size: 22px; text-align:center; }
         h2 { font-size: 18px; }
         h3 { font-size: 16px; }
+        h4 { font-size: 14px; }
         table { width:100%; border-collapse: collapse; margin: 8px 0; }
         th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
         th { background:#f5f5f5; }
