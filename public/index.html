@@ -1,751 +1,362 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <!-- FIX: A Content Security Policy (CSP) has been reinstated. The previous version was too restrictive and was removed, but running without one causes conflicts with browser extensions. This updated policy is designed to allow the application and extensions to run without blocking critical scripts, which should resolve the login failure. -->
-  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https: blob:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; img-src 'self' https: data:;">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Project Guardian: AI Wreck Assessment Agent</title>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>Project Guardian – WERP Reports</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- IMPORTANT: Avoid inline CSP meta here; manage CSP via Hosting headers if needed -->
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 0; color: #111; background: #f5f7fa; }
+    header { background:#111827; color:#fff; padding: 0.9rem 1.25rem; }
+    header .wrap { max-width: 1200px; margin: 0 auto; display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+    header a { color:#a5b4fc; text-decoration:none; font-size: 14px; }
+    .auth { display:flex; align-items:center; gap:.5rem; }
+    .auth .user { font-size: 12px; color:#c7d2fe; }
+    .auth button { background:#4f46e5; color:#fff; border:0; padding:.4rem .7rem; border-radius:6px; cursor:pointer; font-size:12px; }
+    .auth button.secondary { background:#6b7280; }
 
-  <!-- Leaflet -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
-
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <link rel="stylesheet" href="styles.css" />
-  <script src="theme.js" defer></script>
-
+    main { max-width: 1200px; margin: 1rem auto; padding: 0 1rem 2rem; }
+    .grid { display:grid; grid-template-columns: 260px 1fr 1fr; gap: 1rem; align-items: start; }
+    .panel { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:1rem; box-shadow:0 2px 4px rgba(0,0,0,0.04); }
+    h1 { font-size:1.35rem; margin:0; }
+    h2 { font-size:1.05rem; margin:0 0 .5rem; display:flex; align-items:center; gap:.5rem; }
+    .muted { color:#6b7280; }
+    .hint { font-size:12px; color:#6b7280; }
+    .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+    .col { display:flex; flex-direction:column; gap:.35rem; }
+    label { font-size:12px; color:#374151; display:flex; gap:6px; align-items:center; }
+    input[type="checkbox"] { width:16px; height:16px; }
+    input[type="text"] { border:1px solid #d1d5db; border-radius:6px; padding:.45rem .6rem; font-size:14px; min-width:0; flex:1; }
+    button { background:#1e40af; color:#fff; border:0; padding:.45rem .8rem; border-radius:6px; cursor:pointer; font-size:13px; }
+    .btn-light { background:#eef2ff; color:#1e40af; }
+    .badge { font-size:11px; border:1px solid #e5e7eb; padding:2px 7px; border-radius:999px; color:#374151; background:#f9fafb; font-weight:500; }
+    .list { display:flex; flex-direction:column; gap:.5rem; }
+    .card { border:1px solid #e5e7eb; border-radius:8px; padding:.75rem .8rem; background:#fff; display:flex; gap:.75rem; align-items:flex-start; }
+    .card h3 { font-size:14px; margin:.1rem 0 .25rem; }
+    .card .line { font-size:12px; color:#374151; display:flex; gap:.5rem; flex-wrap:wrap; }
+    .pill { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid; }
+    .pill.low { color:#065f46; background:#ecfdf5; border-color:#10b981; }
+    .pill.medium { color:#92400e; background:#fffbeb; border-color:#f59e0b; }
+    .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
+    .empty { padding: .75rem; border:1px dashed #e5e7eb; border-radius:8px; color:#6b7280; font-size: 13px; text-align:center; }
+    .toolbar { display:flex; gap:.5rem; align-items:center; margin:.5rem 0 .25rem; }
+    .kv { font-size:12px; color:#6b7280; }
+    .section-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem; }
+    .section-title .right { display:flex; align-items:center; gap:.5rem; }
+    .count { font-size:12px; color:#6b7280; }
+    .error { color:#991b1b; font-size:12px; }
+    @media (max-width: 1000px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
-<body class="text-gray-800" style="font-family:'Inter',sans-serif;">
-<header class="bg-white shadow-md">
-  <!-- UPDATE: Restructured header for stable layout and larger logos -->
-  <div class="container mx-auto px-4 md:px-8 py-3 flex justify-between items-center gap-4">
-    <!-- Left: Logos -->
-    <div class="flex items-center space-x-4 flex-shrink-0">
-      <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-20" />
-      <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Deeptrek Logo" class="h-20" />
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Project Guardian – WERP Reports</h1>
+      <nav class="row">
+        <a href="/admin-tools.html">Admin Tools</a>
+      </nav>
+      <div class="auth">
+        <span id="authStatus" class="user">Checking sign-in…</span>
+        <button id="signInBtn">Sign in</button>
+        <button id="signOutBtn" class="secondary" style="display:none;">Sign out</button>
+      </div>
     </div>
+  </header>
 
-    <!-- Center: Title (Grows and shrinks, hidden on smaller screens) -->
-    <div class="flex-grow text-center hidden lg:block">
-      <h1 class="text-2xl xl:text-3xl font-bold text-gray-700 truncate">Project Guardian AI Wreck Assessment Agent</h1>
-    </div>
+  <main>
+    <div id="authError" class="error" style="display:none;"></div>
 
-    <!-- Right: Controls -->
-    <div class="flex items-center gap-3 flex-shrink-0">
-      <button
-        id="themeToggle"
-        class="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
-        aria-label="Toggle theme"
-        title="Toggle theme"
-      >🌙</button>
-      <div id="userInfo" class="hidden items-center gap-3">
-        <span id="roleBadge" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">Role: —</span>
-        <a id="adminToolsBtn" href="/admin-tools.html"
-           class="hidden text-xs px-3 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
-           title="Open Admin Tools">Admin Tools</a>
-        <div class="text-sm text-gray-700">
-          <div id="userName" class="font-medium"></div>
-          <div id="userEmail" class="text-gray-500"></div>
+    <div class="grid">
+      <!-- Left: Filters -->
+      <section class="panel">
+        <h2>Filters <span class="badge">Severity</span></h2>
+        <div class="col" style="margin:.5rem 0;">
+          <label><input type="checkbox" id="sevHigh" checked /> High</label>
+          <label><input type="checkbox" id="sevMedium" checked /> Medium</label>
+          <label><input type="checkbox" id="sevLow" checked /> Low</label>
         </div>
-        <button id="signOutBtn" class="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300">
-          Sign out
-        </button>
-      </div>
-    </div>
-  </div>
-</header>
-
-<main class="container mx-auto p-4 md:p-8">
-  <!-- Signed-out auth -->
-  <section id="signedOutContainer" class="mt-10 bg-white rounded-lg shadow p-8 max-w-md mx-auto">
-    <h2 class="text-2xl font-semibold text-gray-800 mb-2 text-center">Welcome</h2>
-    <p class="text-gray-600 mb-6 text-center">Sign in with your email and password to continue.</p>
-
-    <div class="space-y-3">
-      <label class="block">
-        <span class="text-sm text-gray-700">Email</span>
-        <input id="emailInput" type="email" class="mt-1 w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="you@example.com" autocomplete="email" />
-      </label>
-      <label class="block">
-        <span class="text-sm text-gray-700">Password</span>
-        <input id="passwordInput" type="password" class="mt-1 w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="••••••••" autocomplete="current-password" />
-      </label>
-      <p id="authMessage" class="text-sm h-5 text-center text-gray-500" aria-live="polite"></p>
-      <div class="flex flex-col sm:flex-row gap-2 mt-2">
-        <button id="signInEmailBtn" class="flex-1 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Sign in</button>
-        <button id="createAccountBtn" class="flex-1 px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Create account</button>
-      </div>
-      <button id="resetPasswordBtn" class="w-full text-sm text-blue-700 hover:underline mt-1">Forgot password?</button>
-    </div>
-    <p class="text-xs text-gray-500 mt-6 text-center">
-      New accounts start as read-only Users. Admin approval is required for Contributor access.
-    </p>
-  </section>
-
-  <!-- App container -->
-  <div id="appContainer" class="hidden">
-    <!-- Analyze New Vessel -->
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8 max-w-2xl mx-auto">
-      <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
-          <h2 class="text-xl font-semibold text-gray-700">Analyze New Vessel</h2>
-          <span id="modelNote" class="note"></span>
+        <h2 style="margin-top:.9rem;">Search</h2>
+        <div class="row" style="margin:.35rem 0;">
+          <input type="text" id="searchBox" placeholder="Search vessel name..." />
+          <button id="clearSearch" class="btn-light" type="button">Clear</button>
         </div>
-        <span id="contribHint" class="text-xs text-gray-500 hidden">Contributor access required</span>
-      </div>
-      <div class="flex flex-col sm:flex-row gap-4">
-        <input
-          type="text"
-          id="vesselName"
-          class="flex-grow p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          placeholder="e.g., USS Chevalier"
-          aria-label="Vessel name"
-        />
-        <button
-          id="analyzeBtn"
-          class="bg-blue-800 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-900 transition duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Run analysis (Contributors only)"
-        >
-          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-               xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M10 21l2-2m-2-2l2 2m6-6a8 8 0 11-16 0 8 8 0 0116 0z" />
-          </svg>
-          <div id="spinner" class="spinner animate-spin rounded-full h-5 w-5 border-2 border-white border-t-blue-800 mr-2 hidden"></div>
-          <span id="analyzeText">Analyze Wreck</span>
-        </button>
-      </div>
-      <p id="statusMessage" class="text-sm text-gray-500 mt-4 text-center h-4" aria-live="polite"></p>
+        <div class="kv" style="margin-top:.75rem;">
+          Showing: <span id="visibleCounts">0</span>
+        </div>
+        <div class="hint" style="margin-top:.5rem;">
+          Severity is computed as: (WCS + PHS + (ESI÷3)) × RPM.
+        </div>
+      </section>
+
+      <!-- Middle: Completed -->
+      <section class="panel">
+        <div class="section-title">
+          <h2>Completed Reports</h2>
+          <div class="right"><span class="count" id="completedCount">0</span></div>
+        </div>
+        <div class="list" id="completedList"></div>
+        <div class="empty" id="completedEmpty" style="display:none;">No completed reports match your filters.</div>
+      </section>
+
+      <!-- Right: Requiring Reassessment -->
+      <section class="panel">
+        <div class="section-title">
+          <h2>Requiring Reassessment</h2>
+          <div class="right"><span class="count" id="reassessCount">0</span></div>
+        </div>
+        <div class="list" id="reassessList"></div>
+        <div class="empty" id="reassessEmpty" style="display:none;">No reassessments pending for your filters.</div>
+      </section>
     </div>
+  </main>
 
-    <!-- Map -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-      <div id="mapContainer" class="lg:col-span-3 bg-white rounded-lg shadow-lg p-4">
-        <div id="map"></div>
-      </div>
-    </div>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    <!-- Lists -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-      <div class="bg-white rounded-lg shadow-lg p-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-700">Initial Assessments</h2>
-        <div id="initialWreckListContainer" class="h-96 overflow-y-auto">
-          <ul id="initialWreckList" class="space-y-2"></ul>
-          <p id="noInitialWrecksMessage" class="text-gray-500 text-center hidden">No initial assessments found.</p>
-        </div>
-      </div>
-      <div class="bg-white rounded-lg shadow-lg p-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-700">Completed Assessments</h2>
-        <div id="completedWreckListContainer" class="h-96 overflow-y-auto">
-          <ul id="completedWreckList" class="space-y-2"></ul>
-          <p id="noCompletedWrecksMessage" class="text-gray-500 text-center hidden">No completed assessments found.</p>
-        </div>
-      </div>
-      <div class="bg-white rounded-lg shadow-lg p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-semibold text-gray-700">Environmental Alerts</h2>
-            <span id="alertCountBadge" class="badge">0 incidents</span>
-        </div>
-        <div id="alertListContainer" class="h-96 overflow-y-auto">
-          <ul id="alertList" class="space-y-3"></ul>
-          <p id="noAlertsMessage" class="text-gray-500 text-center">No recent incidents.</p>
-        </div>
-      </div>
-    </div>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+      authDomain: "project-guardian-agent.firebaseapp.com",
+      projectId: "project-guardian-agent",
+      storageBucket: "project-guardian-agent.firebasestorage.app",
+      messagingSenderId: "84395007243",
+      appId: "1:84395007243:web:b07e5f4c4264d27611160e",
+      measurementId: "G-NRLH3WSCQ9"
+    };
 
-    <!-- Report -->
-    <div id="reportContainer" class="mt-8 bg-white rounded-lg shadow-lg p-6 md:p-8 max-w-6xl mx-auto hidden">
-      <h2 id="reportTitle" class="text-4xl font-bold mb-6 text-center text-gray-800"></h2>
-      <div id="alert-display-section" class="hidden mb-6"></div>
-      <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
-        <div id="reportContent" class="lg:col-span-3 prose max-w-none"></div>
-        <div id="reportChart" class="lg:col-span-2">
-          <h3 class="text-xl font-bold mb-4 text-center text-gray-800">WERP Risk Profile</h3>
-          <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
-        </div>
-      </div>
-    </div>
-  </div>
-</main>
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const provider = new GoogleAuthProvider();
 
-<script type="module">
-// FIX: Wrapped the entire script in a DOMContentLoaded listener to ensure the DOM is ready before execution.
-// This prevents errors caused by scripts (especially extensions) trying to interact with elements that haven't been loaded yet.
-document.addEventListener('DOMContentLoaded', () => {
-  /**
-   * Frontend logic with unified v2 schema (PHS 4 parameters with fixed weights).
-   * High score/value => higher risk/sensitivity.
-   * PHS weights: Fuel Volume & Type 0.40, Ordnance 0.25, Vessel Integrity 0.20, Hazardous Materials 0.15.
-   */
+    const COL_PATH = "artifacts/guardian-agent-default/public/data/werpassessments";
 
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-  import {
-    getAuth,
-    onAuthStateChanged,
-    signOut,
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    sendPasswordResetEmail
-  } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-  import {
-    getFirestore,
-    doc,
-    setDoc,
-    getDoc,
-    updateDoc,
-    serverTimestamp,
-    collection,
-    query,
-    orderBy,
-    onSnapshot
-  } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+    // UI refs
+    const authStatus = document.getElementById("authStatus");
+    const signInBtn = document.getElementById("signInBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+    const authError = document.getElementById("authError");
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
-    authDomain: "project-guardian-agent.firebaseapp.com",
-    projectId: "project-guardian-agent",
-    storageBucket: "project-guardian-agent.firebasestorage.app",
-    messagingSenderId: "84395007243",
-    appId: "1:84395007243:web:b07e5f4c4264d27611160e",
-    measurementId: "G-NRLH3WSCQ9"
-  };
+    const sevHigh = document.getElementById("sevHigh");
+    const sevMedium = document.getElementById("sevMedium");
+    const sevLow = document.getElementById("sevLow");
+    const searchBox = document.getElementById("searchBox");
+    const clearSearch = document.getElementById("clearSearch");
 
-  const appId = 'guardian-agent-default';
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const auth = getAuth(app);
-  const functions = getFunctions(app, 'us-central1');
+    const completedList = document.getElementById("completedList");
+    const reassessList = document.getElementById("reassessList");
+    const completedEmpty = document.getElementById("completedEmpty");
+    const reassessEmpty = document.getElementById("reassessEmpty");
 
-  const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
-  const repairWerpsFn    = httpsCallable(functions, 'repairWerps');
+    const completedCount = document.getElementById("completedCount");
+    const reassessCount = document.getElementById("reassessCount");
+    const visibleCounts = document.getElementById("visibleCounts");
 
-  const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
+    let allDocs = [];
+    let loadedOnce = false;
 
-  let map;
-  const markers = {};
-  let isRateLimited = false;
-  let appInitialized = false;
-  let currentRole = 'user';
-  let roleUnsub = null;
-
-  const ui = {
-    themeToggle: document.getElementById('themeToggle'),
-    modelNote: document.getElementById('modelNote'),
-    vesselNameInput: document.getElementById('vesselName'),
-    analyzeBtn: document.getElementById('analyzeBtn'),
-    analyzeText: document.getElementById('analyzeText'),
-    spinner: document.getElementById('spinner'),
-    statusMessage: document.getElementById('statusMessage'),
-    reportContainer: document.getElementById('reportContainer'),
-    reportTitle: document.getElementById('reportTitle'),
-    reportContent: document.getElementById('reportContent'),
-    initialWreckList: document.getElementById('initialWreckList'),
-    completedWreckList: document.getElementById('completedWreckList'),
-    noInitialWrecksMessage: document.getElementById('noInitialWrecksMessage'),
-    noCompletedWrecksMessage: document.getElementById('noCompletedWrecksMessage'),
-    alertList: document.getElementById('alertList'),
-    noAlertsMessage: document.getElementById('noAlertsMessage'),
-    alertDisplaySection: document.getElementById('alert-display-section'),
-    alertCountBadge: document.getElementById('alertCountBadge'),
-    appContainer: document.getElementById('appContainer'),
-    signedOutContainer: document.getElementById('signedOutContainer'),
-    userInfo: document.getElementById('userInfo'),
-    userName: document.getElementById('userName'),
-    userEmail: document.getElementById('userEmail'),
-    roleBadge: document.getElementById('roleBadge'),
-    contribHint: document.getElementById('contribHint'),
-    signOutBtn: document.getElementById('signOutBtn'),
-    emailInput: document.getElementById('emailInput'),
-    passwordInput: document.getElementById('passwordInput'),
-    signInEmailBtn: document.getElementById('signInEmailBtn'),
-    createAccountBtn: document.getElementById('createAccountBtn'),
-    resetPasswordBtn: document.getElementById('resetPasswordBtn'),
-    authMessage: document.getElementById('authMessage'),
-    adminToolsBtn: document.getElementById('adminToolsBtn')
-  };
-
-  ui.themeToggle?.addEventListener('click', () => {
-    if (typeof window.toggleTheme === 'function') window.toggleTheme();
-  });
-
-  function initializeMap() {
-    if (map) return;
-    map = L.map('map').setView([10, 150], 3);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-    }).addTo(map);
-  }
-
-  function initAfterAuth() {
-    if (appInitialized) return;
-    appInitialized = true;
-    initializeMap();
-    listenForPreviousAnalyses();
-    ui.modelNote.textContent = "Schema v2: WCS(0–20) PHS(4 weighted; 0–10) ESI(0–30 or legacy) RPM(0.5–2.5 baseline 1.0). High = higher risk.";
-  }
-
-  function showSignedOutUI() {
-    ui.userInfo.classList.add('hidden');
-    ui.adminToolsBtn?.classList.add('hidden');
-    ui.appContainer.classList.add('hidden');
-    ui.signedOutContainer.classList.remove('hidden');
-    ui.statusMessage.textContent = "Please sign in to load data.";
-    if (roleUnsub) { roleUnsub(); roleUnsub = null; }
-    currentRole = 'user';
-    applyPermissions();
-  }
-
-  function showSignedInUI(user) {
-    ui.signedOutContainer.classList.add('hidden');
-    ui.appContainer.classList.remove('hidden');
-    ui.userInfo.classList.remove('hidden');
-    ui.userName.textContent = user.email || "Signed in";
-    ui.userEmail.textContent = user.email || "";
-  }
-
-  function updateRoleUI() {
-    const roleText = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
-    ui.roleBadge.textContent = `Role: ${roleText}`;
-    ui.roleBadge.className = "text-xs px-2 py-1 rounded-full border " +
-      ((currentRole === 'contributor' || currentRole === 'admin')
-        ? "bg-green-50 text-green-700 border-green-300"
-        : "bg-gray-100 text-gray-700 border-gray-300");
-    ui.contribHint.classList.toggle('hidden', (currentRole === 'contributor' || currentRole === 'admin'));
-    ui.adminToolsBtn?.classList.toggle('hidden', currentRole !== 'admin');
-  }
-
-  function applyPermissions() {
-    const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
-    ui.analyzeBtn.disabled = !canContribute;
-    updateRoleUI();
-  }
-
-  function setAuthMessage(msg, isError = false) {
-    ui.authMessage.textContent = msg || "";
-    ui.authMessage.style.color = isError ? '#ef4444' : '#6b7280';
-  }
-
-  async function handleSignInEmailPassword() {
-    const email = ui.emailInput.value.trim();
-    const password = ui.passwordInput.value;
-    if (!email || !password) return setAuthMessage("Enter email and password.", true);
-    try {
-      setAuthMessage("Signing in...");
-      await signInWithEmailAndPassword(auth, email, password);
-      setAuthMessage("");
-    } catch (e) {
-      setAuthMessage(cleanAuthError(e), true);
+    function setAuthError(msg){
+      if (msg) {
+        authError.textContent = msg;
+        authError.style.display = "";
+      } else {
+        authError.textContent = "";
+        authError.style.display = "none";
+      }
     }
-  }
 
-  async function handleCreateAccount() {
-    const email = ui.emailInput.value.trim();
-    const password = ui.passwordInput.value;
-    if (!email || !password) return setAuthMessage("Enter email and a password.", true);
-    if (password.length < 6) return setAuthMessage("Password must be at least 6 characters.", true);
-    try {
-      setAuthMessage("Creating account...");
-      await createUserWithEmailAndPassword(auth, email, password);
-      setAuthMessage("");
-    } catch (e) {
-      setAuthMessage(cleanAuthError(e), true);
+    function clamp(n, lo, hi){
+      n = Number(n);
+      if (!Number.isFinite(n)) n = lo;
+      return Math.min(hi, Math.max(lo, n));
     }
-  }
 
-  async function handlePasswordReset() {
-    const email = ui.emailInput.value.trim();
-    if (!email) return setAuthMessage("Enter your email to reset password.", true);
-    try {
-      setAuthMessage("Sending reset email...");
-      await sendPasswordResetEmail(auth, email);
-      setAuthMessage("Password reset email sent.");
-    } catch (e) {
-      setAuthMessage(cleanAuthError(e), true);
+    function computeSeverity(doc){
+      const wcs = clamp(doc?.wcs?.totalScore, 0, 20);
+      const phs = clamp(doc?.phs?.totalWeightedScore, 0, 10);
+      const esi = clamp(doc?.esi?.totalScore, 0, 30);
+      const rpm = clamp(doc?.rpm?.finalMultiplier, 0.5, 2.5);
+      const composite = (wcs + phs + (esi / 3)) * rpm; // ~0..100
+      let band = "low";
+      if (composite >= 70) band = "high";
+      else if (composite >= 40) band = "medium";
+      return { value: Number(composite.toFixed(1)), band };
     }
-  }
 
-  function cleanAuthError(e) {
-    const code = e?.code || "";
-    switch (code) {
-      case "auth/invalid-email": return "Invalid email address.";
-      case "auth/user-disabled": return "This account is disabled.";
-      case "auth/user-not-found": return "No account found with that email.";
-      case "auth/wrong-password": return "Incorrect password.";
-      case "auth/email-already-in-use": return "Email already in use.";
-      case "auth/weak-password": return "Password must be at least 6 characters.";
-      default: return e?.message || "Authentication error.";
+    function phase2Status(doc){
+      const s = doc?.phase2?.latest?.status || doc?.phase2?.status || "";
+      return String(s || "").toLowerCase();
     }
-  }
+    function needsReassessment(doc){ return !!doc?.needsReassessment; }
+    function impactedEvents(doc){ return Array.isArray(doc?.impactEvents) ? doc.impactEvents : []; }
 
-  ui.signInEmailBtn?.addEventListener('click', handleSignInEmailPassword);
-  ui.createAccountBtn?.addEventListener('click', handleCreateAccount);
-  ui.resetPasswordBtn?.addEventListener('click', handlePasswordReset);
-  ui.signOutBtn?.addEventListener('click', () => signOut(auth));
+    function matchesFilters(item){
+      const band = item?.severity?.band || "low";
+      if (band === "high" && !sevHigh.checked) return false;
+      if (band === "medium" && !sevMedium.checked) return false;
+      if (band === "low" && !sevLow.checked) return false;
 
-  onAuthStateChanged(auth, (user) => {
-    if (!user) {
-      appInitialized = false;
-      showSignedOutUI();
-      return;
+      const q = (searchBox?.value || "").trim().toLowerCase();
+      if (q) {
+        const name = String(item?.vesselName || item?.id || "").toLowerCase();
+        if (!name.includes(q)) return false;
+      }
+      return true;
     }
-    showSignedInUI(user);
 
-    if (roleUnsub) { roleUnsub(); roleUnsub = null; }
-    const roleDocRef = doc(db, 'system', 'allowlist', 'users', user.uid);
-    roleUnsub = onSnapshot(roleDocRef, (snap) => {
-      const role = (snap.exists() && typeof snap.data().Role === 'string') ? snap.data().Role : 'user';
-      currentRole = ['user', 'contributor', 'admin'].includes(role) ? role : 'user';
-      applyPermissions();
-    }, () => {
-      currentRole = 'user';
-      applyPermissions();
+    function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function num(v){
+      const n = Number(v);
+      if (!Number.isFinite(n)) return "—";
+      return n % 1 === 0 ? n.toFixed(0) : n.toFixed(1);
+    }
+
+    function dateIso(ts){
+      if (!ts) return "—";
+      if (typeof ts === "string") return ts.slice(0,10);
+      if (ts?._seconds) return new Date(ts._seconds*1000).toISOString().slice(0,10);
+      return "—";
+    }
+
+    function renderEvents(d){
+      const events = impactedEvents(d);
+      if (!events.length) return "";
+      const items = events.slice(-3).map(ev => {
+        const ds = dateIso(ev?.date || ev?.occurredAt || ev?.recordedAt);
+        const name = ev?.name || ev?.type || "Event";
+        return `<span class="badge" title="${escapeHtml(ev?.description||"")}">${escapeHtml(name)} ${ds ? "(" + ds + ")" : ""}</span>`;
+      }).join(" ");
+      return `<div class="line" style="margin-top:.35rem;">Impacts: ${items}</div>`;
+    }
+
+    function drawList(root, arr, showEvents){
+      root.innerHTML = "";
+      for (const d of arr){
+        const div = document.createElement("div");
+        div.className = "card";
+        const sevClass = d?.severity?.band || "low";
+        const p2Updates = Array.isArray(d?.phase2?.updates) ? d.phase2.updates.length : 0;
+        const p2LatestAt = dateIso(d?.phase2?.latest?.updatedAt || d?.updatedAt);
+
+        div.innerHTML = `
+          <div style="flex:1;">
+            <h3>${escapeHtml(d.vesselName || d.id || "Unknown")} <span class="pill ${sevClass}">${(d?.severity?.band || "LOW").toUpperCase()} ${num(d?.severity?.value)}</span></h3>
+            <div class="line">
+              <span>WCS ${num(d?.wcs?.totalScore)}/20</span>
+              <span>PHS ${num(d?.phs?.totalWeightedScore)}/10</span>
+              <span>ESI ${num(d?.esi?.totalScore)}/30</span>
+              <span>RPM ×${num(d?.rpm?.finalMultiplier)}</span>
+            </div>
+            <div class="line">
+              <span>Phase 2: ${escapeHtml(phase2Status(d) || "none")}</span>
+              <span>Updates: ${p2Updates}</span>
+              <span>Last Updated: ${p2LatestAt}</span>
+            </div>
+            ${showEvents ? renderEvents(d) : ""}
+          </div>
+        `;
+        root.appendChild(div);
+      }
+    }
+
+    function render(){
+      const completed = [];
+      const reassess = [];
+
+      for (const d of allDocs){
+        const sev = computeSeverity(d);
+        const item = { ...d, severity: sev };
+        if (!matchesFilters(item)) continue;
+
+        const p2 = phase2Status(d);
+        const flag = needsReassessment(d);
+
+        if (p2 === "completed" && !flag) completed.push(item);
+        if (flag) reassess.push(item);
+      }
+
+      completed.sort((a,b)=> (b?.severity?.value||0) - (a?.severity?.value||0));
+      reassess.sort((a,b)=> (b?.severity?.value||0) - (a?.severity?.value||0));
+
+      drawList(completedList, completed, false);
+      drawList(reassessList, reassess, true);
+
+      completedCount.textContent = `${completed.length} shown`;
+      reassessCount.textContent = `${reassess.length} shown`;
+      visibleCounts.textContent = `${completed.length + reassess.length} total`;
+      completedEmpty.style.display = completed.length ? "none" : "";
+      reassessEmpty.style.display = reassess.length ? "none" : "";
+    }
+
+    async function loadData(){
+      try {
+        const qy = query(collection(db, COL_PATH), orderBy("vesselName"), limit(500));
+        const snap = await getDocs(qy);
+        allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+        loadedOnce = true;
+        setAuthError("");
+      } catch (e) {
+        console.error("Failed to load reports:", e);
+        if (String(e?.code||"").includes("permission-denied")) {
+          setAuthError("Sign-in required to view reports. Please use the Sign in button.");
+        } else {
+          setAuthError("Failed to load reports. Try reloading the page.");
+        }
+        completedEmpty.textContent = "No data.";
+        reassessEmpty.textContent = "No data.";
+        completedEmpty.style.display = "";
+        reassessEmpty.style.display = "";
+      }
+    }
+
+    // Filter events
+    [sevHigh, sevMedium, sevLow].forEach(cb => cb?.addEventListener("change", render));
+    searchBox?.addEventListener("input", render);
+    clearSearch?.addEventListener("click", () => { if (searchBox) searchBox.value = ""; render(); });
+
+    // Sign-in/out
+    signInBtn?.addEventListener("click", async () => {
+      try {
+        setAuthError("");
+        await signInWithPopup(auth, provider);
+      } catch (e) {
+        console.error("Sign-in failed:", e);
+        setAuthError(e?.message || "Sign-in failed.");
+      }
+    });
+    signOutBtn?.addEventListener("click", async () => {
+      try {
+        setAuthError("");
+        await signOut(auth);
+      } catch (e) {
+        console.error("Sign-out failed:", e);
+        setAuthError(e?.message || "Sign-out failed.");
+      }
     });
 
-    initAfterAuth();
-  });
-
-  // ---------------------------------------------------------------------------
-  // Real-time Listing
-  // ---------------------------------------------------------------------------
-  function listenForPreviousAnalyses() {
-    const q = query(assessmentsCollection, orderBy("createdAt", "desc"));
-    onSnapshot(q, (snapshot) => {
-      ui.initialWreckList.innerHTML = '';
-      ui.completedWreckList.innerHTML = '';
-      ui.alertList.innerHTML = '';
-
-      const alertGroups = new Map();
-
-      snapshot.docs.forEach(docSnap => {
-        const data = docSnap.data();
-        const listElement = data.status === 'completed' ? ui.completedWreckList : ui.initialWreckList;
-        addWreckToListAndMap(docSnap, listElement);
-
-        if (Array.isArray(data.alerts) && data.alerts.length > 0) {
-          const unacked = data.alerts.filter(a => !a.acknowledged);
-          for (const alert of unacked) {
-            const key = buildIncidentKey(alert, data, docSnap.id);
-            const ts = new Date(alert.timestamp || alert.time || Date.now()).getTime();
-            const entry = alertGroups.get(key) || {
-              key,
-              firstTs: ts,
-              lastTs: ts,
-              type: alert.type || 'event',
-              details: alert.details || '',
-              items: []
-            };
-              entry.items.push({ docId: docSnap.id, vesselName: data.vesselName, alert });
-            entry.firstTs = Math.min(entry.firstTs, ts);
-            entry.lastTs = Math.max(entry.lastTs, ts);
-            if (!entry.details && alert.details) entry.details = alert.details;
-            alertGroups.set(key, entry);
-          }
-        }
-      });
-
-      renderAlertGroups(alertGroups);
-
-      ui.noInitialWrecksMessage.classList.toggle('hidden', ui.initialWreckList.children.length > 0);
-      ui.noCompletedWrecksMessage.classList.toggle('hidden', ui.completedWreckList.children.length > 0);
-    }, (error) => console.error("Firestore Snapshot Error:", error));
-  }
-
-  function buildIncidentKey(alert) {
-    if (alert.incidentId || alert.groupId) return String(alert.incidentId || alert.groupId);
-    const t = new Date(alert.timestamp || alert.time || Date.now());
-    const hourKey = t.toISOString().slice(0, 13);
-    const type = String(alert.type || 'event');
-    const detailsKey = String(alert.details || '').trim().slice(0, 64).toLowerCase();
-    return `${type}|${hourKey}|${detailsKey}`;
-  }
-
-  function renderAlertGroups(groups) {
-    ui.alertList.innerHTML = '';
-    const arr = Array.from(groups.values()).sort((a, b) => b.lastTs - a.lastTs);
-    const count = arr.length;
-    ui.alertCountBadge.textContent = `${count} incident${count === 1 ? '' : 's'}`;
-    ui.noAlertsMessage.classList.toggle('hidden', count > 0);
-
-    for (const g of arr) {
-      const when = new Date(g.lastTs).toLocaleString();
-      const vessels = g.items.map(x => x.vesselName).join(', ');
-      const li = document.createElement('li');
-      li.className = 'p-3 bg-yellow-50 border-l-4 border-yellow-500 rounded-r-md';
-      li.innerHTML = `
-        <div class="flex items-start justify-between gap-2">
-          <div>
-            <p class="font-semibold text-yellow-800 capitalize">${g.type}</p>
-            <p class="text-sm text-gray-700">${g.details || 'Environmental incident detected.'}</p>
-            <p class="text-xs text-gray-500 mt-1">Last update: ${when}</p>
-            <p class="text-xs text-gray-600 mt-1">Vessels affected (${g.items.length}): ${vessels}</p>
-          </div>
-          <div class="text-right">
-            <button class="view-group-btn text-xs text-blue-700 hover:underline">View reports</button>
-          </div>
-        </div>
-      `;
-      li.querySelector('.view-group-btn').addEventListener('click', () => {
-        const first = g.items[0];
-        if (first) handleWreckSelection(first.docId);
-      });
-      ui.alertList.appendChild(li);
-    }
-  }
-
-  function addWreckToListAndMap(docSnap, listElement) {
-    const data = docSnap.data();
-    const docId = docSnap.id;
-    const hasAlert = Array.isArray(data.alerts) && data.alerts.some(a => !a.acknowledged);
-
-    const li = document.createElement('li');
-    li.className = 'wreck-list-item p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition duration-200 cursor-pointer';
-    li.innerHTML = `<span>${data.vesselName}</span> ${hasAlert ? '<span class="ml-2" title="Incident nearby">🚨</span>' : ''}`;
-    li.dataset.id = docId;
-    li.addEventListener('click', () => handleWreckSelection(docId));
-    listElement.append(li);
-
-    const coords = data?.phase1?.screening?.coordinates;
-    if (coords?.latitude && coords?.longitude) {
-      if (markers[docId]) map.removeLayer(markers[docId]);
-      const risk = getRiskProfile(data);
-      const popupContent = createPopupContent(data, risk);
-      const marker = L.marker([coords.latitude, coords.longitude], {
-        icon: L.icon({
-          iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${risk.color}.png`,
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-          shadowSize: [41, 41]
-        })
-      }).addTo(map).bindPopup(popupContent);
-      markers[docId] = marker;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Selection / Report Rendering
-  // ---------------------------------------------------------------------------
-  async function handleWreckSelection(docId) {
-    document.querySelectorAll('.wreck-list-item').forEach(item => item.classList.remove('active'));
-    document.querySelector(`.wreck-list-item[data-id="${docId}"]`)?.classList.add('active');
-
-    updateStatus('Fetching report...');
-    ui.reportContainer.classList.add('hidden');
-
-    try {
-      const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        renderReport(data, docId);
-        updateStatus(`Report for ${data.vesselName} loaded.`);
-        ui.reportContainer.scrollIntoView({ behavior: 'smooth' });
-        const coords = data?.phase1?.screening?.coordinates;
-        if (coords && map) {
-          map.flyTo([coords.latitude, coords.longitude], 8);
-          setTimeout(() => markers[docId]?.openPopup(), 500);
-        }
+    // Auth state
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        authStatus.textContent = `Signed in as ${user.email || user.uid}`;
+        signInBtn.style.display = "none";
+        signOutBtn.style.display = "";
       } else {
-        updateStatus('Could not find report.', true);
+        authStatus.textContent = "Not signed in";
+        signInBtn.style.display = "";
+        signOutBtn.style.display = "none";
       }
-    } catch (error) {
-      updateStatus("Failed to fetch report.", true);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Analysis Invocation
-  // ---------------------------------------------------------------------------
-  ui.analyzeBtn.addEventListener('click', runFullAnalysis);
-  ui.vesselNameInput.addEventListener('keypress', (e) => (e.key === 'Enter') && runFullAnalysis());
-
-  function requireContributor(actionName = "this action") {
-    const ok = (currentRole === 'contributor' || currentRole === 'admin');
-    if (!ok) updateStatus(`Contributor access required to ${actionName}.`, true);
-    return ok;
-  }
-
-  async function runFullAnalysis() {
-    if (!requireContributor("run analyses")) return;
-    if (isRateLimited) {
-      updateStatus("Please wait before next analysis.", true);
-      return;
-    }
-    const vesselName = ui.vesselNameInput.value.trim();
-    if (!vesselName) {
-      updateStatus("Please enter a vessel name.", true);
-      return;
-    }
-
-    setLoading(true);
-    ui.reportContainer.classList.add('hidden');
-
-    try {
-      const docId = vesselName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-      const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        renderReport(docSnap.data(), docId);
-        updateStatus(`Report for ${vesselName} loaded from database.`);
-      } else {
-        const newReportData = await performNewAnalysis(vesselName);
-        await setDoc(docRef, { ...newReportData, createdAt: serverTimestamp() });
-        renderReport(newReportData, docId);
-        updateStatus(`Analysis complete for ${vesselName}.`);
+      if (!loadedOnce || user) {
+        await loadData();
       }
+    });
 
-      document.querySelectorAll('.wreck-list-item').forEach(item => item.classList.remove('active'));
-      document.querySelector(`.wreck-list-item[data-id="${docId}"]`)?.classList.add('active');
-
-      setRateLimit();
-    } catch (error) {
-      updateStatus(`Error: ${error.message}`, true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Unified Prompt & Parsing (v2 schema)
-  // ---------------------------------------------------------------------------
-  function buildUnifiedAssessmentPrompt(vesselName) {
-    return `You are an expert OSINT analyst and marine environmental risk assessor.
-  Return ONLY JSON (no markdown):
-
-  {
-    "wcs_hull_structure": {
-      "parameters": [
-        {"parameter":"Age","rationale":"...","score":0},
-        {"parameter":"Construction Quality","rationale":"...","score":0},
-        {"parameter":"Wreck Integrity","rationale":"...","score":0},
-        {"parameter":"Corrosion Environment","rationale":"...","score":0}
-      ],
-      "maxScore": 20
-    },
-    "phs_pollution_hazard": {
-      "parameters": [
-        {"parameter":"Fuel Volume & Type","weight":0.40,"rationale":"...","score":0},
-        {"parameter":"Ordnance","weight":0.25,"rationale":"...","score":0},
-        {"parameter":"Vessel Integrity","weight":0.20,"rationale":"...","score":0},
-        {"parameter":"Hazardous Materials","weight":0.15,"rationale":"...","score":0}
-      ]
-    },
-    "esi_environmental_sensitivity": {
-      "parameters": [
-        {"parameter":"Proximity to Sensitive Ecosystems","rationale":"...","score":0},
-        {"parameter":"Biodiversity Value","rationale":"...","score":0},
-        {"parameter":"Socioeconomic Sensitivity","rationale":"...","score":0}
-      ],
-      "maxScore": 30
-    },
-    "rpm_risk_pressure_modifiers": {
-      "factors": [
-        {"factor":"Thermal Stress (Ocean Warming)","rationale":"...","value":1.0},
-        {"factor":"Seismic Activity","rationale":"...","value":1.0},
-        {"factor":"Anthropogenic Disturbance","rationale":"...","value":1.0}
-      ]
-    },
-    "final_summary": {
-      "summativeAssessment":"...",
-      "remediationSuggestions":[
-        {"priority":1,"title":"...","description":"..."},
-        {"priority":2,"title":"...","description":"..."},
-        {"priority":3,"title":"...","description":"..."}
-      ]
-    }
-  }
-
-  Rules:
-  - High score/value => higher risk.
-  - WCS 0–5 each (sum 0–20).
-  - PHS scores 0–10, weights: 0.40,0.25,0.20,0.15 => weighted sum 0–10.
-  - ESI scores 0–10 each (sum 0–30).
-  - RPM values 0.5–2.5 (1 baseline).
-  Vessel: ${vesselName}`;
-  }
-
-  function clampNum(v, min, max) {
-    const n = typeof v === 'number' ? v : parseFloat(String(v));
-    if (!Number.isFinite(n)) return min;
-    return Math.min(max, Math.max(min, n));
-  }
-
-  async function performNewAnalysis(vesselName) {
-    updateStatus("Generating assessment...");
-    const raw = await callGemini(buildUnifiedAssessmentPrompt(vesselName));
-    const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
-
-    const wcsParams = (obj.wcs_hull_structure?.parameters || []).map(p => ({
-      name: p.parameter,
-      rationale: p.rationale,
-      score: clampNum(p.score, 0, 5)
-    }));
-    const wcsTotal = wcsParams.reduce((s, p) => s + p.score, 0);
-
-    const phsParams = (obj.phs_pollution_hazard?.parameters || []).map(p => ({
-      name: p.parameter,
-      rationale: p.rationale,
-      weight: p.weight,
-      score: clampNum(p.score, 0, 10)
-    }));
-    const phsWeighted = phsParams.reduce((s, p) => s + (p.score * p.weight), 0);
-
-    const esiParams = (obj.esi_environmental_sensitivity?.parameters || []).map(p => ({
-      name: p.parameter,
-      rationale: p.rationale,
-      score: clampNum(p.score, 0, 10)
-    }));
-    const esiTotal = esiParams.reduce((s, p) => s + p.score, 0);
-
-    const rpmFactors = (obj.rpm_risk_pressure_modifiers?.factors || []).map(f => ({
-      name: f.factor,
-      rationale: f.rationale,
-      value: clampNum(f.value, 0.5, 2.5)
-    }));
-    const rpmAvg = rpmFactors.length ? rpmFactors.reduce((s, f) => s + f.value, 0) / rpmFactors.length : 1.0;
-
-    return {
-      vesselName,
-      wcs: { parameters: wcsParams, totalScore: wcsTotal },
-      phs: { parameters: phsParams, totalWeightedScore: clampNum(phsWeighted, 0, 10) },
-      esi: { parameters: esiParams, totalScore: clampNum(esiTotal, 0, 30), maxScore: 30 },
-      rpm: { factors: rpmFactors, finalMultiplier: parseFloat(rpmAvg.toFixed(2)) },
-      finalSummary: {
-        summativeAssessment: obj.final_summary?.summativeAssessment || "",
-        remediationSuggestions: obj.final_summary?.remediationSuggestions || []
-      },
-      status: "initial"
-    };
-  }
-
-  // ---------------------------------------------------------------------------
-  // callGemini (wrapper around callable function)
-  // ---------------------------------------------------------------------------
-  async function callGemini(prompt) {
-    const result = await callGeminiFunction({ prompt });
-    const raw = result?.data;
-    if (typeof raw !== "string") throw new Error("Model response not a string.");
-    const cleaned = raw.trim().replace(/^
-
+    // Initial attempt (for public read or already-signed-in)
+    loadData();
+  </script>
+</body>
+</html>
