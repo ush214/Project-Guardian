@@ -135,16 +135,16 @@
         <p class="text-xs text-gray-500 mt-2">Severity = (WCS + PHS + (ESI ÷ 3)) × RPM.</p>
       </section>
 
-      <!-- Evidence: screenshot to illustrate current issue -->
-      <!-- Place the screenshot file at public/assets/evidence-assessments.png -->
+      <!-- Evidence: embedded screenshot to show current issue -->
+      <!-- Save your screenshot at: public/assets/evidence-assessments.png -->
       <section id="evidenceSection" class="bg-white border border-amber-200 rounded-xl shadow p-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-amber-800">Evidence: Current UI shows names but severity as LOW 0.00</h3>
+          <h3 class="text-sm font-semibold text-amber-800">Evidence: Initial Assessments visible, severity shown as LOW 0.00</h3>
           <button id="toggleEvidenceBtn" class="text-xs text-amber-700 hover:underline">Hide</button>
         </div>
-        <p class="text-xs text-amber-700 mt-1">This embedded screenshot documents the issue as seen in production. If the image doesn't load, ensure the file exists at /assets/evidence-assessments.png.</p>
+        <p class="text-xs text-amber-700 mt-1">If the image doesn't load, ensure the file exists at /assets/evidence-assessments.png.</p>
         <div id="evidenceWrapper" class="mt-3">
-          <img id="evidenceImg" src="/assets/evidence-assessments.png" alt="Screenshot showing Initial Assessments with severity LOW 0.00 for all items" class="w-full rounded border border-amber-200">
+          <img id="evidenceImg" src="/assets/evidence-assessments.png" alt="Screenshot showing Initial Assessments list with names and severity LOW 0.00" class="w-full rounded border border-amber-200">
         </div>
       </section>
 
@@ -257,7 +257,6 @@
     const DEBUG = true;
 
     // Evidence toggle
-    const evidenceSection = document.getElementById('evidenceSection');
     const toggleEvidenceBtn = document.getElementById('toggleEvidenceBtn');
     const evidenceWrapper = document.getElementById('evidenceWrapper');
     toggleEvidenceBtn?.addEventListener('click', () => {
@@ -307,8 +306,87 @@
 
     // Helpers
     function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function isFiniteNum(n){ return typeof n === 'number' && Number.isFinite(n); }
     function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
-    function pickNum(...vals) { for (const v of vals) { const n = toNum(v); if (n !== null) return n; } return null; }
+    function getText(v) { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; }
+
+    // Deep getter by path like "phase1.screening.WCS"
+    function deepGet(obj, path) {
+      const parts = path.split('.');
+      let cur = obj;
+      for (const p of parts) {
+        if (cur == null) return undefined;
+        cur = cur[p];
+      }
+      return cur;
+    }
+
+    // Try to coerce various shapes into a numeric value
+    function coerceToNumber(val) {
+      // direct number
+      if (typeof val === 'number') return Number.isFinite(val) ? val : null;
+
+      // numeric string or string containing a number
+      if (typeof val === 'string') {
+        const s = val.trim();
+        // textual bands
+        const lowRx = /^low$/i, medRx = /^med(iu)?m$/i, highRx = /^high$/i;
+        if (lowRx.test(s)) return 3;       // heuristic mapping on 0-10 scale
+        if (medRx.test(s)) return 6;
+        if (highRx.test(s)) return 9;
+        // extract first number
+        const m = s.match(/-?\d+(\.\d+)?/);
+        if (m) return Number(m[0]);
+        return null;
+      }
+
+      // arrays: first numeric
+      if (Array.isArray(val)) {
+        for (const x of val) {
+          const n = coerceToNumber(x);
+          if (n != null) return n;
+        }
+        return null;
+      }
+
+      // objects: check common numeric fields or band text
+      if (val && typeof val === 'object') {
+        const candKeys = ['value','score','val','num','amount','rating','points','v','s'];
+        for (const k of candKeys) {
+          if (k in val) {
+            const n = coerceToNumber(val[k]);
+            if (n != null) return n;
+          }
+        }
+        // band/level
+        const bandStr = val.band ?? val.level ?? val.name ?? val.label;
+        const t = getText(bandStr);
+        if (t) {
+          if (/^low$/i.test(t)) return 3;
+          if (/^med(iu)?m$/i.test(t)) return 6;
+          if (/^high$/i.test(t)) return 9;
+          const m = t.match(/-?\d+(\.\d+)?/);
+          if (m) return Number(m[0]);
+        }
+        // shallow scan for any numeric leaf
+        for (const v of Object.values(val)) {
+          const n = coerceToNumber(v);
+          if (n != null) return n;
+        }
+      }
+
+      return null;
+    }
+
+    // Read a number from nested paths, applying coercion for strings/objects
+    function readNumberByPaths(obj, paths) {
+      for (const p of paths) {
+        const v = deepGet(obj, p);
+        const n = coerceToNumber(v);
+        if (n !== null) return n;
+      }
+      return null;
+    }
 
     // Shallow merge common nested holders into top-level
     function normalizeDoc(d) {
@@ -322,7 +400,7 @@
       return out;
     }
 
-    // Flatten object to scan keys heuristically
+    // Flatten a bit to heuristically find vessel names
     function flattenObject(obj, maxDepth = 3) {
       const out = [];
       function rec(cur, depth) {
@@ -335,8 +413,6 @@
       rec(obj, 0);
       return out;
     }
-
-    function getText(v) { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; }
 
     // Heuristic vessel name resolver
     function getVesselName(it) {
@@ -358,39 +434,56 @@
       return getText(it.id) || 'Unknown';
     }
 
-    // Read a number from nested paths like "scores.WCS" etc.
-    function readNumberByPaths(obj, paths) {
-      for (const p of paths) {
-        const parts = p.split('.');
-        let cur = obj;
-        for (const part of parts) {
-          if (cur == null) break;
-          cur = cur[part];
-        }
-        const n = toNum(cur);
-        if (n !== null) return n;
-      }
-      return null;
-    }
-
     // Compute severity value from multiple possible fields or from formula
     function computeFormulaSeverity(item) {
-      const W = readNumberByPaths(item, ['scores.WCS','wcs','WCS','risk.WCS','phase2.scores.WCS','phase1.screening.WCS','metrics.WCS','values.WCS']);
-      const P = readNumberByPaths(item, ['scores.PHS','phs','PHS','risk.PHS','phase2.scores.PHS','phase1.screening.PHS','metrics.PHS','values.PHS']);
-      const E = readNumberByPaths(item, ['scores.ESI','esi','ESI','risk.ESI','phase2.scores.ESI','phase1.screening.ESI','metrics.ESI','values.ESI']);
-      const R = readNumberByPaths(item, ['scores.RPM','rpm','RPM','risk.RPM','phase2.scores.RPM','phase1.screening.RPM','metrics.RPM','values.RPM']);
+      // Try lots of common shapes/paths
+      const W = readNumberByPaths(item, [
+        'severity.components.WCS','scores.WCS','wcs','WCS','risk.WCS',
+        'phase2.scores.WCS','phase1.screening.WCS','metrics.WCS','values.WCS','phase1.WCS','screening.WCS','phase1.wcs'
+      ]);
+      const P = readNumberByPaths(item, [
+        'severity.components.PHS','scores.PHS','phs','PHS','risk.PHS',
+        'phase2.scores.PHS','phase1.screening.PHS','metrics.PHS','values.PHS','phase1.PHS','screening.PHS','phase1.phs'
+      ]);
+      const E = readNumberByPaths(item, [
+        'severity.components.ESI','scores.ESI','esi','ESI','risk.ESI',
+        'phase2.scores.ESI','phase1.screening.ESI','metrics.ESI','values.ESI','phase1.ESI','screening.ESI','phase1.esi'
+      ]);
+      const R = readNumberByPaths(item, [
+        'severity.components.RPM','scores.RPM','rpm','RPM','risk.RPM',
+        'phase2.scores.RPM','phase1.screening.RPM','metrics.RPM','values.RPM','phase1.RPM','screening.RPM','phase1.rpm'
+      ]);
+
       if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
       return null;
     }
+
     function getSeverityValue(item) {
+      // Direct severity fields
       const direct = readNumberByPaths(item, [
         'severity.value','severityValue','severity_score','severityScore','score',
         'risk.severity','risk.score','metrics.severity','values.severity'
       ]);
+      if (direct !== null) return direct;
+
+      // Try to compute
       const formula = computeFormulaSeverity(item);
-      const v = direct ?? formula;
-      return v == null ? null : v;
+      if (formula !== null) return formula;
+
+      // As a last resort, if there is a severity band or text anywhere, map it
+      const sevBandText = deepGet(item, 'severity.band') ?? deepGet(item, 'severity.level') ?? item.severity;
+      const s = getText(sevBandText);
+      if (s) {
+        if (/^low$/i.test(s)) return 3;
+        if (/^med(iu)?m$/i.test(s)) return 6;
+        if (/^high$/i.test(s)) return 9;
+        const m = s.match(/-?\d+(\.\d+)?/);
+        if (m) return Number(m[0]);
+      }
+
+      return null;
     }
+
     function bandFromValue(val){
       const v = Number(val);
       if (!Number.isFinite(v)) return 'unknown';
@@ -594,7 +687,7 @@
       const band = item?.severity?.band || bandFromValue(sv);
       const pos = [Number(lat), Number(lng)];
       const title = escapeHtml(getVesselName(item));
-      const svTxt = Number.isFinite(sv) ? sv.toFixed(2) : 'N/A';
+      const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : 'N/A';
       const popupHtml = `<div><strong>${title}</strong><br/>Severity: ${(band||"").toUpperCase()} ${svTxt}</div>`;
 
       if (markers.has(id)) {
@@ -674,16 +767,15 @@
           d.severity.value = sv; // may be null
           d.severity.band = d.severity.band || bandFromValue(sv);
 
-          if (DEBUG && logCount < 3) {
+          if (DEBUG && logCount < 5) {
+            const w = readNumberByPaths(d, ['scores.WCS','wcs','WCS']);
+            const p = readNumberByPaths(d, ['scores.PHS','phs','PHS']);
+            const e = readNumberByPaths(d, ['scores.ESI','esi','ESI']);
+            const r = readNumberByPaths(d, ['scores.RPM','rpm','RPM']);
             console.log('[WERP] Sample doc', docSnap.id, {
               vesselNameResolved: getVesselName(d),
               severityValue: sv,
-              hasScores: {
-                WCS: readNumberByPaths(d, ['scores.WCS','wcs','WCS']),
-                PHS: readNumberByPaths(d, ['scores.PHS','phs','PHS']),
-                ESI: readNumberByPaths(d, ['scores.ESI','esi','ESI']),
-                RPM: readNumberByPaths(d, ['scores.RPM','rpm','RPM'])
-              },
+              extracted: { WCS: w, PHS: p, ESI: e, RPM: r },
               topLevelKeys: Object.keys(raw || {})
             });
             logCount++;
@@ -715,6 +807,7 @@
 
       const filtered = allItems.filter(it => {
         const band = it?.severity?.band || 'unknown';
+        // Show "unknown" by default so nothing disappears silently
         if (!activeBands.has(band) && band !== 'unknown') return false;
         if (term) {
           const name = getVesselName(it).toLowerCase();
@@ -740,9 +833,8 @@
         else initial.push(it);
       }
 
-      // Sort by computed severity value desc (nulls last)
-      const val = it => (Number.isFinite(it?.severity?.value) ? it.severity.value : -Infinity);
-      const bySeverity = (a, b) => (val(b) - val(a));
+      const valOfSeverity = o => isFiniteNum(o?.severity?.value) ? o.severity.value : -Infinity;
+      const bySeverity = (a, b) => valOfSeverity(b) - valOfSeverity(a);
       initial.sort(bySeverity);
       completed.sort(bySeverity);
       reassess.sort(bySeverity);
@@ -775,7 +867,7 @@
         const band = it?.severity?.band || 'unknown';
         const vessel = escapeHtml(getVesselName(it));
         const sv = it?.severity?.value;
-        const svTxt = Number.isFinite(sv) ? sv.toFixed(2) : 'N/A';
+        const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : 'N/A';
         li.innerHTML = `
           <div class="min-w-0">
             <div class="text-sm font-semibold text-gray-900 truncate">${vessel || 'Unknown'}</div>
@@ -791,7 +883,7 @@
     function openReport(item) {
       const vessel = getVesselName(item);
       const sv = item?.severity?.value;
-      const svTxt = Number.isFinite(sv) ? sv.toFixed(2) : 'N/A';
+      const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : 'N/A';
       reportTitle.textContent = vessel || 'Assessment';
       const html = item?.report?.html || item?.html || item?.reportHtml || item?.report_markdown;
       if (html) {
