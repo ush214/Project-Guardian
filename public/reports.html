@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Project Guardian – WERP Reports</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- CSP is managed by Hosting headers -->
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 0; color: #111; background: #f5f7fa; }
+    header { background:#0b2a6b; color:#fff; padding: 0.9rem 1.25rem; }
+    header .wrap { max-width: 1200px; margin: 0 auto; display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+    header a { color:#a5b4fc; text-decoration:none; font-size: 14px; }
+    .brand { display:flex; align-items:center; gap:.6rem; }
+    .brand img { height:28px; width:auto; }
+    .auth { display:flex; align-items:center; gap:.5rem; }
+    .auth .user { font-size: 12px; color:#c7d2fe; }
+    .auth button { background:#2563eb; color:#fff; border:0; padding:.4rem .7rem; border-radius:6px; cursor:pointer; font-size:12px; }
+    .auth button.secondary { background:#475569; }
+
+    main { max-width: 1200px; margin: 1rem auto; padding: 0 1rem 2rem; }
+    .grid { display:grid; grid-template-columns: 260px 1fr 1fr; gap: 1rem; align-items: start; }
+    .panel { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:1rem; box-shadow:0 2px 4px rgba(0,0,0,0.04); }
+    h1 { font-size:1.35rem; margin:0; }
+    h2 { font-size:1.05rem; margin:0 0 .5rem; display:flex; align-items:center; gap:.5rem; }
+    .muted { color:#6b7280; }
+    .hint { font-size:12px; color:#6b7280; }
+    .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+    .col { display:flex; flex-direction:column; gap:.35rem; }
+    label { font-size:12px; color:#374151; display:flex; gap:6px; align-items:center; }
+    input[type="checkbox"] { width:16px; height:16px; }
+    input[type="text"] { border:1px solid #d1d5db; border-radius:6px; padding:.45rem .6rem; font-size:14px; min-width:0; flex:1; }
+    button { background:#1e40af; color:#fff; border:0; padding:.45rem .8rem; border-radius:6px; cursor:pointer; font-size:13px; }
+    .btn-light { background:#eef2ff; color:#1e40af; }
+    .badge { font-size:11px; border:1px solid #e5e7eb; padding:2px 7px; border-radius:999px; color:#374151; background:#f9fafb; font-weight:500; }
+    .list { display:flex; flex-direction:column; gap:.5rem; }
+    .card { border:1px solid #e5e7eb; border-radius:8px; padding:.75rem .8rem; background:#fff; display:flex; gap:.75rem; align-items:flex-start; }
+    .card h3 { font-size:14px; margin:.1rem 0 .25rem; }
+    .card .line { font-size:12px; color:#374151; display:flex; gap:.5rem; flex-wrap:wrap; }
+    .pill { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid; }
+    .pill.low { color:#065f46; background:#ecfdf5; border-color:#10b981; }
+    .pill.medium { color:#92400e; background:#fffbeb; border-color:#f59e0b; }
+    .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
+    .empty { padding: .75rem; border:1px dashed #e5e7eb; border-radius:8px; color:#6b7280; font-size: 13px; text-align:center; }
+    .kv { font-size:12px; color:#6b7280; }
+    .section-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem; }
+    .section-title .right { display:flex; align-items:center; gap:.5rem; }
+    .count { font-size:12px; color:#6b7280; }
+    .error { color:#991b1b; font-size:12px; }
+    @media (max-width: 1000px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="brand">
+        <img src="/assets/logo.svg" alt="Logo" onerror="this.style.display='none'">
+        <h1>WERP Reports</h1>
+      </div>
+      <nav class="row">
+        <a href="/admin-tools.html">Admin Tools</a>
+      </nav>
+      <div class="auth">
+        <span id="authStatus" class="user">Checking sign-in…</span>
+        <button id="signInBtn">Sign in</button>
+        <button id="signOutBtn" class="secondary" style="display:none;">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="authError" class="error" style="display:none;"></div>
+
+    <div class="grid">
+      <!-- Left: Filters -->
+      <section class="panel">
+        <h2>Filters <span class="badge">Severity</span></h2>
+        <div class="col" style="margin:.5rem 0;">
+          <label><input type="checkbox" id="sevHigh" checked /> High</label>
+          <label><input type="checkbox" id="sevMedium" checked /> Medium</label>
+          <label><input type="checkbox" id="sevLow" checked /> Low</label>
+        </div>
+        <h2 style="margin-top:.9rem;">Search</h2>
+        <div class="row" style="margin:.35rem 0;">
+          <input type="text" id="searchBox" placeholder="Search vessel name..." />
+          <button id="clearSearch" class="btn-light" type="button">Clear</button>
+        </div>
+        <div class="kv" style="margin-top:.75rem;">
+          Showing: <span id="visibleCounts">0</span>
+        </div>
+        <div class="hint" style="margin-top:.5rem;">
+          Severity is computed as: (WCS + PHS + (ESI÷3)) × RPM.
+        </div>
+      </section>
+
+      <!-- Middle: Completed -->
+      <section class="panel">
+        <div class="section-title">
+          <h2>Completed Reports</h2>
+          <div class="right"><span class="count" id="completedCount">0</span></div>
+        </div>
+        <div class="list" id="completedList"></div>
+        <div class="empty" id="completedEmpty" style="display:none;">No completed reports match your filters.</div>
+      </section>
+
+      <!-- Right: Requiring Reassessment -->
+      <section class="panel">
+        <div class="section-title">
+          <h2>Requiring Reassessment</h2>
+          <div class="right"><span class="count" id="reassessCount">0</span></div>
+        </div>
+        <div class="list" id="reassessList"></div>
+        <div class="empty" id="reassessEmpty" style="display:none;">No reassessments pending for your filters.</div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+      authDomain: "project-guardian-agent.firebaseapp.com",
+      projectId: "project-guardian-agent",
+      storageBucket: "project-guardian-agent.firebasestorage.app",
+      messagingSenderId: "84395007243",
+      appId: "1:84395007243:web:b07e5f4c4264d27611160e",
+      measurementId: "G-NRLH3WSCQ9"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const provider = new GoogleAuthProvider();
+
+    const COL_PATH = "artifacts/guardian-agent-default/public/data/werpassessments";
+
+    // UI refs
+    const authStatus = document.getElementById("authStatus");
+    const signInBtn = document.getElementById("signInBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+    const authError = document.getElementById("authError");
+
+    const sevHigh = document.getElementById("sevHigh");
+    const sevMedium = document.getElementById("sevMedium");
+    const sevLow = document.getElementById("sevLow");
+    const searchBox = document.getElementById("searchBox");
+    const clearSearch = document.getElementById("clearSearch");
+
+    const completedList = document.getElementById("completedList");
+    const reassessList = document.getElementById("reassessList");
+    const completedEmpty = document.getElementById("completedEmpty");
+    const reassessEmpty = document.getElementById("reassessEmpty");
+
+    const completedCount = document.getElementById("completedCount");
+    const reassessCount = document.getElementById("reassessCount");
+    const visibleCounts = document.getElementById("visibleCounts");
+
+    let allDocs = [];
+    let loadedOnce = false;
+
+    function setAuthError(msg){
+      if (msg) {
+        authError.textContent = msg;
+        authError.style.display = "";
+      } else {
+        authError.textContent = "";
+        authError.style.display = "none";
+      }
+    }
+
+    function clamp(n, lo, hi){
+      n = Number(n);
+      if (!Number.isFinite(n)) n = lo;
+      return Math.min(hi, Math.max(lo, n));
+    }
+
+    function computeSeverity(doc){
+      const wcs = clamp(doc?.wcs?.totalScore, 0, 20);
+      const phs = clamp(doc?.phs?.totalWeightedScore, 0, 10);
+      const esi = clamp(doc?.esi?.totalScore, 0, 30);
+      const rpm = clamp(doc?.rpm?.finalMultiplier, 0.5, 2.5);
+      const composite = (wcs + phs + (esi / 3)) * rpm;
+      let band = "low";
+      if (composite >= 70) band = "high";
+      else if (composite >= 40) band = "medium";
+      return { value: Number(composite.toFixed(1)), band };
+    }
+
+    function phase2Status(doc){
+      const s = doc?.phase2?.latest?.status || doc?.phase2?.status || "";
+      return String(s || "").toLowerCase();
+    }
+    function needsReassessment(doc){ return !!doc?.needsReassessment; }
+    function impactedEvents(doc){ return Array.isArray(doc?.impactEvents) ? doc.impactEvents : []; }
+
+    function matchesFilters(item){
+      const band = item?.severity?.band || "low";
+      if (band === "high" && !sevHigh.checked) return false;
+      if (band === "medium" && !sevMedium.checked) return false;
+      if (band === "low" && !sevLow.checked) return false;
+
+      const q = (searchBox?.value || "").trim().toLowerCase();
+      if (q) {
+        const name = String(item?.vesselName || item?.id || "").toLowerCase();
+        if (!name.includes(q)) return false;
+      }
+      return true;
+    }
+
+    function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function num(v){
+      const n = Number(v);
+      if (!Number.isFinite(n)) return "—";
+      return n % 1 === 0 ? n.toFixed(0) : n.toFixed(1);
+    }
+    function dateIso(ts){
+      if (!ts) return "—";
+      if (typeof ts === "string") return ts.slice(0,10);
+      if (ts?._seconds) return new Date(ts._seconds*1000).toISOString().slice(0,10);
+      return "—";
+    }
+    function renderEvents(d){
+      const events = impactedEvents(d);
+      if (!events.length) return "";
+      const items = events.slice(-3).map(ev => {
+        const ds = dateIso(ev?.date || ev?.occurredAt || ev?.recordedAt);
+        const name = ev?.name || ev?.type || "Event";
+        return `<span class="badge" title="${escapeHtml(ev?.description||"")}">${escapeHtml(name)} ${ds ? "(" + ds + ")" : ""}</span>`;
+      }).join(" ");
+      return `<div class="line" style="margin-top:.35rem;">Impacts: ${items}</div>`;
+    }
+
+    function drawList(root, arr, showEvents){
+      root.innerHTML = "";
+      for (const d of arr){
+        const div = document.createElement("div");
+        div.className = "card";
+        const sevClass = d?.severity?.band || "low";
+        const p2Updates = Array.isArray(d?.phase2?.updates) ? d.phase2.updates.length : 0;
+        const p2LatestAt = dateIso(d?.phase2?.latest?.updatedAt || d?.updatedAt);
+
+        div.innerHTML = `
+          <div style="flex:1;">
+            <h3>${escapeHtml(d.vesselName || d.id || "Unknown")} <span class="pill ${sevClass}">${(d?.severity?.band || "LOW").toUpperCase()} ${num(d?.severity?.value)}</span></h3>
+            <div class="line">
+              <span>WCS ${num(d?.wcs?.totalScore)}/20</span>
+              <span>PHS ${num(d?.phs?.totalWeightedScore)}/10</span>
+              <span>ESI ${num(d?.esi?.totalScore)}/30</span>
+              <span>RPM ×${num(d?.rpm?.finalMultiplier)}</span>
+            </div>
+            <div class="line">
+              <span>Phase 2: ${escapeHtml(phase2Status(d) || "none")}</span>
+              <span>Updates: ${p2Updates}</span>
+              <span>Last Updated: ${p2LatestAt}</span>
+            </div>
+            ${showEvents ? renderEvents(d) : ""}
+          </div>
+        `;
+        root.appendChild(div);
+      }
+    }
+
+    function render(){
+      const completed = [];
+      const reassess = [];
+      for (const d of allDocs){
+        const sev = computeSeverity(d);
+        const item = { ...d, severity: sev };
+        if (!matchesFilters(item)) continue;
+        const p2 = phase2Status(d);
+        const flag = needsReassessment(d);
+        if (p2 === "completed" && !flag) completed.push(item);
+        if (flag) reassess.push(item);
+      }
+      completed.sort((a,b)=> (b?.severity?.value||0) - (a?.severity?.value||0));
+      reassess.sort((a,b)=> (b?.severity?.value||0) - (a?.severity?.value||0));
+      drawList(completedList, completed, false);
+      drawList(reassessList, reassess, true);
+      completedCount.textContent = `${completed.length} shown`;
+      reassessCount.textContent = `${reassess.length} shown`;
+      visibleCounts.textContent = `${completed.length + reassess.length} total`;
+      completedEmpty.style.display = completed.length ? "none" : "";
+      reassessEmpty.style.display = reassess.length ? "none" : "";
+    }
+
+    async function loadData(){
+      try {
+        const qy = query(collection(db, COL_PATH), orderBy("vesselName"), limit(500));
+        const snap = await getDocs(qy);
+        allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+        loadedOnce = true;
+        setAuthError("");
+      } catch (e) {
+        console.error("Failed to load reports:", e);
+        if (String(e?.code||"").includes("permission-denied")) {
+          setAuthError("Sign-in required to view reports. Please use the Sign in button.");
+        } else {
+          setAuthError("Failed to load reports. Try reloading the page.");
+        }
+        completedEmpty.textContent = "No data.";
+        reassessEmpty.textContent = "No data.";
+        completedEmpty.style.display = "";
+        reassessEmpty.style.display = "";
+      }
+    }
+
+    [sevHigh, sevMedium, sevLow].forEach(cb => cb?.addEventListener("change", render));
+    searchBox?.addEventListener("input", render);
+    clearSearch?.addEventListener("click", () => { if (searchBox) searchBox.value = ""; render(); });
+
+    signInBtn?.addEventListener("click", async () => {
+      try { setAuthError(""); await signInWithPopup(auth, provider); }
+      catch (e) { console.error("Sign-in failed:", e); setAuthError(e?.message || "Sign-in failed."); }
+    });
+    signOutBtn?.addEventListener("click", async () => {
+      try { setAuthError(""); await signOut(auth); }
+      catch (e) { console.error("Sign-out failed:", e); setAuthError(e?.message || "Sign-out failed."); }
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) { authStatus.textContent = `Signed in as ${user.email || user.uid}`; signInBtn.style.display = "none"; signOutBtn.style.display = ""; }
+      else { authStatus.textContent = "Not signed in"; signInBtn.style.display = ""; signOutBtn.style.display = "none"; }
+      if (!loadedOnce || user) await loadData();
+    });
+
+    loadData();
+  </script>
+</body>
+</html>
