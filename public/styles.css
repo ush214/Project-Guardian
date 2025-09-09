@@ -1,189 +1,167 @@
-/* Theme tokens */
+/* === Project Guardian: Unified Stylesheet === */
+
+/* --- 1. Color & Theme Tokens --- */
 :root {
-  --header-bg: #002D62; /* Dark Blue from PDF */
-  --main-bg: #f0f2f5;   /* Light Grey */
-  --card-bg: #ffffff;
-  --text-dark: #1a202c;
-  --text-light: #4a5568;
-  --accent-blue: #00509e;
+  --primary-blue: #0F4C81;
+  --accent-blue: #36A9E1;
+  --body-bg: #F9FAFB;
+  --card-bg: #FFFFFF;
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --border-color: #E5E7EB;
+  --success-color: #047857;
+  --danger-color: #B91C1C;
 }
 
-/* Optional dark theme overrides */
 :root[data-theme="dark"] {
-  --main-bg: #0b1220;
+  --primary-blue: #1E40AF; /* Brighter blue for dark mode */
+  --accent-blue: #36A9E1;
+  --body-bg: #0b1220;
   --card-bg: #0f172a;
-  --text-dark: #e5e7eb;
-  --text-light: #9ca3af;
-  --accent-blue: #3b82f6;
+  --text-primary: #F9FAFB;
+  --text-secondary: #9CA3AF;
+  --border-color: #374151;
+  --success-color: #059669;
+  --danger-color: #DC2626;
 }
 
+/* --- 2. Global Styles & Typography --- */
 html, body {
-  background-color: var(--main-bg);
-  color: var(--text-dark);
-  font-synthesis-weight: none;
+  background-color: var(--body-bg);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Header: subtle gradient + cleaner title */
-header {
-  background: linear-gradient(180deg, rgba(0,45,98,0.06) 0%, rgba(0,45,98,0) 100%);
-  backdrop-filter: saturate(120%);
+h1, h2, h3, h4 {
+  color: var(--primary-blue);
+  font-weight: 700;
 }
-:root[data-theme="dark"] header {
-  background: linear-gradient(180deg, rgba(59,130,246,0.12) 0%, rgba(59,130,246,0) 100%);
+
+a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* --- 3. Main Layout Components (index.html) --- */
+
+/* Header */
+header.bg-white {
+  background-color: var(--primary-blue) !important;
+  color: #FFFFFF !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
 }
 header h1 {
-  letter-spacing: 0.2px;
+  color: #FFFFFF !important;
+}
+#userInfo .text-gray-700, #userInfo .font-medium, #userInfo .text-gray-500 {
+  color: #FFFFFF !important;
 }
 
-/* Cards: gentle border + hover lift */
-.rounded-lg.shadow-lg {
-  background: var(--card-bg);
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  transition: box-shadow 200ms ease, transform 200ms ease, border-color 200ms ease;
+/* Cards & Containers */
+.bg-white.rounded-lg {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  transition: box-shadow 200ms ease, transform 200ms ease;
 }
-.rounded-lg.shadow-lg:hover {
+.bg-white.rounded-lg:hover {
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.08);
   transform: translateY(-1px);
-  border-color: rgba(0, 80, 158, 0.18);
 }
-:root[data-theme="dark"] .rounded-lg.shadow-lg {
-  border-color: rgba(148, 163, 184, 0.15);
-}
-
-/* Analyze button: richer but accessible */
-#analyzeBtn {
-  background: linear-gradient(90deg, #1e3a8a 0%, #1d4ed8 100%);
-  box-shadow: 0 6px 16px rgba(30, 58, 138, 0.25);
-}
-#analyzeBtn:hover {
-  filter: brightness(1.05);
-  box-shadow: 0 8px 20px rgba(30, 58, 138, 0.28);
-}
-#analyzeBtn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
+:root[data-theme="dark"] .bg-white.rounded-lg:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
-/* Spinner accent */
-.spinner { border-top-color: var(--accent-blue); }
+/* Buttons */
+button { transition: opacity 200ms ease; }
 
-/* Map framing */
-#map { height: 500px; z-index: 10; border-radius: 0.5rem; }
-:root[data-theme="dark"] #map { box-shadow: inset 0 0 0 1px rgba(148,163,184,0.12); }
-.leaflet-popup-content-wrapper { border-radius: 8px; }
-.leaflet-popup-content { margin: 10px !important; }
+/* Primary Button */
+#analyzeBtn.bg-blue-800, #signInEmailBtn.bg-blue-600 {
+  background-color: var(--primary-blue) !important;
+}
+#analyzeBtn.bg-blue-800:hover, #signInEmailBtn.bg-blue-600:hover {
+  opacity: 0.9;
+}
 
-/* Prose: clearer sectioning */
-.prose h3 {
-  font-size: 1.25em;
-  margin-top: 1.5em;
-  margin-bottom: 0.75em;
-  font-weight: 700;
-  color: var(--header-bg);
+/* Secondary Button */
+#signOutBtn, #createAccountBtn.bg-gray-100 {
+  background-color: var(--accent-blue) !important;
+  color: #FFFFFF !important;
+  opacity: 0.9;
+}
+#signOutBtn:hover, #createAccountBtn.bg-gray-100:hover {
+  opacity: 1;
+}
+
+/* Admin Tools Button */
+#adminToolsBtn {
+    background-color: var(--success-color) !important;
+}
+#adminToolsBtn:hover {
+    opacity: 0.9;
+}
+
+/* Text Button */
+#resetPasswordBtn {
+  color: var(--accent-blue) !important;
+}
+
+/* Inputs */
+input[type="text"], input[type="email"], input[type="password"] {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+input:focus {
+  border-color: var(--accent-blue) !important;
+  box-shadow: 0 0 0 2px rgba(54, 169, 225, 0.5) !important;
+  outline: none;
+}
+
+/* --- 4. App-Specific Components (index.html) --- */
+
+/* Report Prose Styling */
+#reportContent h3 {
   border-bottom: 2px solid var(--accent-blue);
   padding-bottom: 0.25em;
+  margin-top: 1.5em;
+  font-size: 1.2em;
 }
-.prose h4 {
-  font-size: 1.1em;
-  margin-top: 1.25em;
-  margin-bottom: 0.5em;
-  font-weight: 600;
-  color: var(--text-dark);
-}
-.prose table {
+#reportContent table {
   width: 100%;
-  border-collapse: collapse;
   margin-top: 1em;
+  border-collapse: collapse;
 }
-.prose th, .prose td {
-  border: 1px solid #e2e8f0;
+#reportContent th, #reportContent td {
+  border: 1px solid var(--border-color);
   padding: 10px;
-  text-align: left;
   font-size: 0.9em;
 }
-.prose th { background-color: #f8fafc; font-weight: 600; }
-:root[data-theme="dark"] .prose th, :root[data-theme="dark"] .prose td {
-  border-color: rgba(148,163,184,0.2);
+#reportContent th {
+  background-color: color-mix(in srgb, var(--body-bg) 50%, transparent);
 }
-:root[data-theme="dark"] .prose th { background: rgba(148,163,184,0.08); }
 
-/* Wreck lists */
+/* Wreck Lists */
 .wreck-list-item {
-  cursor: pointer;
   border-left: 4px solid transparent;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: background-color 160ms ease, border-color 160ms ease;
 }
 .wreck-list-item.active,
 .wreck-list-item:hover {
   border-left-color: var(--accent-blue);
-  background-color: #eef2ff;
-}
-:root[data-theme="dark"] .wreck-list-item:hover,
-:root[data-theme="dark"] .wreck-list-item.active {
-  background-color: rgba(59,130,246,0.10);
-}
-.alert-icon {
-  color: #ef4444;
-  font-size: 1.2em;
-  animation: pulse 1.5s infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  background-color: color-mix(in srgb, var(--accent-blue) 10%, transparent) !important;
 }
 
-/* List containers: comfy scrollbars */
-#initialWreckListContainer,
-#completedWreckListContainer,
-#alertListContainer {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(2,6,23,0.25) transparent;
-}
-#initialWreckListContainer::-webkit-scrollbar,
-#completedWreckListContainer::-webkit-scrollbar,
-#alertListContainer::-webkit-scrollbar {
-  width: 10px;
-}
-#initialWreckListContainer::-webkit-scrollbar-track,
-#completedWreckListContainer::-webkit-scrollbar-track,
-#alertListContainer::-webkit-scrollbar-track {
-  background: transparent;
-}
-#initialWreckListContainer::-webkit-scrollbar-thumb,
-#completedWreckListContainer::-webkit-scrollbar-thumb,
-#alertListContainer::-webkit-scrollbar-thumb {
-  background: rgba(2,6,23,0.25);
-  border-radius: 6px;
-}
-:root[data-theme="dark"] #initialWreckListContainer::-webkit-scrollbar-thumb,
-:root[data-theme="dark"] #completedWreckListContainer::-webkit-scrollbar-thumb,
-:root[data-theme="dark"] #alertListContainer::-webkit-scrollbar-thumb {
-  background: rgba(148,163,184,0.35);
-}
+/* Spinner */
+.spinner { border-color: #FFFFFF; border-top-color: transparent !important; }
+:root[data-theme="dark"] .spinner { border-color: #9CA3AF; border-top-color: transparent !important; }
 
-/* Alerts card */
-#alertList .p-3 {
-  transition: transform 160ms ease, box-shadow 160ms ease;
-}
-#alertList .p-3:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(239, 68, 68, 0.12);
-}
-
-/* Chart section title */
-#reportChart h3 { letter-spacing: 0.2px; }
-
-/* Optional: nicer focus rings for inputs */
-input[type="text"]#vesselName:focus {
-  box-shadow: 0 0 0 4px rgba(59,130,246,0.25);
-  border-color: rgba(59,130,246,0.8);
-
-/* Minimal styles; Tailwind handles most UI */
-html, body { height: 100%; }
-.spinner { border-top-color: transparent; }
+/* Leaflet Map */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: 0 3px 14px rgba(0,0,0,0.4);
 }
