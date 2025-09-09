@@ -294,7 +294,7 @@ function normalizeWcsParameters(rawParams = []) {
     if (!Number.isFinite(v)) return 0;
     if (scale === 10) return Math.max(0, Math.min(5, v / 2));
     return Math.max(0, Math.min(5, v));
-    };
+  };
 
   const rows = [
     { title: "Age", rationale: picks.age?.rationale || "Not provided.", normalized: norm(picks.age?.score ?? 0) },
@@ -451,6 +451,29 @@ function markerIconFor(band) {
     iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34], shadowSize: [41,41]
   });
 }
+
+// Choose a thumbnail image for the marker popup (prefer web-friendly images)
+function getMarkerImageUrl(item) {
+  // Prefer Phase 2 assets first
+  const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
+  const webExt = /\.(png|jpe?g|webp|gif)$/i;
+  const imgAsset = assets.find(a => webExt.test(a?.name || a?.path || ""));
+  if (imgAsset?.url) return imgAsset.url;
+
+  // Fall back to any known image fields
+  const candidates = [
+    item?.thumbnailUrl, item?.imageUrl, item?.coverImage, item?.coverPhoto,
+    item?.image, item?.photo, item?.thumbnail, item?.bannerImage
+  ].filter(Boolean);
+  for (const u of candidates) {
+    try {
+      const s = String(u);
+      if (webExt.test(s)) return s;
+    } catch {}
+  }
+  return null;
+}
+
 function upsertMarker(item) {
   const coords = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
   const id = item?.id; if (!id) return;
@@ -463,7 +486,19 @@ function upsertMarker(item) {
   const pos = [Number(lat), Number(lng)];
   const title = escapeHtml(getVesselName(item));
   const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : "N/A";
-  const popupHtml = `<div><strong>${title}</strong><br/>Severity: ${(band||"").toUpperCase()} ${svTxt}</div>`;
+
+  const imgUrl = getMarkerImageUrl(item);
+  const imgHtml = imgUrl
+    ? `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" style="width:220px;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" loading="lazy"></div>`
+    : "";
+
+  const popupHtml = `
+    <div>
+      <div style="font-weight:600">${title}</div>
+      <div>Severity: ${(band||"").toUpperCase()} ${svTxt}</div>
+      ${imgHtml}
+    </div>
+  `;
 
   if (markers.has(id)) {
     const m = markers.get(id);
