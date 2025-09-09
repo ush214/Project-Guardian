@@ -54,7 +54,7 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
-// Optional/available callable functions (names must exist in your functions/ index)
+// Optional/available callable functions (names must exist in your functions/)
 let reassessWerpsFn = null;
 try { reassessWerpsFn = httpsCallable(functions, "reassessWerps"); } catch {}
 const repairWerpsFn = httpsCallable(functions, "repairWerps");
@@ -294,7 +294,7 @@ function normalizeWcsParameters(rawParams = []) {
     if (!Number.isFinite(v)) return 0;
     if (scale === 10) return Math.max(0, Math.min(5, v / 2));
     return Math.max(0, Math.min(5, v));
-  };
+    };
 
   const rows = [
     { title: "Age", rationale: picks.age?.rationale || "Not provided.", normalized: norm(picks.age?.score ?? 0) },
@@ -307,25 +307,86 @@ function normalizeWcsParameters(rawParams = []) {
   return { rows, total: Number(total.toFixed(2)), scaleNote };
 }
 
-// v2 totals using WCS normalizer (never trust incorrect stored totals)
+// Normalize PHS weights: accept fractions (0–1) or percents (0–100), normalize to sum=1.0
+function normalizePhsWeights(params = []) {
+  const items = (Array.isArray(params) ? params : []).map((p) => ({
+    name: String(p?.name ?? p?.parameter ?? '').trim(),
+    rationale: String(p?.rationale ?? '').trim(),
+    scoreRaw: Number(p?.score),
+    weightRaw: Number(p?.weight)
+  }));
+
+  const weights = items.map(i => Number.isFinite(i.weightRaw) ? i.weightRaw : 0);
+  const maxW = weights.length ? Math.max(...weights) : 0;
+  const sumW = weights.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+
+  let asPercent = false;
+  if (maxW > 1) asPercent = true;
+  else if (sumW > 1.5) asPercent = true;
+  else if (sumW > 90 && sumW < 110) asPercent = true;
+
+  let fracs = items.map(i => {
+    const w = Number.isFinite(i.weightRaw) ? i.weightRaw : 0;
+    return asPercent ? (w / 100) : w;
+  });
+
+  let fracSum = fracs.reduce((a, b) => a + b, 0);
+  let renormalized = false;
+  if (fracSum > 0 && Math.abs(fracSum - 1) > 0.01) {
+    fracs = fracs.map(w => w / fracSum);
+    renormalized = true;
+    fracSum = 1;
+  }
+
+  const rows = items.map((i, idx) => {
+    const weightFrac = fracs[idx] || 0;
+    const weightPct = weightFrac * 100;
+    const score = Math.max(0, Math.min(10, Number(i.scoreRaw) || 0));
+    const weighted = score * weightFrac;
+    return {
+      name: i.name,
+      rationale: i.rationale,
+      weightFrac,
+      weightPct,
+      score,
+      weighted
+    };
+  });
+
+  const totalWeighted = rows.reduce((s, r) => s + r.weighted, 0);
+  return {
+    rows,
+    totalWeighted: Number(totalWeighted.toFixed(2)),
+    asPercent,
+    renormalized
+  };
+}
+
+// v2 totals using WCS normalizer and normalized PHS weights
 function v2Totals(item) {
   const wNorm = normalizeWcsParameters(item?.wcs?.parameters || []);
   const wcs = wNorm.total;
 
-  const pParams = Array.isArray(item?.phs?.parameters) ? item.phs.parameters : [];
-  const phsRaw = pParams.reduce((s, p) => {
-    const w = Number(p?.weight) || 0;
-    const sc = Math.max(0, Math.min(10, Number(p?.score) || 0));
-    return s + (w * sc);
-  }, 0);
-  const phs = Math.max(0, Math.min(10, Number(phsRaw.toFixed(2))));
+  const p = normalizePhsWeights(item?.phs?.parameters || []);
+  const phs = Math.max(0, Math.min(10, p.totalWeighted));
 
   const eParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
-  const esi = eParams.reduce((s, p) => s + Math.max(0, Math.min(10, Number(p?.score) || 0)), 0);
+  const esi = eParams.reduce((s, par) => s + Math.max(0, Math.min(10, Number(par?.score) || 0)), 0);
   const esiMax = Number(item?.esi?.maxScore) || (eParams.length ? eParams.length * 10 : 30);
 
   const rpm = resolveRPMMultiplier(item);
-  return { wcs, phs, esi, esiMax, rpm, wcsScaleNote: wNorm.scaleNote, wcsRows: wNorm.rows };
+  return {
+    wcs,
+    phs,
+    esi,
+    esiMax,
+    rpm,
+    wcsScaleNote: wNorm.scaleNote,
+    wcsRows: wNorm.rows,
+    phsRows: p.rows,
+    phsAsPercent: p.asPercent,
+    phsRenormalized: p.renormalized
+  };
 }
 
 // Severity calculation
@@ -588,10 +649,9 @@ function buildReportHtml(item) {
   return blocks.join("\n");
 }
 
-// v2 detailed report renderer (with normalized 4-row WCS)
+// v2 detailed report renderer (with normalized 4-row WCS, and PHS weights in %)
 function renderReportV2HTML(item) {
   const v = v2Totals(item);
-  const wRows = v.wcsRows || [];
 
   const wcsTable = `
     <table>
@@ -599,7 +659,7 @@ function renderReportV2HTML(item) {
         <tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr>
       </thead>
       <tbody>
-        ${wRows.map(r => `
+        ${v.wcsRows.map(r => `
           <tr>
             <td>${escapeHtml(r.title)}</td>
             <td>${escapeHtml(r.rationale)}</td>
@@ -609,27 +669,28 @@ function renderReportV2HTML(item) {
       </tbody>
     </table>
     <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
-    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: Source WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
+    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
   `;
 
-  const phsRows = (item?.phs?.parameters ?? []).map(p => `
+  const phsRowsHtml = (v.phsRows || []).map(r => `
+    <tr>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.rationale)}</td>
+      <td>${r.weightPct.toFixed(0)}%</td>
+      <td>${r.score.toFixed(2)}</td>
+      <td>${r.weighted.toFixed(2)}</td>
+    </tr>
+  `).join("");
+
+  const esiRowsHtml = (item?.esi?.parameters ?? []).map(p => `
     <tr>
       <td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td>
-      <td>${escapeHtml(String(p?.weight ?? ""))}</td>
       <td>${escapeHtml(p?.rationale ?? "")}</td>
       <td>${escapeHtml(String(p?.score ?? ""))}</td>
     </tr>
   `).join("");
 
-  const esiRows = (item?.esi?.parameters ?? []).map(p => `
-    <tr>
-      <td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td>
-      <td>${escapeHtml(p?.rationale ?? "")}</td>
-      <td>${escapeHtml(String(p?.score ?? ""))}</td>
-    </tr>
-  `).join("");
-
-  const rpmRows = (item?.rpm?.factors ?? item?.rpm?.parameters ?? []).map(f => `
+  const rpmRowsHtml = (item?.rpm?.factors ?? item?.rpm?.parameters ?? []).map(f => `
     <tr>
       <td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td>
       <td>${escapeHtml(f?.rationale ?? "Not specified.")}</td>
@@ -650,20 +711,35 @@ function renderReportV2HTML(item) {
 
     <section>
       <h3>Phase 3: PHS (Pollution Hazard)</h3>
-      <p class="text-xs text-gray-600 mb-2">Weights: Fuel 0.40, Ordnance 0.25, Vessel Integrity 0.20, Hazardous Materials 0.15.</p>
-      <table><thead><tr><th>Parameter</th><th>Weight</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${phsRows}</tbody></table>
-      <p class="mt-2"><strong>Total Weighted Score:</strong> ${v.phs.toFixed(2)} / 10</p>
+      <p class="text-xs text-gray-600 mb-2">
+        Weights are treated as percentages and normalized to sum to 100%.
+        Scores are on 0–10; Weighted Score = Score × Weight.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Rationale</th>
+            <th>Weight (%)</th>
+            <th>Score (0–10)</th>
+            <th>Weighted Score</th>
+          </tr>
+        </thead>
+        <tbody>${phsRowsHtml}</tbody>
+      </table>
+      <p class="mt-2"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
+      ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: Input weights did not sum to 100%; normalized for consistency.</p>' : ''}
     </section>
 
     <section>
       <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
-      <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRows}</tbody></table>
+      <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
       <p class="mt-2"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
     </section>
 
     <section>
       <h3>Phase 3: RPM (Release Probability Modifier)</h3>
-      ${rpmRows ? `<table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRows}</tbody></table>` : '<p class="text-gray-600">No factor breakdown provided.</p>'}
+      ${rpmRowsHtml ? `<table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRowsHtml}</tbody></table>` : '<p class="text-gray-600">No factor breakdown provided.</p>'}
       <p class="mt-2"><strong>Final Multiplier:</strong> ${v.rpm.toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
     </section>
 
@@ -684,19 +760,33 @@ function buildReportMarkdown(item) {
   const lines = [];
   const vessel = getVesselName(item);
   lines.push(`# ${vessel}`);
-  const v = hasUnifiedV2(item) ? v2Totals(item) : null;
-  lines.push("\n## Factor Scores Summary");
-  if (v) {
+
+  if (hasUnifiedV2(item)) {
+    const v = v2Totals(item);
+    lines.push("\n## Factor Scores Summary");
     lines.push(`- WCS: ${v.wcs.toFixed(2)} / 20`);
-    lines.push(`- PHS: ${v.phs.toFixed(2)} / 10`);
+    lines.push(`- PHS: ${v.phs.toFixed(2)} / 10 (weighted; weights treated as percentages and normalized)`);
     lines.push(`- ESI: ${v.esi.toFixed(2)} / ${v.esiMax}`);
     lines.push(`- RPM: ${v.rpm.toFixed(2)}×`);
+  } else {
+    lines.push("\n## Factor Scores Summary");
+    const W = readNumberByPaths(item, ["wcs","scores.WCS","WCS"]) ?? 0;
+    const P = readNumberByPaths(item, ["phs","scores.PHS","PHS"]) ?? 0;
+    const E = readNumberByPaths(item, ["esi","scores.ESI","ESI"]) ?? 0;
+    const R = resolveRPMMultiplier(item);
+    lines.push(`- WCS: ${W.toFixed(2)} / 20`);
+    lines.push(`- PHS: ${P.toFixed(2)} / 10`);
+    lines.push(`- ESI: ${E.toFixed(2)} / 30–40`);
+    lines.push(`- RPM: ${R.toFixed(2)}×`);
   }
+
   const summary = extractPlain(getSummativeText(item));
   if (summary) { lines.push("\n## Summary"); lines.push(summary); }
+
   const recHtml = getRecommendations(item);
   const recTxt = recHtml ? extractPlain(recHtml) : null;
   if (recTxt) { lines.push("\n## Recommendations"); lines.push(recTxt); }
+
   return lines.join("\n");
 }
 
@@ -886,6 +976,8 @@ uploadFilesBtn?.addEventListener("click", async () => {
       await uploadBytes(ref, f, { contentType: f.type || undefined });
       const url = await getDownloadURL(ref);
 
+      // Note: Do NOT use serverTimestamp() inside arrayUnion payload (causes error).
+      // Use client ms for the entry and set a doc-level server timestamp separately.
       await updateDoc(refDoc, {
         "phase2.assets": arrayUnion({
           name: f.name,
@@ -893,7 +985,7 @@ uploadFilesBtn?.addEventListener("click", async () => {
           url,
           contentType: f.type || "",
           bytes: f.size || 0,
-          uploadedAt: serverTimestamp()
+          uploadedAtMs: Date.now()
         })
       });
 
@@ -901,10 +993,14 @@ uploadFilesBtn?.addEventListener("click", async () => {
       uploadStatus.textContent = `Uploaded ${done}/${files.length}`;
     }
 
-    phase2Files.value = "";
+    // Update a doc-level server timestamp to signal change
+    await updateDoc(refDoc, { "phase2.assetsUpdatedAt": serverTimestamp() });
+
+    // Refresh local copy and gallery
     const snap = await getDoc(refDoc);
     if (snap.exists()) currentItem = { ...currentItem, ...snap.data() };
     renderGalleryFromDoc();
+
     setTimeout(() => uploadStatus.textContent = "Upload complete.", 300);
     setTimeout(() => uploadStatus.textContent = "", 1500);
   } catch (e) {
@@ -930,16 +1026,25 @@ reassessBtn?.addEventListener("click", async () => {
   }
 });
 
-// Feedback
+// Feedback (per-report)
 function renderFeedbackList(item) {
   if (!feedbackList) return;
   feedbackList.innerHTML = "";
   const entries = Array.isArray(item?.feedback) ? [...item.feedback] : [];
-  entries.sort((a,b) => (b?.createdAt?.seconds || 0) - (a?.createdAt?.seconds || 0));
-  const fmt = (ts) => ts?.seconds ? new Date(ts.seconds * 1000).toLocaleString() : "";
+  // newest first; support both createdAtMs and Firestore timestamp
+  entries.sort((a,b) => {
+    const aMs = a?.createdAtMs ?? (a?.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+    const bMs = b?.createdAtMs ?? (b?.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+    return bMs - aMs;
+  });
+  const fmt = (e) => {
+    if (typeof e?.createdAtMs === "number") return new Date(e.createdAtMs).toLocaleString();
+    if (e?.createdAt?.seconds) return new Date(e.createdAt.seconds * 1000).toLocaleString();
+    return "";
+  };
   for (const e of entries.slice(0, 12)) {
     const who = escapeHtml(e?.user || "Unknown");
-    const when = fmt(e?.createdAt) || "";
+    const when = fmt(e) || "";
     const msg = escapeHtml(e?.message || "");
     const li = document.createElement("li");
     li.className = "p-2 bg-gray-50 border border-gray-200 rounded";
@@ -954,11 +1059,13 @@ saveFeedbackBtn?.addEventListener("click", async () => {
   const who = auth.currentUser?.email || auth.currentUser?.uid || "anonymous";
   feedbackStatus.textContent = "Saving...";
   try {
+    // Avoid serverTimestamp inside arrayUnion; use client ms and set a doc-level timestamp separately
     await updateDoc(doc(db, assessmentsPath, currentDocId), {
-      feedback: arrayUnion({ message: msg, user: who, createdAt: serverTimestamp() })
+      feedback: arrayUnion({ message: msg, user: who, createdAtMs: Date.now() }),
+      feedbackUpdatedAt: serverTimestamp()
     });
     if (!Array.isArray(currentItem.feedback)) currentItem.feedback = [];
-    currentItem.feedback.unshift({ message: msg, user: who, createdAt: { seconds: Math.floor(Date.now()/1000) } });
+    currentItem.feedback.unshift({ message: msg, user: who, createdAtMs: Date.now() });
     renderFeedbackList(currentItem);
     feedbackInput.value = "";
     feedbackStatus.textContent = "Saved.";
