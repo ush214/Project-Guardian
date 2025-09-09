@@ -54,14 +54,15 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
+// Optional callable functions
 let reassessWerpsFn = null;
 try { reassessWerpsFn = httpsCallable(functions, "reassessWerps"); } catch {}
 const repairWerpsFn = httpsCallable(functions, "repairWerps");
 
-// Paths
-const assessmentsPath = `artifacts/${appId}/public/data/werpassessments`;
+// Paths: primary + alternate (guardian-agent-default)
+const assessmentsPath = `artifacts/guardian/public/data/werpassessments`;
 const altAssessmentPaths = [
-  `artifacts/${appId}/public/data/WERPAssessments` // common case-variant path
+  `artifacts/guardian-agent-default/public/data/werpassessments`
 ];
 
 // DOM refs
@@ -101,7 +102,7 @@ const reportTitle = document.getElementById("reportTitle");
 const reportContent = document.getElementById("reportContent");
 const benchLegend = document.getElementById("benchLegend");
 
-// Phase 2 + Gallery
+// Gallery
 const galleryGrid = document.getElementById("galleryGrid");
 const galleryEmpty = document.getElementById("galleryEmpty");
 const phase2Input = document.getElementById("phase2Input");
@@ -134,6 +135,7 @@ if (assessPathSpan) assessPathSpan.textContent = assessmentsPath;
 let currentRole = "user";
 let currentItem = null;
 let currentDocId = null;
+let currentDocPath = assessmentsPath; // Track originating collection path for writes
 let map;
 let markers = new Map();
 let radarChart = null;
@@ -141,7 +143,11 @@ let dataUnsubs = [];
 let allItems = [];
 let lastRenderedHtml = "";
 
-// Chart config (overridable)
+// PDF logos
+const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
+const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
+
+// Chart config
 let chartConfig = {
   scaleMax: 10,
   benchmarks: { high: 9, medium: 6, low: 3 },
@@ -157,7 +163,7 @@ let chartConfig = {
   }
 };
 
-// Utils
+// Utilities
 const escapeHtml = (s) => String(s || "").replace(/[&<>\"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
 const isFiniteNum = (n) => typeof n === "number" && Number.isFinite(n);
 const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
@@ -224,6 +230,29 @@ function readNumberByPaths(obj, paths) {
   return null;
 }
 
+// Identify if a doc is a WERP assessment (exclude seismic/event-only docs)
+function isWerpAssessment(d) {
+  const t = String(d?.type ?? d?.recordType ?? d?.category ?? d?.kind ?? d?.meta?.type ?? "").toUpperCase();
+  const et = String(d?.eventType ?? d?.events?.type ?? "").toUpperCase();
+  const name = String(d?.name ?? d?.title ?? d?.id ?? "").toUpperCase();
+
+  // Exclude if clearly a seismic event record
+  const looksSeismic =
+    t === "SEISMIC_EVENT" ||
+    et === "SEISMIC_EVENT" ||
+    (t.includes("SEISMIC") && t.includes("EVENT")) ||
+    (et.includes("SEISMIC") && et.includes("EVENT")) ||
+    name.includes("SEISMIC_EVENT");
+  if (looksSeismic) return false;
+
+  // Likely a WERP assessment if it has these structures
+  if (hasUnifiedV2(d)) return true;
+  if (d?.wcs || d?.phs || d?.esi || d?.phase1 || d?.phase3) return true;
+
+  // Default: include (fail open) unless clearly event-only
+  return true;
+}
+
 // v2 unified WERP detection
 function hasUnifiedV2(item) {
   return Array.isArray(item?.wcs?.parameters)
@@ -232,7 +261,7 @@ function hasUnifiedV2(item) {
       && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
 }
 
-// Strict RPM multiplier (0.5..2.5)
+// Strict RPM multiplier resolver (0.5..2.5)
 function resolveRPMMultiplier(item) {
   const explicit = toNum(deepGet(item, "rpm.finalMultiplier")) ?? toNum(deepGet(item, "RPM.finalMultiplier"));
   if (isFiniteNum(explicit)) return clamp(explicit, 0.5, 2.5);
@@ -257,7 +286,7 @@ function resolveRPMMultiplier(item) {
   return 1.0;
 }
 
-// WCS normalizer (canonical 4 categories, 0–10 => 0–5)
+// WCS normalizer (canonical 4 categories, normalizes 0–10 to 0–5)
 function normalizeWcsParameters(rawParams = []) {
   const params = (Array.isArray(rawParams) ? rawParams : [])
     .map(p => ({
@@ -391,7 +420,7 @@ function v2Totals(item) {
   };
 }
 
-// Severity
+// Severity calc
 function computeFormulaSeverity(item) {
   if (hasUnifiedV2(item)) {
     const v = v2Totals(item);
@@ -410,7 +439,7 @@ function getSeverityValue(item) {
   return computeFormulaSeverity(item);
 }
 
-// Config
+// Config loader
 async function loadChartConfig() {
   const paths = [
     `artifacts/${appId}/public/config/werpChart`,
@@ -459,7 +488,7 @@ function markerIconFor(band) {
   });
 }
 
-// Pick an image for map popup
+// Choose a thumbnail image for the marker popup
 function getMarkerImageUrl(item) {
   const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
@@ -471,7 +500,10 @@ function getMarkerImageUrl(item) {
     item?.image, item?.photo, item?.thumbnail, item?.bannerImage
   ].filter(Boolean);
   for (const u of candidates) {
-    try { const s = String(u); if (webExt.test(s)) return s; } catch {}
+    try {
+      const s = String(u);
+      if (webExt.test(s)) return s;
+    } catch {}
   }
   return null;
 }
@@ -512,7 +544,7 @@ function upsertMarker(item) {
 }
 function clearMarkers() { for (const m of markers.values()) { try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-// Radar
+// Radar chart helpers
 function getAxisScores(item) {
   let w, p, e;
   if (hasUnifiedV2(item)) {
@@ -531,8 +563,7 @@ function getAxisScores(item) {
 }
 function renderBenchLegend() {
   const b = chartConfig.benchmarks;
-  const el = benchLegend;
-  if (!el) return;
+  const el = benchLegend; if (!el) return;
   el.innerHTML = `
     <span style="color:${chartConfig.colors.highBorder}">High</span>: ${b.high} &nbsp;|&nbsp;
     <span style="color:${chartConfig.colors.mediumBorder}">Medium</span>: ${b.medium} &nbsp;|&nbsp;
@@ -587,7 +618,7 @@ function renderRadarV2(item) {
   renderBenchLegend();
 }
 
-// Vessel name
+// Vessel naming
 function getVesselName(it) {
   const direct = [
     it.vesselName, it.name, it.title, it.displayName, it.label,
@@ -598,7 +629,7 @@ function getVesselName(it) {
   return getText(it.id) || "Unknown";
 }
 
-// Section summaries
+// Summaries/recommendations
 function factorSummaryTable(item) {
   const rows = [];
   if (hasUnifiedV2(item)) {
@@ -654,9 +685,10 @@ function getRecommendations(item) {
   return null;
 }
 
-// Report renderers
+// Generic report renderer
 function buildReportHtml(item) {
   const blocks = [];
+
   const summaryHtml = getSummativeText(item);
   if (summaryHtml) { blocks.push("<h3>Summary</h3>", summaryHtml); }
 
@@ -684,6 +716,8 @@ function buildReportHtml(item) {
 
   return blocks.join("\n");
 }
+
+// v2 detailed report renderer
 function renderReportV2HTML(item) {
   const v = v2Totals(item);
 
@@ -824,7 +858,7 @@ function buildReportMarkdown(item) {
   return lines.join("\n");
 }
 
-// Data
+// Data: listen to both collections, exclude seismic events, track path
 async function startData() {
   // Clean previous listeners
   for (const u of dataUnsubs) { try { u(); } catch {} }
@@ -832,30 +866,36 @@ async function startData() {
 
   await loadChartConfig();
 
-  // Merge maps by doc id across multiple collections
-  const byId = new Map();
-  const applySnap = (snap) => {
+  const byKey = new Map();
+  const applySnap = (snap, basePath) => {
     snap.forEach(docSnap => {
       const raw = docSnap.data() || {};
-      const d = { ...normalizeDoc(raw), id: raw?.id || docSnap.id };
+      const d = { ...normalizeDoc(raw), id: raw?.id || docSnap.id, _path: basePath };
+      if (!isWerpAssessment(d)) return;
       const sv = getSeverityValue(d);
       d.severity = { ...(d.severity || {}), value: sv, band: d.severity?.band || bandFromValue(sv) };
-      byId.set(d.id, d);
+      byKey.set(`${basePath}::${d.id}`, d);
     });
-    allItems = Array.from(byId.values());
+    allItems = Array.from(byKey.values());
     render();
   };
 
-  // Primary collection
+  // Primary
   try {
-    const un = onSnapshot(collection(db, assessmentsPath), applySnap, (err) => console.error("Snapshot error (primary)", err));
+    const un = onSnapshot(collection(db, assessmentsPath),
+      (snap) => applySnap(snap, assessmentsPath),
+      (err) => console.error("Snapshot error (primary)", err)
+    );
     dataUnsubs.push(un);
   } catch (e) { console.error("Listener error (primary)", e); }
 
-  // Alternate case/path variants
+  // Alternates
   for (const p of altAssessmentPaths) {
     try {
-      const un = onSnapshot(collection(db, p), applySnap, (err) => console.error(`Snapshot error (${p})`, err));
+      const un = onSnapshot(collection(db, p),
+        (snap) => applySnap(snap, p),
+        (err) => console.error(`Snapshot error (${p})`, err)
+      );
       dataUnsubs.push(un);
     } catch (e) { console.error("Listener error (alt)", p, e); }
   }
@@ -874,7 +914,7 @@ function getVisibleItems() {
   const term = searchBox?.value?.trim().toLowerCase() || '';
   return allItems.filter(it => {
     const band = it?.severity?.band || 'unknown';
-    if (!activeBands.has(band) && band !== 'unknown') return false; // include unknown by default
+    if (!activeBands.has(band) && band !== 'unknown') return false; // include 'unknown' by default
     if (term && !getVesselName(it).toLowerCase().includes(term)) return false;
     return true;
   });
@@ -922,7 +962,6 @@ function render() {
   if (reassessCount) reassessCount.textContent = String(reassessArr.length);
 
   document.getElementById("noDataBanner")?.classList.toggle("hidden", allItems.length !== 0);
-
   noInitial?.classList.toggle("hidden", initial.length !== 0);
   noCompleted?.classList.toggle("hidden", completed.length !== 0);
   noReassess?.classList.toggle("hidden", reassessArr.length !== 0);
@@ -959,6 +998,7 @@ function drawList(container, items) {
 function openReport(item) {
   currentItem = item;
   currentDocId = item?.id || null;
+  currentDocPath = item?._path || assessmentsPath; // set path for subsequent writes
   const vessel = getVesselName(item);
   if (reportTitle) reportTitle.textContent = vessel || "Assessment";
 
@@ -1007,13 +1047,13 @@ function renderGalleryFromDoc() {
   }
 }
 
-// Phase 2 actions
+// Phase 2 actions (writes use currentDocPath)
 savePhase2Btn?.addEventListener("click", async () => {
   if (!currentDocId) { phase2Status.textContent = "Open a report first."; return; }
   const txt = phase2Input.value.trim();
   phase2Status.textContent = "Saving...";
   try {
-    await updateDoc(doc(db, assessmentsPath, currentDocId), {
+    await updateDoc(doc(db, currentDocPath, currentDocId), {
       "phase2.summary": txt,
       "phase2.updatedAt": serverTimestamp()
     });
@@ -1032,7 +1072,7 @@ uploadFilesBtn?.addEventListener("click", async () => {
   uploadStatus.textContent = `Uploading ${files.length} file(s)...`;
   try {
     const basePath = `artifacts/${appId}/public/uploads/${currentDocId}/phase2`;
-    const refDoc = doc(db, assessmentsPath, currentDocId);
+    const refDoc = doc(db, currentDocPath, currentDocId);
     let done = 0;
 
     for (const f of files) {
@@ -1073,12 +1113,12 @@ reassessBtn?.addEventListener("click", async () => {
   if (!currentDocId) { phase2Status.textContent = "Open a report first."; return; }
   phase2Status.textContent = "Submitting reassessment...";
   try {
-    const payload = { docId: currentDocId, usePhase2: true, normalize: true };
+    const payload = { docId: currentDocId, docPath: currentDocPath, usePhase2: true, normalize: true };
     if (reassessWerpsFn) await reassessWerpsFn(payload); else await repairWerpsFn(payload);
 
     setTimeout(async () => {
-      const snap = await getDoc(doc(db, assessmentsPath, currentDocId));
-      if (snap.exists()) { currentItem = { ...currentItem, ...snap.data(), id: currentDocId }; openReport(currentItem); }
+      const snap = await getDoc(doc(db, currentDocPath, currentDocId));
+      if (snap.exists()) { currentItem = { ...currentItem, ...snap.data(), id: currentDocId, _path: currentDocPath }; openReport(currentItem); }
       phase2Status.textContent = "Reassessment complete.";
       setTimeout(() => phase2Status.textContent = "", 2000);
     }, 1500);
@@ -1105,13 +1145,11 @@ function renderFeedbackList(item) {
   for (const e of entries.slice(0, 12)) {
     const who = escapeHtml(e?.user || "Unknown");
     const when = fmt(e) || "";
-    theMsg: {
-      const msg = escapeHtml(e?.message || "");
-      const li = document.createElement("li");
-      li.className = "p-2 bg-gray-50 border border-gray-200 rounded";
-      li.innerHTML = `<div class="text-xs text-gray-600 mb-1">${who}${when ? " • " + when : ""}</div><div class="text-sm">${msg}</div>`;
-      feedbackList.appendChild(li);
-    }
+    const msg = escapeHtml(e?.message || "");
+    const li = document.createElement("li");
+    li.className = "p-2 bg-gray-50 border border-gray-200 rounded";
+    li.innerHTML = `<div class="text-xs text-gray-600 mb-1">${who}${when ? " • " + when : ""}</div><div class="text-sm">${msg}</div>`;
+    feedbackList.appendChild(li);
   }
 }
 saveFeedbackBtn?.addEventListener("click", async () => {
@@ -1121,7 +1159,7 @@ saveFeedbackBtn?.addEventListener("click", async () => {
   const who = auth.currentUser?.email || auth.currentUser?.uid || "anonymous";
   feedbackStatus.textContent = "Saving...";
   try {
-    await updateDoc(doc(db, assessmentsPath, currentDocId), {
+    await updateDoc(doc(db, currentDocPath, currentDocId), {
       feedback: arrayUnion({ message: msg, user: who, createdAtMs: Date.now() }),
       feedbackUpdatedAt: serverTimestamp()
     });
@@ -1136,7 +1174,7 @@ saveFeedbackBtn?.addEventListener("click", async () => {
   }
 });
 
-// Auth UI
+// Auth UI handlers
 document.getElementById("signInEmailBtn")?.addEventListener("click", async () => {
   const email = document.getElementById("emailInput").value.trim();
   const password = document.getElementById("passwordInput").value;
@@ -1168,7 +1206,7 @@ document.getElementById("resetPasswordBtn")?.addEventListener("click", async () 
 });
 signOutBtn?.addEventListener("click", async () => { try { await signOut(auth); } catch {} });
 
-// Roles
+// Role fetch
 async function fetchRoleFor(uid) {
   try {
     const allowDocRef = doc(db, "system", "allowlist", "users", uid);
@@ -1268,18 +1306,24 @@ function exportMarkdown() {
   const md = buildReportMarkdown(currentItem);
   downloadFile(`${vessel.replace(/\s+/g,"_")}.md`, new Blob([md], { type: "text/markdown;charset=utf-8" }));
 }
-const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
-const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
+function exportJson() {
+  if (!currentItem) return;
+  const vessel = getVesselName(currentItem) || "assessment";
+  const json = JSON.stringify(currentItem, null, 2);
+  downloadFile(`${vessel.replace(/\s+/g,"_")}.json`, new Blob([json], { type: "application/json;charset=utf-8" }));
+}
 function exportPdf() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || "assessment";
 
+  // Chart image
   let chartImg = "";
   try {
     const cnv = document.getElementById("werSpiderChart");
     chartImg = cnv?.toDataURL("image/png") || "";
   } catch {}
 
+  // Include up to 6 web-friendly gallery images in PDF
   const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const galleryUrls = assets.filter(a => webExt.test(a?.name || a?.path || "") && a?.url).slice(0, 6).map(a => a.url);
@@ -1323,7 +1367,7 @@ exportHtmlBtn?.addEventListener("click", exportHtml);
 exportMdBtn?.addEventListener("click", exportMarkdown);
 exportJsonBtn?.addEventListener("click", exportJson);
 
-// Normalize doc
+// Flatten helper
 function normalizeDoc(d) {
   const out = { ...d };
   if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
