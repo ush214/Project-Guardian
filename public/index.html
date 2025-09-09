@@ -26,8 +26,11 @@
   <!-- Chart.js (for radar) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- DOMPurify for safe HTML rendering in the report pane -->
+  <!-- DOMPurify (sanitize HTML) -->
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
+  <!-- Marked (render Markdown to HTML) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 
   <style>
     body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
@@ -66,27 +69,22 @@
     .report-prose pre { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb; }
     .report-prose blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid #e5e7eb; color:#374151; }
 
-    /* Make the chart canvas follow its container height */
-    #werSpiderWrapper { height: 360px; } /* fixed height prevents layout growth */
+    /* Radar chart containment */
+    #werSpiderWrapper { height: 360px; }
     #werSpiderChart { width: 100% !important; height: 100% !important; display: block; }
   </style>
 </head>
 <body class="bg-slate-50 text-gray-900">
-  <!-- Header with logos (left), centered title, and auth/admin (right) -->
+  <!-- Header -->
   <header class="bg-gray-900 text-white">
     <div class="max-w-6xl mx-auto px-4 py-3 grid grid-cols-3 gap-3 items-center">
-      <!-- Left: Logos -->
       <div class="flex items-center gap-3">
         <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-[72px] w-auto rounded-sm bg-white/5 p-1">
         <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Deeptrek Logo" class="h-[72px] w-auto rounded-sm bg-white/5 p-1">
       </div>
-
-      <!-- Center: Title -->
       <div class="text-center">
         <h1 class="text-lg sm:text-xl font-semibold">Project Guardian – WERP Reports</h1>
       </div>
-
-      <!-- Right: Admin + user -->
       <div class="flex items-center justify-end gap-2">
         <a id="adminToolsBtn" href="/admin-tools.html" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded" title="Open Admin Tools">Admin Tools</a>
         <span id="userName" class="hidden text-xs text-indigo-200"></span>
@@ -124,7 +122,7 @@
 
     <!-- App container -->
     <div id="appContainer" class="hidden space-y-6">
-      <!-- Analyze single vessel -->
+      <!-- Analyze -->
       <section class="bg-white border border-gray-200 rounded-xl shadow p-6">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-3">
@@ -164,29 +162,6 @@
         <p class="text-xs text-gray-500 mt-2">Severity = (WCS + PHS + (ESI ÷ 3)) × RPM.</p>
       </section>
 
-      <!-- Evidence: embedded screenshot (optional) -->
-      <section id="evidenceSection" class="bg-white border border-amber-200 rounded-xl shadow p-4">
-        <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-amber-800">Evidence: Report panel previously grew beyond the viewport</h3>
-          <button id="toggleEvidenceBtn" class="text-xs text-amber-700 hover:underline">Hide</button>
-        </div>
-        <p class="text-xs text-amber-700 mt-1">If the image doesn't load, ensure the file exists at /assets/evidence-assessments.png.</p>
-        <div id="evidenceWrapper" class="mt-3">
-          <img id="evidenceImg" src="/assets/evidence-assessments.png" alt="Screenshot showing report panel overflow" class="w-full rounded border border-amber-200">
-        </div>
-      </section>
-
-      <!-- No data banner -->
-      <section id="noDataBanner" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-md p-3 hidden">
-        No assessments found at <span id="assessPathSpan" class="font-mono"></span> for appId
-        <span id="appIdSpan" class="font-mono"></span>. Check the collection name and casing in Firestore.
-      </section>
-
-      <!-- Map -->
-      <section class="bg-white border border-gray-200 rounded-xl shadow p-3">
-        <div id="map"></div>
-      </section>
-
       <!-- Lists -->
       <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <!-- Initial -->
@@ -220,10 +195,20 @@
         </div>
       </section>
 
+      <!-- No data banner -->
+      <section id="noDataBanner" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-md p-3 hidden">
+        No assessments found at <span id="assessPathSpan" class="font-mono"></span> for appId
+        <span id="appIdSpan" class="font-mono"></span>. Check the collection name and casing in Firestore.
+      </section>
+
+      <!-- Map -->
+      <section class="bg-white border border-gray-200 rounded-xl shadow p-3">
+        <div id="map"></div>
+      </section>
+
       <!-- Full report panel -->
       <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden max-h-[80vh] overflow-hidden">
         <h2 id="reportTitle" class="text-2xl font-bold mb-4 text-center text-gray-900"></h2>
-        <div id="alert-display-section" class="hidden mb-4"></div>
         <div id="reportGrid" class="grid grid-cols-1 lg:grid-cols-5 gap-6">
           <!-- Left: scrollable report content -->
           <div class="lg:col-span-3">
@@ -231,11 +216,13 @@
               <div id="reportContent" class="report-prose"></div>
             </div>
           </div>
-          <!-- Right: fixed-height chart area -->
+          <!-- Right: fixed-height chart -->
           <div class="lg:col-span-2 flex flex-col max-h-[75vh]">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
-            <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white"></div>
-            <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
+            <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white">
+              <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
+            </div>
+            <div id="benchLegend" class="mt-2 text-xs text-gray-600 text-center"></div>
           </div>
         </div>
       </section>
@@ -246,21 +233,12 @@
     // Firebase
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import {
-      getAuth,
-      onAuthStateChanged,
-      signOut,
-      createUserWithEmailAndPassword,
-      signInWithEmailAndPassword,
-      sendPasswordResetEmail
+      getAuth, onAuthStateChanged, signOut,
+      createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import {
-      getFirestore,
-      doc,
-      setDoc,
-      getDoc,
-      serverTimestamp,
-      collection,
-      onSnapshot
+      getFirestore, doc, setDoc, getDoc, serverTimestamp,
+      collection, onSnapshot
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
@@ -274,69 +252,86 @@
       measurementId: "G-NRLH3WSCQ9"
     };
 
-    // Set to your actual artifacts doc id
     const appId = 'guardian';
-
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
     const functions = getFunctions(app, 'us-central1');
-
-    // Callable functions
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
 
-    // Assessments path (no capitalization)
     const assessmentsPath = `artifacts/${appId}/public/data/werpassessments`;
+    const appConfigPathCandidates = [
+      `artifacts/${appId}/public/config/werpChart`,
+      `artifacts/${appId}/public/config/werpRadarBenchmarks`,
+      `artifacts/${appId}/public/config/werp`
+    ];
 
-    const DEBUG = true;
+    const DEBUG = false;
 
-    // Evidence toggle
-    const toggleEvidenceBtn = document.getElementById('toggleEvidenceBtn');
-    const evidenceWrapper = document.getElementById('evidenceWrapper');
-    toggleEvidenceBtn?.addEventListener('click', () => {
-      const hidden = evidenceWrapper.classList.toggle('hidden');
-      toggleEvidenceBtn.textContent = hidden ? 'Show' : 'Hide';
-    });
+    // DOM refs
+    const signedOutContainer = document.getElementById('signedOutContainer');
+    const appContainer = document.getElementById('appContainer');
+    const adminToolsBtn = document.getElementById('adminToolsBtn');
+    const userNameSpan = document.getElementById('userName');
+    const signOutBtn = document.getElementById('signOutBtn');
+    const roleBadge = document.getElementById('roleBadge');
+    const contribHint = document.getElementById('contribHint');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const analyzeText = document.getElementById('analyzeText');
+    const vesselNameInput = document.getElementById('vesselName');
+    const statusMessage = document.getElementById('statusMessage');
+    const authMessage = document.getElementById('authMessage');
 
-    // Role helper
-    async function fetchRoleFor(uid) {
-      try {
-        const allowDocRef = doc(db, 'system', 'allowlist', 'users', uid);
-        const allowDoc = await getDoc(allowDocRef);
-        if (allowDoc.exists()) {
-          const d = allowDoc.data() || {};
-          let r = d.role ?? d.Role ?? d.ROLE;
-          if (typeof r === 'string' && r.trim()) {
-            r = r.trim().toLowerCase();
-            if (r.startsWith('admin')) return 'admin';
-            if (r.startsWith('contrib')) return 'contributor';
-            if (r === 'user' || r === 'reader' || r === 'viewer') return 'user';
-          }
-          if (d.admin === true) return 'admin';
-          if (d.contributor === true) return 'contributor';
-          if (d.allowed === true) return 'user';
-        }
-      } catch {}
-      try {
-        const legacyRef = doc(db, `artifacts/${appId}/private/users/${uid}`);
-        const legacyDoc = await getDoc(legacyRef);
-        if (legacyDoc.exists()) {
-          const d = legacyDoc.data() || {};
-          let r = d.role ?? d.Role ?? d.ROLE;
-          if (typeof r === 'string' && r.trim()) {
-            r = r.trim().toLowerCase();
-            if (r.startsWith('admin')) return 'admin';
-            if (r.startsWith('contrib')) return 'contributor';
-            if (r === 'user' || r === 'reader' || r === 'viewer') return 'user';
-          }
-          if (d.admin === true) return 'admin';
-          if (d.contributor === true) return 'contributor';
-        }
-      } catch {}
-      return 'user';
-    }
+    const sevHigh = document.getElementById('sevHigh');
+    const sevMedium = document.getElementById('sevMedium');
+    const sevLow = document.getElementById('sevLow');
+    const searchBox = document.getElementById('searchBox');
+    const clearSearch = document.getElementById('clearSearch');
+    const visibleCounts = document.getElementById('visibleCounts');
 
-    // Helpers
+    const initialList = document.getElementById('initialWreckList');
+    const completedList = document.getElementById('completedWreckList');
+    const reassessList = document.getElementById('reassessList');
+    const initialCount = document.getElementById('initialCount');
+    const completedCount = document.getElementById('completedCount');
+    const reassessCount = document.getElementById('reassessCount');
+    const noInitial = document.getElementById('noInitialWrecksMessage');
+    const noCompleted = document.getElementById('noCompletedWrecksMessage');
+    const noReassess = document.getElementById('noReassessMessage');
+
+    const reportContainer = document.getElementById('reportContainer');
+    const reportTitle = document.getElementById('reportTitle');
+    const reportContent = document.getElementById('reportContent');
+    const benchLegend = document.getElementById('benchLegend');
+
+    const assessPathSpan = document.getElementById('assessPathSpan');
+    const appIdSpan = document.getElementById('appIdSpan');
+    appIdSpan.textContent = appId;
+    assessPathSpan.textContent = assessmentsPath;
+
+    // State
+    let currentRole = 'user';
+    let map;
+    let markers = new Map();
+    let radarChart = null;
+    let dataUnsub = null;
+    let allItems = [];
+    let chartConfig = {
+      scaleMax: 10,
+      benchmarks: { high: 9, medium: 6, low: 3 },
+      colors: {
+        wreck: 'rgba(79,70,229,0.45)',
+        wreckBorder: 'rgba(79,70,229,1)',
+        high: 'rgba(239,68,68,0.12)',
+        highBorder: 'rgba(239,68,68,0.8)',
+        medium: 'rgba(245,158,11,0.12)',
+        mediumBorder: 'rgba(245,158,11,0.8)',
+        low: 'rgba(16,185,129,0.12)',
+        lowBorder: 'rgba(16,185,129,0.8)'
+      }
+    };
+
+    // Utility helpers
     function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
     function isFiniteNum(n){ return typeof n === 'number' && Number.isFinite(n); }
     function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
@@ -355,12 +350,20 @@
         return null;
       }
       if (Array.isArray(val)) {
-        for (const x of val) { const n = coerceToNumber(x); if (n != null) return n; }
+        for (const x of val) {
+          const n = coerceToNumber(x);
+          if (n != null) return n;
+        }
         return null;
       }
       if (val && typeof val === 'object') {
         const candKeys = ['value','score','val','num','amount','rating','points','v','s'];
-        for (const k of candKeys) if (k in val) { const n = coerceToNumber(val[k]); if (n != null) return n; }
+        for (const k of candKeys) {
+          if (k in val) {
+            const n = coerceToNumber(val[k]);
+            if (n != null) return n;
+          }
+        }
         const bandStr = val.band ?? val.level ?? val.name ?? val.label;
         const t = getText(bandStr);
         if (t) {
@@ -370,7 +373,10 @@
           const m = t.match(/-?\d+(\.\d+)?/);
           if (m) return Number(m[0]);
         }
-        for (const v of Object.values(val)) { const n = coerceToNumber(v); if (n != null) return n; }
+        for (const v of Object.values(val)) {
+          const n = coerceToNumber(v);
+          if (n != null) return n;
+        }
       }
       return null;
     }
@@ -419,16 +425,17 @@
       return getText(it.id) || 'Unknown';
     }
 
+    // Severity computation
     function computeFormulaSeverity(item) {
-      const W = readNumberByPaths(item, ['severity.components.WCS','scores.WCS','wcs','WCS','risk.WCS','phase2.scores.WCS','phase1.screening.WCS','metrics.WCS','values.WCS','phase1.WCS','screening.WCS','phase1.wcs']);
-      const P = readNumberByPaths(item, ['severity.components.PHS','scores.PHS','phs','PHS','risk.PHS','phase2.scores.PHS','phase1.screening.PHS','metrics.PHS','values.PHS','phase1.PHS','screening.PHS','phase1.phs']);
-      const E = readNumberByPaths(item, ['severity.components.ESI','scores.ESI','esi','ESI','risk.ESI','phase2.scores.ESI','phase1.screening.ESI','metrics.ESI','values.ESI','phase1.ESI','screening.ESI','phase1.esi']);
-      const R = readNumberByPaths(item, ['severity.components.RPM','scores.RPM','rpm','RPM','risk.RPM','phase2.scores.RPM','phase1.screening.RPM','metrics.RPM','values.RPM','phase1.RPM','screening.RPM','phase1.rpm']);
+      const W = readNumberByPaths(item, ['scores.WCS','wcs','WCS','risk.WCS','phase1.screening.WCS','phase2.scores.WCS']);
+      const P = readNumberByPaths(item, ['scores.PHS','phs','PHS','risk.PHS','phase1.screening.PHS','phase2.scores.PHS']);
+      const E = readNumberByPaths(item, ['scores.ESI','esi','ESI','risk.ESI','phase1.screening.ESI','phase2.scores.ESI']);
+      const R = readNumberByPaths(item, ['scores.RPM','rpm','RPM','risk.RPM','phase1.screening.RPM','phase2.scores.RPM']);
       if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
       return null;
     }
     function getSeverityValue(item) {
-      const direct = readNumberByPaths(item, ['severity.value','severityValue','severity_score','severityScore','score','risk.severity','risk.score','metrics.severity','values.severity']);
+      const direct = readNumberByPaths(item, ['severity.value','severityValue','severity_score','severityScore','score','risk.severity','risk.score']);
       if (direct !== null) return direct;
       const formula = computeFormulaSeverity(item);
       if (formula !== null) return formula;
@@ -451,74 +458,14 @@
       return 'low';
     }
 
-    // Role/permissions
-    let currentRole = 'user';
-
-    // Map and markers
-    let map;
-    let markers = new Map();
-
-    // Chart instance
-    let radarChart = null;
-
-    // Data subscription
-    let dataUnsub = null;
-    let allItems = [];
-
-    // DOM refs
-    const signedOutContainer = document.getElementById('signedOutContainer');
-    const appContainer = document.getElementById('appContainer');
-    const adminToolsBtn = document.getElementById('adminToolsBtn');
-    const userNameSpan = document.getElementById('userName');
-    const signOutBtn = document.getElementById('signOutBtn');
-    const roleBadge = document.getElementById('roleBadge');
-    const contribHint = document.getElementById('contribHint');
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const analyzeText = document.getElementById('analyzeText');
-    const vesselNameInput = document.getElementById('vesselName');
-    const statusMessage = document.getElementById('statusMessage');
-    const authMessage = document.getElementById('authMessage');
-
-    const sevHigh = document.getElementById('sevHigh');
-    const sevMedium = document.getElementById('sevMedium');
-    const sevLow = document.getElementById('sevLow');
-    const searchBox = document.getElementById('searchBox');
-    const clearSearch = document.getElementById('clearSearch');
-    const visibleCounts = document.getElementById('visibleCounts');
-
-    const initialList = document.getElementById('initialWreckList');
-    const completedList = document.getElementById('completedWreckList');
-    const reassessList = document.getElementById('reassessList');
-    const initialCount = document.getElementById('initialCount');
-    const completedCount = document.getElementById('completedCount');
-    const reassessCount = document.getElementById('reassessCount');
-    const noInitial = document.getElementById('noInitialWrecksMessage');
-    const noCompleted = document.getElementById('noCompletedWrecksMessage');
-    const noReassess = document.getElementById('noReassessMessage');
-
-    const reportContainer = document.getElementById('reportContainer');
-    const reportTitle = document.getElementById('reportTitle');
-    const reportContent = document.getElementById('reportContent');
-
-    const noDataBanner = document.getElementById('noDataBanner');
-    const assessPathSpan = document.getElementById('assessPathSpan');
-    const appIdSpan = document.getElementById('appIdSpan');
-
-    appIdSpan.textContent = appId;
-    assessPathSpan.textContent = assessmentsPath;
-
     // Auth UI
     document.getElementById('signInEmailBtn').addEventListener('click', async () => {
       const email = document.getElementById('emailInput').value.trim();
       const password = document.getElementById('passwordInput').value;
       authMessage.textContent = '';
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-      } catch (e) {
-        authMessage.textContent = e.message || 'Sign-in failed.';
-      }
+      try { await signInWithEmailAndPassword(auth, email, password); }
+      catch (e) { authMessage.textContent = e.message || 'Sign-in failed.'; }
     });
-
     document.getElementById('createAccountBtn').addEventListener('click', async () => {
       const email = document.getElementById('emailInput').value.trim();
       const password = document.getElementById('passwordInput').value;
@@ -527,9 +474,7 @@
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         try {
           await setDoc(doc(db, `artifacts/${appId}/private/users/${cred.user.uid}`), {
-            email,
-            role: 'user',
-            createdAt: serverTimestamp()
+            email, role: 'user', createdAt: serverTimestamp()
           }, { merge: true });
         } catch {}
         authMessage.textContent = 'Account created. You are signed in as User.';
@@ -537,75 +482,79 @@
         authMessage.textContent = e.message || 'Account creation failed.';
       }
     });
-
     document.getElementById('resetPasswordBtn').addEventListener('click', async () => {
       const email = document.getElementById('emailInput').value.trim();
       if (!email) { authMessage.textContent = 'Enter your email first.'; return; }
+      try { await sendPasswordResetEmail(auth, email); authMessage.textContent = 'Password reset email sent.'; }
+      catch (e) { authMessage.textContent = e.message || 'Password reset failed.'; }
+    });
+    signOutBtn.addEventListener('click', async () => { try { await signOut(auth); } catch {} });
+
+    async function fetchRoleFor(uid) {
       try {
-        await sendPasswordResetEmail(auth, email);
-        authMessage.textContent = 'Password reset email sent.';
-      } catch (e) {
-        authMessage.textContent = e.message || 'Password reset failed.';
-      }
-    });
-
-    signOutBtn.addEventListener('click', async () => {
-      try { await signOut(auth); } catch {}
-    });
-
-    onAuthStateChanged(auth, async (user) => {
-      if (dataUnsub) { try { dataUnsub(); } catch {} dataUnsub = null; }
-
-      if (!user) {
-        signedOutContainer.classList.remove('hidden');
-        appContainer.classList.add('hidden');
-        adminToolsBtn.classList.add('hidden');
-        userNameSpan.classList.add('hidden');
-        signOutBtn.classList.add('hidden');
-        roleBadge.textContent = 'Role: —';
-        analyzeBtn.disabled = true;
-        contribHint.classList.remove('hidden');
-        return;
-      }
-
-      signedOutContainer.classList.add('hidden');
-      appContainer.classList.remove('hidden');
-      userNameSpan.textContent = user.email || user.uid;
-      userNameSpan.classList.remove('hidden');
-      signOutBtn.classList.remove('hidden');
-
-      const role = await fetchRoleFor(user.uid);
-      roleBadge.textContent = `Role: ${role}`;
-      const isAdmin = role === 'admin';
-      const isContributor = isAdmin || role === 'contributor';
-      if (isAdmin) document.getElementById('adminToolsBtn').classList.remove('hidden'); else document.getElementById('adminToolsBtn').classList.add('hidden');
-      analyzeBtn.disabled = !isContributor;
-      if (!isContributor) document.getElementById('contribHint').classList.remove('hidden'); else document.getElementById('contribHint').classList.add('hidden');
-
-      initMap();
-      await startData();
-    });
-
-    // Analyze action
-    analyzeBtn.addEventListener('click', async () => {
-      const name = vesselNameInput.value.trim();
-      statusMessage.textContent = '';
-      if (!name) { statusMessage.textContent = 'Enter a vessel name.'; return; }
-      if (analyzeBtn.disabled) { statusMessage.textContent = 'Contributor access required.'; return; }
-
-      analyzeBtn.disabled = true;
-      analyzeText.textContent = 'Analyzing...';
+        const allowDocRef = doc(db, 'system', 'allowlist', 'users', uid);
+        const allowDoc = await getDoc(allowDocRef);
+        if (allowDoc.exists()) {
+          const d = allowDoc.data() || {};
+          let r = d.role ?? d.Role ?? d.ROLE;
+          if (typeof r === 'string' && r.trim()) {
+            r = r.trim().toLowerCase();
+            if (r.startsWith('admin')) return 'admin';
+            if (r.startsWith('contrib')) return 'contributor';
+            if (r === 'user' || r === 'reader' || r === 'viewer') return 'user';
+          }
+          if (d.admin === true) return 'admin';
+          if (d.contributor === true) return 'contributor';
+          if (d.allowed === true) return 'user';
+        }
+      } catch {}
       try {
-        await callGeminiFunction({ vesselName: name, appId });
-        statusMessage.textContent = 'Analysis requested. It may take a moment to appear.';
-        vesselNameInput.value = '';
-      } catch (e) {
-        statusMessage.textContent = e.message || 'Failed to start analysis.';
-      } finally {
-        analyzeBtn.disabled = false;
-        analyzeText.textContent = 'Analyze Wreck';
+        const legacyRef = doc(db, `artifacts/${appId}/private/users/${uid}`);
+        const legacyDoc = await getDoc(legacyRef);
+        if (legacyDoc.exists()) {
+          const d = legacyDoc.data() || {};
+          let r = d.role ?? d.Role ?? d.ROLE;
+          if (typeof r === 'string' && r.trim()) {
+            r = r.trim().toLowerCase();
+            if (r.startsWith('admin')) return 'admin';
+            if (r.startsWith('contrib')) return 'contributor';
+            if (r === 'user' || r === 'reader' || r === 'viewer') return 'user';
+          }
+          if (d.admin === true) return 'admin';
+          if (d.contributor === true) return 'contributor';
+        }
+      } catch {}
+      return 'user';
+    }
+
+    // Config: load benchmark levels if present
+    async function loadChartConfig() {
+      for (const p of appConfigPathCandidates) {
+        try {
+          const ref = doc(db, p);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            const cfg = snap.data() || {};
+            if (typeof cfg.scaleMax === 'number') chartConfig.scaleMax = cfg.scaleMax;
+            if (cfg.benchmarks && typeof cfg.benchmarks === 'object') {
+              chartConfig.benchmarks = {
+                high: Number(cfg.benchmarks.high ?? chartConfig.benchmarks.high),
+                medium: Number(cfg.benchmarks.medium ?? chartConfig.benchmarks.medium),
+                low: Number(cfg.benchmarks.low ?? chartConfig.benchmarks.low)
+              };
+            }
+            if (cfg.colors && typeof cfg.colors === 'object') {
+              chartConfig.colors = { ...chartConfig.colors, ...cfg.colors };
+            }
+            if (DEBUG) console.log('[WERP] Loaded chart config from', p, chartConfig);
+            return;
+          }
+        } catch (e) {
+          if (DEBUG) console.warn('Config load failed for', p, e?.message || e);
+        }
       }
-    });
+      if (DEBUG) console.log('[WERP] Using default chart config', chartConfig);
+    }
 
     // Map
     const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
@@ -614,9 +563,7 @@
       map = L.map('map').setView([10, 150], 3);
       L.tileLayer('https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}', {
         id: 'mapbox/streets-v12',
-        tileSize: 512,
-        zoomOffset: -1,
-        accessToken: MAPBOX_TOKEN,
+        tileSize: 512, zoomOffset: -1, accessToken: MAPBOX_TOKEN,
         attribution: '&copy; OpenStreetMap &copy; Mapbox'
       }).addTo(map);
     }
@@ -655,48 +602,94 @@
     }
     function clearMarkers(){ for (const m of markers.values()){ try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-    // Radar chart
+    // Scores for radar
+    function getAxisScores(item) {
+      // Prioritize top-level numeric fields, then nested score fields
+      const w = readNumberByPaths(item, ['wcs','scores.WCS','WCS','phase1.screening.WCS','phase2.scores.WCS']) ?? 0;
+      const p = readNumberByPaths(item, ['phs','scores.PHS','PHS','phase1.screening.PHS','phase2.scores.PHS']) ?? 0;
+      const e = readNumberByPaths(item, ['esi','scores.ESI','ESI','phase1.screening.ESI','phase2.scores.ESI']) ?? 0;
+      const r = readNumberByPaths(item, ['rpm','scores.RPM','RPM','phase1.screening.RPM','phase2.scores.RPM']) ?? 0;
+      // Clamp to [0, scaleMax]
+      const max = chartConfig.scaleMax || 10;
+      const clamp = v => Math.max(0, Math.min(max, Number(v) || 0));
+      return [clamp(w), clamp(p), clamp(e), clamp(r)];
+    }
+
+    function renderBenchLegend() {
+      const b = chartConfig.benchmarks;
+      benchLegend.innerHTML = `
+        <span style="color:${chartConfig.colors.highBorder}">High</span>: ${b.high} &nbsp;|&nbsp;
+        <span style="color:${chartConfig.colors.mediumBorder}">Medium</span>: ${b.medium} &nbsp;|&nbsp;
+        <span style="color:${chartConfig.colors.lowBorder}">Low</span>: ${b.low}
+      `;
+    }
+
     function renderRadar(item) {
       const ctx = document.getElementById('werSpiderChart').getContext('2d');
-      const wcs = readNumberByPaths(item, ['scores.WCS','wcs','WCS']) ?? 0;
-      const phs = readNumberByPaths(item, ['scores.PHS','phs','PHS']) ?? 0;
-      const esi = readNumberByPaths(item, ['scores.ESI','esi','ESI']) ?? 0;
-      const rpm = readNumberByPaths(item, ['scores.RPM','rpm','RPM']) ?? 0;
+      const labels = ['WCS', 'PHS', 'ESI', 'RPM'];
+      const wreck = getAxisScores(item);
+      const max = chartConfig.scaleMax || 10;
+      const b = chartConfig.benchmarks;
+
+      const ring = (val, label, bg, border) => ({
+        label, data: [val,val,val,val],
+        fill: true,
+        backgroundColor: bg,
+        borderColor: border,
+        pointRadius: 0,
+        borderWidth: 1
+      });
 
       const data = {
-        labels: ['WCS', 'PHS', 'ESI', 'RPM'],
-        datasets: [{
-          label: 'Risk',
-          data: [wcs, phs, esi, rpm],
-          fill: true,
-          backgroundColor: 'rgba(79, 70, 229, 0.2)',
-          borderColor: 'rgba(79, 70, 229, 1)',
-          pointBackgroundColor: 'rgba(79, 70, 229, 1)',
-          pointBorderColor: '#fff',
-          pointHoverBackgroundColor: '#fff',
-          pointHoverBorderColor: 'rgba(79, 70, 229, 1)'
-        }]
+        labels,
+        datasets: [
+          // Benchmarks (drawn first so the wreck polygon is on top)
+          ring(b.high, 'Benchmark High', chartConfig.colors.high, chartConfig.colors.highBorder),
+          ring(b.medium, 'Benchmark Medium', chartConfig.colors.medium, chartConfig.colors.mediumBorder),
+          ring(b.low, 'Benchmark Low', chartConfig.colors.low, chartConfig.colors.lowBorder),
+          // Wreck scores
+          {
+            label: 'Wreck Risk',
+            data: wreck,
+            fill: true,
+            backgroundColor: chartConfig.colors.wreck,
+            borderColor: chartConfig.colors.wreckBorder,
+            pointBackgroundColor: chartConfig.colors.wreckBorder,
+            pointBorderColor: '#fff',
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: chartConfig.colors.wreckBorder
+          }
+        ]
       };
+
       const options = {
         responsive: true,
-        maintainAspectRatio: false, /* canvas will follow CSS height */
+        maintainAspectRatio: false, // let CSS height drive canvas size
         scales: {
           r: {
             beginAtZero: true,
-            suggestedMax: 10,
+            min: 0,
+            suggestedMax: max,
+            max,
+            ticks: { display: true, stepSize: Math.max(1, Math.round(max/5)) },
             grid: { color: 'rgba(0,0,0,0.1)' },
             angleLines: { color: 'rgba(0,0,0,0.1)' },
             pointLabels: { color: '#111827', font: { size: 12 } }
           }
         },
-        plugins: { legend: { display: false } }
+        plugins: {
+          legend: { display: true, position: 'bottom' },
+          tooltip: { enabled: true }
+        },
+        animation: { duration: 250 }
       };
 
-      if (radarChart) { radarChart.destroy(); }
+      if (radarChart) radarChart.destroy();
       radarChart = new Chart(ctx, { type: 'radar', data, options });
+      renderBenchLegend();
     }
 
-    // Sanitize and compact report HTML
+    // Sanitize/compact report HTML or render Markdown/plain text
     function sanitizeReportHtml(html) {
       let safe = DOMPurify.sanitize(html || '', {
         RETURN_TRUSTED_TYPE: false,
@@ -705,65 +698,95 @@
         FORBID_TAGS: ['script', 'style', 'link'],
         FORBID_ATTR: ['style', 'onerror', 'onload']
       });
-      // Remove repeating empty paragraphs and collapse long <br> runs
       safe = safe
         .replace(/<(p|div)>\s*(?:&nbsp;|\u00A0|\s|<br\s*\/?>)*<\/\1>/gi, '')
         .replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>');
       return safe;
     }
 
-    function renderFallbackSummary(item) {
-      const texts = [item?.finalSummary, item?.summary, item?.phase1?.summary, item?.conclusion]
-        .filter(t => typeof t === 'string' && t.trim().length);
-      if (texts.length) {
-        const blocks = texts.map(t => `<p>${escapeHtml(t).replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`).join('');
-        return `<div>${blocks}</div>`;
+    function renderMarkdown(md) {
+      try {
+        const html = marked.parse(md || '');
+        return sanitizeReportHtml(html);
+      } catch {
+        // very simple fallback if markdown lib fails
+        return `<p>${escapeHtml(md || '').replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`;
       }
-      const vessel = escapeHtml(getVesselName(item));
-      const sv = item?.severity?.value;
-      const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : 'N/A';
-      return `
-        <h3>Summary</h3>
-        <table>
-          <tr><th>Vessel</th><td>${vessel}</td></tr>
-          <tr><th>Severity</th><td>${(item?.severity?.band || 'unknown').toUpperCase()} ${svTxt}</td></tr>
-          <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
-          <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
-        </table>
-      `;
     }
 
+    function buildReportHtml(item) {
+      // 1) Prefer explicit HTML
+      const htmlFields = [
+        item?.report?.html, item?.html, item?.reportHtml
+      ].filter(v => typeof v === 'string' && v.trim().length);
+      if (htmlFields.length) return sanitizeReportHtml(htmlFields[0]);
+
+      // 2) Markdown sources
+      const mdFields = [
+        item?.report?.markdown, item?.report_markdown, item?.markdown
+      ].filter(v => typeof v === 'string' && v.trim().length);
+      if (mdFields.length) return renderMarkdown(mdFields[0]);
+
+      // 3) Compose from known text fields
+      const blocks = [];
+      const addSection = (title, text) => {
+        if (typeof text === 'string' && text.trim().length) {
+          blocks.push(`<h3>${escapeHtml(title)}</h3>`);
+          blocks.push(`<p>${escapeHtml(text).replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`);
+        }
+      };
+
+      addSection('Summary', item?.summary || item?.phase1?.summary);
+      addSection('Final Summary', item?.finalSummary);
+      addSection('Conclusion', item?.conclusion);
+
+      // Phase 1 screening details (if any strings)
+      const p1txt = [
+        item?.phase1?.screening?.summary,
+        item?.phase1?.screening?.notes
+      ].filter(t => typeof t === 'string' && t.trim().length).join('\n\n');
+      addSection('Phase 1 Screening', p1txt);
+
+      // Add a small scores table if numbers exist
+      const w = readNumberByPaths(item, ['wcs','scores.WCS']); 
+      const p = readNumberByPaths(item, ['phs','scores.PHS']); 
+      const e = readNumberByPaths(item, ['esi','scores.ESI']); 
+      const r = readNumberByPaths(item, ['rpm','scores.RPM']);
+      if ([w,p,e,r].some(v => v !== null)) {
+        const cell = (v) => isFiniteNum(v) ? v.toFixed(2) : '—';
+        blocks.push(`
+          <table>
+            <thead><tr><th>WCS</th><th>PHS</th><th>ESI</th><th>RPM</th></tr></thead>
+            <tbody><tr><td>${cell(w)}</td><td>${cell(p)}</td><td>${cell(e)}</td><td>${cell(r)}</td></tr></tbody>
+          </table>
+        `);
+      }
+
+      if (!blocks.length) {
+        // last resort
+        blocks.push('<p>No formatted report available.</p>');
+      }
+
+      return blocks.join('\n');
+    }
+
+    // Data load + render
     async function startData() {
       if (dataUnsub) return;
-      const colRef = collection(db, assessmentsPath);
+      await loadChartConfig();
 
-      let logCount = 0;
+      const colRef = collection(db, assessmentsPath);
       dataUnsub = onSnapshot(colRef, (snap) => {
         allItems = [];
         snap.forEach(docSnap => {
           const raw = docSnap.data() || {};
           const d0 = normalizeDoc(raw);
-          const d = { ...d0 };
-          d.id = d.id || docSnap.id;
+          const d = { ...d0, id: d0.id || docSnap.id };
 
           const sv = getSeverityValue(d);
           if (!d.severity || typeof d.severity !== 'object') d.severity = {};
-          d.severity.value = sv; // may be null
+          d.severity.value = sv;
           d.severity.band = d.severity.band || bandFromValue(sv);
-
-          if (DEBUG && logCount < 5) {
-            const w = readNumberByPaths(d, ['scores.WCS','wcs','WCS']);
-            const p = readNumberByPaths(d, ['scores.PHS','phs','PHS']);
-            const e = readNumberByPaths(d, ['scores.ESI','esi','ESI']);
-            const r = readNumberByPaths(d, ['scores.RPM','rpm','RPM']);
-            console.log('[WERP] Sample doc', docSnap.id, {
-              vesselNameResolved: getVesselName(d),
-              severityValue: sv,
-              extracted: { WCS: w, PHS: p, ESI: e, RPM: r },
-              topLevelKeys: Object.keys(raw || {})
-            });
-            logCount++;
-          }
 
           allItems.push(d);
         });
@@ -775,12 +798,12 @@
       });
     }
 
-    // Filtering + rendering
     [sevHigh, sevMedium, sevLow].forEach(cb => cb.addEventListener('change', render));
     searchBox.addEventListener('input', render);
     clearSearch.addEventListener('click', () => { searchBox.value = ''; render(); });
 
     function render() {
+      const noDataBanner = document.getElementById('noDataBanner');
       noDataBanner.classList.toggle('hidden', allItems.length !== 0);
 
       const activeBands = new Set();
@@ -802,22 +825,18 @@
       const initial = [];
       const completed = [];
       const reassess = [];
-
       for (const it of filtered) {
         const needsRe = Boolean(it?.needsReassessment);
         const hasAlerts = Array.isArray(it?.alerts) && it.alerts.some(a => a && a.acknowledged === false);
         const reqReassess = needsRe || hasAlerts;
-
         const isCompleted = Boolean(it?.completed || it?.status === 'completed' || it?.phase3 || it?.finalizedAt);
-        const isInitial = !isCompleted && !reqReassess;
-
         if (reqReassess) reassess.push(it);
         else if (isCompleted) completed.push(it);
         else initial.push(it);
       }
 
-      const valOfSeverity = o => isFiniteNum(o?.severity?.value) ? o.severity.value : -Infinity;
-      const bySeverity = (a, b) => valOfSeverity(b) - valOfSeverity(a);
+      const valOf = o => isFiniteNum(o?.severity?.value) ? o.severity.value : -Infinity;
+      const bySeverity = (a, b) => valOf(b) - valOf(a);
       initial.sort(bySeverity);
       completed.sort(bySeverity);
       reassess.sort(bySeverity);
@@ -865,20 +884,68 @@
       const vessel = getVesselName(item);
       reportTitle.textContent = vessel || 'Assessment';
 
-      const rawHtml = item?.report?.html || item?.html || item?.reportHtml || item?.report_markdown || null;
-
-      if (rawHtml && typeof rawHtml === 'string') {
-        document.getElementById('reportContent').innerHTML = sanitizeReportHtml(rawHtml);
-      } else {
-        document.getElementById('reportContent').innerHTML = renderFallbackSummary(item);
-      }
+      const html = buildReportHtml(item);
+      reportContent.innerHTML = html;
 
       renderRadar(item);
-
-      // Reveal and ensure the panel is visible without changing page height
       reportContainer.classList.remove('hidden');
       reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+
+    // Auth state
+    onAuthStateChanged(auth, async (user) => {
+      if (dataUnsub) { try { dataUnsub(); } catch {} dataUnsub = null; }
+
+      if (!user) {
+        signedOutContainer.classList.remove('hidden');
+        appContainer.classList.add('hidden');
+        adminToolsBtn.classList.add('hidden');
+        userNameSpan.classList.add('hidden');
+        signOutBtn.classList.add('hidden');
+        roleBadge.textContent = 'Role: —';
+        analyzeBtn.disabled = true;
+        contribHint.classList.remove('hidden');
+        return;
+      }
+
+      signedOutContainer.classList.add('hidden');
+      appContainer.classList.remove('hidden');
+      userNameSpan.textContent = user.email || user.uid;
+      userNameSpan.classList.remove('hidden');
+      signOutBtn.classList.remove('hidden');
+
+      currentRole = await fetchRoleFor(user.uid);
+      roleBadge.textContent = `Role: ${currentRole}`;
+      const isAdmin = currentRole === 'admin';
+      const isContributor = isAdmin || currentRole === 'contributor';
+      if (isAdmin) adminToolsBtn.classList.remove('hidden'); else adminToolsBtn.classList.add('hidden');
+      analyzeBtn.disabled = !isContributor;
+      if (!isContributor) contribHint.classList.remove('hidden'); else contribHint.classList.add('hidden');
+
+      initMap();
+      await startData();
+    });
+
+    // Analyze action
+    analyzeBtn.addEventListener('click', async () => {
+      const name = vesselNameInput.value.trim();
+      statusMessage.textContent = '';
+      if (!name) { statusMessage.textContent = 'Enter a vessel name.'; return; }
+      if (analyzeBtn.disabled) { statusMessage.textContent = 'Contributor access required.'; return; }
+
+      analyzeBtn.disabled = true;
+      analyzeText.textContent = 'Analyzing...';
+      try {
+        await callGeminiFunction({ vesselName: name, appId });
+        statusMessage.textContent = 'Analysis requested. It may take a moment to appear.';
+        vesselNameInput.value = '';
+      } catch (e) {
+        statusMessage.textContent = e.message || 'Failed to start analysis.';
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeText.textContent = 'Analyze Wreck';
+      }
+    });
   </script>
 </body>
 </html>
