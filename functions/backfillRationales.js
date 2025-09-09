@@ -6,17 +6,12 @@
  * - Does NOT change scores or weights.
  * - Paginates by ordered vesselName.
  *
- * Approach:
- *  1. Scan a page (limit = pageSize).
- *  2. Collect all items needing improvements (capped to MAX_ITEMS_PER_MODEL to keep prompt size sane).
- *  3. Single model call generates rationales in structured JSON.
- *  4. Merge results back & write batch.
- *
- * Supports:
+ * Accepts:
  *   dryRun (boolean)
  *   pageSize (default 100)
  *   startAfterId (pagination anchor)
  *   timeBudgetSeconds (optional early exit)
+ *   context (string, optional operator guidance to steer rationales)
  *
  * Return fields:
  *   scanned, updated, wrote, placeholdersFound, nextPageStartAfterId, modelItemsRequested
@@ -75,17 +70,18 @@ function createModel() {
   return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }
 
-/**
- * Build a minimal instruction to fill only missing/placeholder rationales.
- * Format requests as array to ease mapping back.
- */
-function buildPrompt(items) {
+function buildPrompt(items, context) {
   const req = items.map(it => ({
     docId: it.docId,
     section: it.section,
     key: it.key,
     currentScoreOrValue: it.scoreOrValue
   }));
+  const guidance = (context || "").trim();
+  const guidanceBlock = guidance
+    ? `Operator guidance (apply where relevant; do not change scores):\n${guidance}\n\n`
+    : "";
+
   return `You are improving missing rationales for vessel WERP assessments.
 Return JSON ONLY with structure:
 {
@@ -95,18 +91,16 @@ Return JSON ONLY with structure:
 }
 
 Guidelines:
-- Provide factual, concise rationales (1–3 sentences) using generic OSINT knowledge about shipwreck aging, fuel/ordnance persistence, environmental sensitivity, or pressure factors.
-- DO NOT invent precise quantitative data (capacities, tonnages) unless widely typical; prefer qualitative phrasing.
-- For RPM factors, explain risk driver succinctly (e.g., 'Regional seismicity elevates structural disturbance probability').
-- Avoid placeholders like 'Not specified.' or 'Insufficient data.'
-
-Requests:
+- Provide factual, concise rationales (1–3 sentences) using domain knowledge: shipwreck aging, fuel/ordnance persistence, environmental sensitivity, or pressure factors.
+- DO NOT change or imply different scores/values; rationales only.
+- Avoid placeholders like "Not specified." or "Insufficient data."—explain uncertainty briefly if data is sparse.
+${guidanceBlock}Requests:
 ${JSON.stringify(req, null, 2)}`;
 }
 
-async function runModel(items) {
+async function runModel(items, context) {
   if (items.length === 0) return { updates: [] };
-  const prompt = buildPrompt(items);
+  const prompt = buildPrompt(items, context);
   const model = createModel();
   const res = await model.generateContent({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -127,62 +121,38 @@ async function runModel(items) {
 
 function collectTargets(docId, data) {
   const out = [];
-  // WCS
   if (data?.wcs?.parameters) {
     for (const p of data.wcs.parameters) {
       if (isPlaceholder(p.rationale)) {
-        out.push({
-          docId,
-          section: "wcs",
-          key: p.name,
-          scoreOrValue: p.score
-        });
+        out.push({ docId, section: "wcs", key: p.name, scoreOrValue: p.score });
       }
     }
   }
-  // PHS
   if (data?.phs?.parameters) {
     for (const p of data.phs.parameters) {
       if (isPlaceholder(p.rationale)) {
-        out.push({
-          docId,
-          section: "phs",
-          key: p.name,
-          scoreOrValue: p.score
-        });
+        out.push({ docId, section: "phs", key: p.name, scoreOrValue: p.score });
       }
     }
   }
-  // ESI
   if (data?.esi?.parameters) {
     for (const p of data.esi.parameters) {
       if (isPlaceholder(p.rationale)) {
-        out.push({
-          docId,
-          section: "esi",
-          key: p.name,
-          scoreOrValue: p.score
-        });
+        out.push({ docId, section: "esi", key: p.name, scoreOrValue: p.score });
       }
     }
   }
-  // RPM
   if (data?.rpm?.factors) {
     for (const f of data.rpm.factors) {
       if (isPlaceholder(f.rationale)) {
-        out.push({
-          docId,
-          section: "rpm",
-          key: f.name,
-          scoreOrValue: f.value
-        });
+        out.push({ docId, section: "rpm", key: f.name, scoreOrValue: f.value });
       }
     }
   }
   return out;
 }
 
-async function processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds }) {
+async function processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds, context }) {
   const startTime = Date.now();
   const deadline = timeBudgetSeconds
     ? startTime + Math.max(5, Math.min(timeBudgetSeconds, 500)) * 1000
@@ -213,10 +183,7 @@ async function processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds }
 
   const allTargets = [];
   for (const docSnap of snap.docs) {
-    if (deadline && Date.now() > deadline - 500) {
-      // time nearly exhausted; break early
-      break;
-    }
+    if (deadline && Date.now() > deadline - 500) break;
     result.scanned++;
     const data = docSnap.data();
     const docTargets = collectTargets(docSnap.id, data);
@@ -226,23 +193,20 @@ async function processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds }
     }
   }
 
-  // Slice to max model capacity
   const modelTargets = allTargets.slice(0, MAX_ITEMS_PER_MODEL);
   result.modelItemsRequested = modelTargets.length;
 
   let updates = [];
   if (modelTargets.length > 0) {
     try {
-      const modelRes = await runModel(modelTargets);
+      const modelRes = await runModel(modelTargets, context);
       updates = modelRes.updates || [];
     } catch (e) {
       logger.error("Model call failed:", e);
-      // fail gracefully: no updates this page
     }
   }
 
   if (updates.length && !dryRun) {
-    // Group updates by docId
     const map = new Map();
     for (const u of updates) {
       if (!u.docId || !u.section || !u.key || !u.rationale) continue;
@@ -258,52 +222,33 @@ async function processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds }
       const data = snapDoc.data();
 
       let mutated = false;
-
       function apply(section, key, rationale) {
         if (section === "wcs" && data?.wcs?.parameters) {
           const item = data.wcs.parameters.find(p => p.name === key);
-          if (item && isPlaceholder(item.rationale)) {
-            item.rationale = rationale;
-            mutated = true;
-          }
+          if (item && isPlaceholder(item.rationale)) { item.rationale = rationale; mutated = true; }
         } else if (section === "phs" && data?.phs?.parameters) {
           const item = data.phs.parameters.find(p => p.name === key);
-            if (item && isPlaceholder(item.rationale)) {
-            item.rationale = rationale;
-            mutated = true;
-          }
+          if (item && isPlaceholder(item.rationale)) { item.rationale = rationale; mutated = true; }
         } else if (section === "esi" && data?.esi?.parameters) {
           const item = data.esi.parameters.find(p => p.name === key);
-          if (item && isPlaceholder(item.rationale)) {
-            item.rationale = rationale;
-            mutated = true;
-          }
+          if (item && isPlaceholder(item.rationale)) { item.rationale = rationale; mutated = true; }
         } else if (section === "rpm" && data?.rpm?.factors) {
           const item = data.rpm.factors.find(f => f.name === key);
-          if (item && isPlaceholder(item.rationale)) {
-            item.rationale = rationale;
-            mutated = true;
-          }
+          if (item && isPlaceholder(item.rationale)) { item.rationale = rationale; mutated = true; }
         }
       }
 
-      for (const u of list) {
-        apply(u.section, u.key, u.rationale);
-      }
+      for (const u of list) apply(u.section, u.key, u.rationale);
 
       if (mutated) {
         result.updated++;
-        batch.set(
-          ref,
-          {
-            wcs: data.wcs,
-            phs: data.phs,
-            esi: data.esi,
-            rpm: data.rpm,
-            updatedAt: FieldValue.serverTimestamp()
-          },
-          { merge: true }
-        );
+        batch.set(ref, {
+          wcs: data.wcs,
+          phs: data.phs,
+          esi: data.esi,
+          rpm: data.rpm,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
       }
     }
 
@@ -313,7 +258,6 @@ async function processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds }
     }
   }
 
-  // Paging token if room/time left and we processed full page size
   if (snap.size === pageSize) {
     const last = snap.docs[snap.docs.length - 1];
     result.nextPageStartAfterId = last.id;
@@ -333,9 +277,10 @@ export const backfillRationales = onCall(
     const pageSize = Math.min(Math.max(parseInt(req.data?.pageSize ?? DEFAULT_PAGE_SIZE, 10), 10), 400);
     const startAfterId = typeof req.data?.startAfterId === "string" ? req.data.startAfterId.trim() : "";
     const timeBudgetSeconds = req.data?.timeBudgetSeconds ? parseInt(req.data.timeBudgetSeconds, 10) : undefined;
+    const context = typeof req.data?.context === "string" ? req.data.context.trim() : "";
 
     try {
-      const res = await processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds });
+      const res = await processPage({ pageSize, startAfterId, dryRun, timeBudgetSeconds, context });
       return { ok: true, dryRun, ...res };
     } catch (e) {
       logger.error("backfillRationales error:", e);

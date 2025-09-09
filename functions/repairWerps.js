@@ -7,15 +7,6 @@
  *  - OR all values = 1 and ≥2 placeholder rationales
  *  - OR zero factors
  *
- * PHS fix triggers if:
- *  - Not version 3 (after you have migrated)
- *  - Wrong parameter count
- *  - Missing one of required names
- *
- * ESI fix triggers if:
- *  - Missing parameters array
- *  - Any parameter lacks rationale
- *
  * Accepts:
  *  dryRun (boolean)
  *  docId (optional single document)
@@ -23,6 +14,12 @@
  *  pageSize (scan window)
  *  maxDocs (max docs to actually repair within page)
  *  timeBudgetSeconds (early stop)
+ *  context (string, optional operator guidance to steer analysis and scoring)
+ *
+ * Notes:
+ *  - PHS v3 enforced (weights 0.50/0.30/0.20).
+ *  - ESI totalScore recomputed (maxScore=30).
+ *  - RPM values clamped 0.5–2.5; finalMultiplier is average (2 decimals).
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -41,7 +38,6 @@ const GEMINI_MODEL = "gemini-2.5-pro";
 
 const PHS_V3_REQUIRED = ["Fuel Volume & Type", "Ordnance", "Hazardous Materials"];
 const RPM_REQUIRED = ["Thermal Stress (Ocean Warming)", "Seismic Activity", "Anthropogenic Disturbance"];
-
 const PLACEHOLDERS = new Set(["", "not specified.", "insufficient data.", "unknown."]);
 
 async function getRole(uid) {
@@ -64,9 +60,7 @@ function phsNeedsRepair(phs) {
   if (phs.version !== 3) return true;
   if (phs.parameters.length !== 3) return true;
   const names = phs.parameters.map(p => p.name);
-  for (const req of PHS_V3_REQUIRED) {
-    if (!names.includes(req)) return true;
-  }
+  for (const req of PHS_V3_REQUIRED) if (!names.includes(req)) return true;
   return false;
 }
 
@@ -105,9 +99,13 @@ function createModel() {
   return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }
 
-function buildRepairPrompt(vesselName, want) {
-  // want = { phs:true/false, esi:true/false, rpm:true/false }
-  return `You are updating missing risk assessment sections for a vessel.
+function buildRepairPrompt(vesselName, want, context) {
+  const guidance = (context || "").trim();
+  const guidanceBlock = guidance
+    ? `Operator guidance (apply to scoring and rationales where relevant):\n${guidance}\n\n`
+    : "";
+
+  return `You are updating specific risk assessment sections for a vessel.
 Return ONLY JSON (no markdown fences). Provide only requested sections.
 
 Desired JSON keys (include only those requested):
@@ -141,17 +139,16 @@ Desired JSON keys (include only those requested):
 }
 
 Scoring constraints:
-- PHS scores 0–10 (weight sum=1.0, compute totalWeightedScore).
-- ESI scores 0–10 each (sum => totalScore ≤ 30).
-- RPM values 0.5–2.5; finalMultiplier is average of values (2 decimals).
-Avoid placeholders like "Insufficient data." Provide concise evidence-based rationales.
-
-Only produce sections flagged for repair: ${JSON.stringify(want)}.
+- PHS scores 0–10; weights exactly 0.50/0.30/0.20; compute totalWeightedScore (≤10).
+- ESI scores 0–10 each; totalScore is sum (≤30).
+- RPM values 0.5–2.5; finalMultiplier is average (2 decimals).
+- Avoid placeholders like "Insufficient data." If uncertainty exists, state why concisely.
+${guidanceBlock}Only produce sections flagged for repair: ${JSON.stringify(want)}.
 Vessel: ${vesselName}`;
 }
 
-async function runModel(vesselName, want) {
-  const prompt = buildRepairPrompt(vesselName, want);
+async function runModel(vesselName, want, context) {
+  const prompt = buildRepairPrompt(vesselName, want, context);
   const model = createModel();
   const res = await model.generateContent({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -167,7 +164,7 @@ async function runModel(vesselName, want) {
   return parsed;
 }
 
-async function processPage({ dryRun, docId, startAfterId, pageSize, maxDocs, timeBudgetSeconds }) {
+async function processPage({ dryRun, docId, startAfterId, pageSize, maxDocs, timeBudgetSeconds, context }) {
   const startTime = Date.now();
   const deadline = timeBudgetSeconds
     ? startTime + Math.max(5, Math.min(timeBudgetSeconds, 500)) * 1000
@@ -206,9 +203,7 @@ async function processPage({ dryRun, docId, startAfterId, pageSize, maxDocs, tim
 
   let repairsPerformed = 0;
   for (const d of docs) {
-    if (deadline && Date.now() > deadline - 500) {
-      break;
-    }
+    if (deadline && Date.now() > deadline - 500) break;
     result.scanned++;
     if (repairsPerformed >= maxDocs) continue;
 
@@ -220,19 +215,16 @@ async function processPage({ dryRun, docId, startAfterId, pageSize, maxDocs, tim
     };
     if (!want.phs && !want.esi && !want.rpm) continue;
 
-    // Run model for this doc
     let modelOut;
     try {
-      modelOut = await runModel(data.vesselName || d.id, want);
+      modelOut = await runModel(data.vesselName || d.id, want, context);
     } catch (e) {
-      // log and skip
       logger.warn(`Model failed for doc ${d.id}:`, e.message);
       continue;
     }
 
     const patch = {};
     if (want.phs && modelOut.phs?.parameters) {
-      // Enforce weights & version
       modelOut.phs.version = 3;
       for (const p of modelOut.phs.parameters) {
         if (p.name === "Fuel Volume & Type") p.weight = 0.50;
@@ -241,14 +233,10 @@ async function processPage({ dryRun, docId, startAfterId, pageSize, maxDocs, tim
         p.score = Math.min(10, Math.max(0, p.score || 0));
       }
       modelOut.phs.totalWeightedScore = modelOut.phs.parameters.reduce(
-        (s, p) => s + p.score * p.weight,
-        0
+        (s, p) => s + p.score * p.weight, 0
       );
       result.phsFixed++;
-      patch.phs = {
-        ...data.phs,
-        ...modelOut.phs
-      };
+      patch.phs = { ...data.phs, ...modelOut.phs };
     }
     if (want.esi && modelOut.esi?.parameters) {
       for (const p of modelOut.esi.parameters) {
@@ -257,42 +245,28 @@ async function processPage({ dryRun, docId, startAfterId, pageSize, maxDocs, tim
       modelOut.esi.maxScore = 30;
       modelOut.esi.totalScore = modelOut.esi.parameters.reduce((s, p) => s + p.score, 0);
       result.esiFixed++;
-      patch.esi = {
-        ...data.esi,
-        ...modelOut.esi
-      };
+      patch.esi = { ...data.esi, ...modelOut.esi };
     }
     if (want.rpm && modelOut.rpm?.factors) {
       for (const f of modelOut.rpm.factors) {
         f.value = Math.min(2.5, Math.max(0.5, f.value || 1));
       }
-      const avg =
-        modelOut.rpm.factors.reduce((s, f) => s + f.value, 0) / modelOut.rpm.factors.length;
+      const avg = modelOut.rpm.factors.reduce((s, f) => s + f.value, 0) / modelOut.rpm.factors.length;
       modelOut.rpm.finalMultiplier = parseFloat(avg.toFixed(2));
       result.rpmFixed++;
-      patch.rpm = {
-        ...data.rpm,
-        ...modelOut.rpm
-      };
+      patch.rpm = { ...data.rpm, ...modelOut.rpm };
     }
 
     if (Object.keys(patch).length) {
       result.updated++;
       if (!dryRun) {
-        await d.ref.set(
-          {
-            ...patch,
-            updatedAt: FieldValue.serverTimestamp()
-          },
-          { merge: true }
-        );
+        await d.ref.set({ ...patch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         result.wrote++;
       }
       repairsPerformed++;
     }
   }
 
-  // Paging token (only if not single doc)
   if (!docId && docs.length === pageSize) {
     result.nextPageStartAfterId = docs[docs.length - 1].id;
   }
@@ -315,15 +289,11 @@ export const repairWerps = onCall(
     const timeBudgetSeconds = req.data?.timeBudgetSeconds
       ? parseInt(req.data.timeBudgetSeconds, 10)
       : undefined;
+    const context = typeof req.data?.context === "string" ? req.data.context.trim() : "";
 
     try {
       const res = await processPage({
-        dryRun,
-        docId,
-        startAfterId,
-        pageSize,
-        maxDocs,
-        timeBudgetSeconds
+        dryRun, docId, startAfterId, pageSize, maxDocs, timeBudgetSeconds, context
       });
       return { ok: true, dryRun, ...res };
     } catch (e) {
