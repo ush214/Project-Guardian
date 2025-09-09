@@ -100,7 +100,7 @@
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-3">
             <h2 class="text-lg font-semibold text-gray-800">Analyze New Vessel</h2>
-            <!-- Removed model note -->
+            <!-- model note removed -->
           </div>
           <div class="flex items-center gap-2">
             <span id="roleBadge" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">Role: —</span>
@@ -135,6 +135,12 @@
         </div>
         <p class="text-xs text-gray-500 mt-2">Severity = (WCS + PHS + (ESI ÷ 3)) × RPM.</p>
         <div id="authError" class="text-red-700 text-xs mt-3 hidden"></div>
+      </section>
+
+      <!-- No data banner -->
+      <section id="noDataBanner" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-md p-3 hidden">
+        No assessments found at <span id="assessPathSpan" class="font-mono"></span> for appId
+        <span id="appIdSpan" class="font-mono"></span>. Check the collection name and casing in Firestore.
       </section>
 
       <!-- Map -->
@@ -210,7 +216,9 @@
       collection,
       query,
       orderBy,
-      onSnapshot
+      onSnapshot,
+      getDocs,
+      limit
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
@@ -232,15 +240,41 @@
     const auth = getAuth(app);
     const functions = getFunctions(app, 'us-central1');
 
-    // Callable functions used by analyze flow if needed
+    // Callable functions
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
     const repairWerpsFn    = httpsCallable(functions, 'repairWerps');
 
-    // Collections
-    const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
+    // Candidate collection paths (case/camel variants)
+    const candidateAssessmentPaths = [
+      `artifacts/${appId}/public/data/werpassessments`,
+      `artifacts/${appId}/public/data/werpAssessments`,
+      `artifacts/${appId}/public/werpassessments`,
+      `artifacts/${appId}/public/werpAssessments`,
+      `artifacts/${appId}/data/werpassessments`,
+      `artifacts/${appId}/data/werpAssessments`,
+      `artifacts/${appId}/public/data/assessments`
+    ];
+    let currentAssessmentsPath = candidateAssessmentPaths[0];
+    let assessmentsCollectionRef = null;
 
-    // Mapbox
-    const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
+    async function probeForAssessmentsPath() {
+      for (const p of candidateAssessmentPaths) {
+        try {
+          const qs = await getDocs(query(collection(db, p), limit(1)));
+          if (!qs.empty) {
+            console.log('[WERP] Using assessments path:', p);
+            currentAssessmentsPath = p;
+            return p;
+          }
+        } catch (e) {
+          console.warn('[WERP] Probe failed for', p, e?.message || e);
+        }
+      }
+      // Fallback: use the first; may truly be empty
+      console.log('[WERP] No docs found in candidates. Using default path:', candidateAssessmentPaths[0]);
+      currentAssessmentsPath = candidateAssessmentPaths[0];
+      return currentAssessmentsPath;
+    }
 
     // Role helper: reads Role/role (case-insensitive) from allowlist, fallback to legacy private path
     async function fetchRoleFor(uid) {
@@ -249,7 +283,6 @@
         const allowDoc = await getDoc(allowDocRef);
         if (allowDoc.exists()) {
           const d = allowDoc.data() || {};
-          // Accept Role/role/ROLE and normalize
           let r = d.role ?? d.Role ?? d.ROLE;
           if (typeof r === 'string' && r.trim()) {
             r = r.trim().toLowerCase();
@@ -332,6 +365,11 @@
     const reportTitle = document.getElementById('reportTitle');
     const reportContent = document.getElementById('reportContent');
 
+    const noDataBanner = document.getElementById('noDataBanner');
+    const assessPathSpan = document.getElementById('assessPathSpan');
+    const appIdSpan = document.getElementById('appIdSpan');
+    appIdSpan.textContent = appId;
+
     // Auth UI
     document.getElementById('signInEmailBtn').addEventListener('click', async () => {
       const email = document.getElementById('emailInput').value.trim();
@@ -350,7 +388,6 @@
       authMessage.textContent = '';
       try {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
-        // Create a basic user profile doc (optional, legacy path)
         try {
           await setDoc(doc(db, `artifacts/${appId}/private/users/${cred.user.uid}`), {
             email,
@@ -380,16 +417,14 @@
     });
 
     onAuthStateChanged(auth, async (user) => {
-      // Tear down any previous data listener
       if (dataUnsub) { try { dataUnsub(); } catch {} dataUnsub = null; }
 
       if (!user) {
-        // Signed out
-        document.getElementById('signedOutContainer').classList.remove('hidden');
-        document.getElementById('appContainer').classList.add('hidden');
-        document.getElementById('adminToolsBtn').classList.add('hidden');
-        document.getElementById('userName').classList.add('hidden');
-        document.getElementById('signOutBtn').classList.add('hidden');
+        signedOutContainer.classList.remove('hidden');
+        appContainer.classList.add('hidden');
+        adminToolsBtn.classList.add('hidden');
+        userNameSpan.classList.add('hidden');
+        signOutBtn.classList.add('hidden');
         currentRole = 'user';
         roleBadge.textContent = 'Role: —';
         analyzeBtn.disabled = true;
@@ -397,25 +432,22 @@
         return;
       }
 
-      // Signed in
-      document.getElementById('signedOutContainer').classList.add('hidden');
-      document.getElementById('appContainer').classList.remove('hidden');
-      document.getElementById('userName').textContent = user.email || user.uid;
-      document.getElementById('userName').classList.remove('hidden');
-      document.getElementById('signOutBtn').classList.remove('hidden');
+      signedOutContainer.classList.add('hidden');
+      appContainer.classList.remove('hidden');
+      userNameSpan.textContent = user.email || user.uid;
+      userNameSpan.classList.remove('hidden');
+      signOutBtn.classList.remove('hidden');
 
-      // Resolve role
       currentRole = await fetchRoleFor(user.uid);
       roleBadge.textContent = `Role: ${currentRole}`;
       const isAdmin = currentRole === 'admin';
       const isContributor = isAdmin || currentRole === 'contributor';
-      if (isAdmin) document.getElementById('adminToolsBtn').classList.remove('hidden'); else document.getElementById('adminToolsBtn').classList.add('hidden');
+      if (isAdmin) adminToolsBtn.classList.remove('hidden'); else adminToolsBtn.classList.add('hidden');
       analyzeBtn.disabled = !isContributor;
       if (!isContributor) contribHint.classList.remove('hidden'); else contribHint.classList.add('hidden');
 
-      // Init map and start data stream after login (avoids rules errors)
       initMap();
-      startData();
+      await startData();
     });
 
     // Analyze action
@@ -443,12 +475,11 @@
     function initMap(){
       if (map) return;
       map = L.map('map').setView([10, 150], 3);
-      // Mapbox tiles
       L.tileLayer('https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}', {
         id: 'mapbox/streets-v12',
         tileSize: 512,
         zoomOffset: -1,
-        accessToken: MAPBOX_TOKEN,
+        accessToken: "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w",
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a>'
       }).addTo(map);
     }
@@ -531,11 +562,14 @@
       radarChart = new Chart(ctx, { type: 'radar', data, options });
     }
 
-    // Data stream
-    function startData() {
+    async function startData() {
       if (dataUnsub) return;
-      const q = query(assessmentsCollection, orderBy('severity.value', 'desc'));
-      dataUnsub = onSnapshot(q, (snap) => {
+      const path = await probeForAssessmentsPath();
+      assessmentsCollectionRef = collection(db, path);
+      assessPathSpan.textContent = path;
+
+      const qy = query(assessmentsCollectionRef, orderBy('severity.value', 'desc'));
+      dataUnsub = onSnapshot(qy, (snap) => {
         allItems = [];
         snap.forEach(docSnap => {
           const d = docSnap.data() || {};
@@ -545,6 +579,7 @@
           d.severity.band = d.severity.band || bandFromValue(d.severity.value);
           allItems.push(d);
         });
+        console.log('[WERP] Loaded docs:', allItems.length, 'from', path);
         render();
       }, (err) => {
         console.error('Snapshot error', err);
@@ -557,6 +592,8 @@
     clearSearch.addEventListener('click', () => { searchBox.value = ''; render(); });
 
     function render() {
+      noDataBanner.classList.toggle('hidden', allItems.length !== 0);
+
       const activeBands = new Set();
       if (sevHigh.checked) activeBands.add('high');
       if (sevMedium.checked) activeBands.add('medium');
@@ -573,7 +610,6 @@
         return true;
       });
 
-      // Partition by status; reassessment if needsReassessment OR any unacknowledged alert
       const initial = [];
       const completed = [];
       const reassess = [];
@@ -591,13 +627,11 @@
         else initial.push(it);
       }
 
-      // Sort by severity value desc
       const bySeverity = (a, b) => num(b?.severity?.value) - num(a?.severity?.value);
       initial.sort(bySeverity);
       completed.sort(bySeverity);
       reassess.sort(bySeverity);
 
-      // Render lists
       drawList(initialList, initial, 'initial');
       drawList(completedList, completed, 'completed');
       drawList(reassessList, reassess, 'reassess');
@@ -610,11 +644,9 @@
       noCompleted.classList.toggle('hidden', completed.length !== 0);
       noReassess.classList.toggle('hidden', reassess.length !== 0);
 
-      // Map markers for currently visible items
       clearMarkers();
       for (const it of filtered) upsertMarker(it);
 
-      // Visible counts summary
       visibleCounts.textContent = `${filtered.length} of ${allItems.length}`;
     }
 
