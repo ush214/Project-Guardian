@@ -100,7 +100,7 @@
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-3">
             <h2 class="text-lg font-semibold text-gray-800">Analyze New Vessel</h2>
-            <span id="modelNote" class="note">Using Gemini 2.5 Flash</span>
+            <!-- Removed model note -->
           </div>
           <div class="flex items-center gap-2">
             <span id="roleBadge" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">Role: —</span>
@@ -206,7 +206,6 @@
       doc,
       setDoc,
       getDoc,
-      updateDoc,
       serverTimestamp,
       collection,
       query,
@@ -243,14 +242,21 @@
     // Mapbox
     const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
 
-    // Role helper: prefer system/allowlist/users/{uid}, fall back to legacy private path
+    // Role helper: reads Role/role (case-insensitive) from allowlist, fallback to legacy private path
     async function fetchRoleFor(uid) {
       try {
         const allowDocRef = doc(db, 'system', 'allowlist', 'users', uid);
         const allowDoc = await getDoc(allowDocRef);
         if (allowDoc.exists()) {
           const d = allowDoc.data() || {};
-          if (typeof d.role === 'string' && d.role) return d.role;
+          // Accept Role/role/ROLE and normalize
+          let r = d.role ?? d.Role ?? d.ROLE;
+          if (typeof r === 'string' && r.trim()) {
+            r = r.trim().toLowerCase();
+            if (r.startsWith('admin')) return 'admin';
+            if (r.startsWith('contrib')) return 'contributor';
+            if (r === 'user' || r === 'reader' || r === 'viewer') return 'user';
+          }
           if (d.admin === true) return 'admin';
           if (d.contributor === true) return 'contributor';
           if (d.allowed === true) return 'user';
@@ -262,7 +268,13 @@
         const legacyDoc = await getDoc(legacyRef);
         if (legacyDoc.exists()) {
           const d = legacyDoc.data() || {};
-          if (typeof d.role === 'string' && d.role) return d.role;
+          let r = d.role ?? d.Role ?? d.ROLE;
+          if (typeof r === 'string' && r.trim()) {
+            r = r.trim().toLowerCase();
+            if (r.startsWith('admin')) return 'admin';
+            if (r.startsWith('contrib')) return 'contributor';
+            if (r === 'user' || r === 'reader' || r === 'viewer') return 'user';
+          }
           if (d.admin === true) return 'admin';
           if (d.contributor === true) return 'contributor';
         }
@@ -373,11 +385,11 @@
 
       if (!user) {
         // Signed out
-        signedOutContainer.classList.remove('hidden');
-        appContainer.classList.add('hidden');
-        adminToolsBtn.classList.add('hidden');
-        userNameSpan.classList.add('hidden');
-        signOutBtn.classList.add('hidden');
+        document.getElementById('signedOutContainer').classList.remove('hidden');
+        document.getElementById('appContainer').classList.add('hidden');
+        document.getElementById('adminToolsBtn').classList.add('hidden');
+        document.getElementById('userName').classList.add('hidden');
+        document.getElementById('signOutBtn').classList.add('hidden');
         currentRole = 'user';
         roleBadge.textContent = 'Role: —';
         analyzeBtn.disabled = true;
@@ -386,18 +398,18 @@
       }
 
       // Signed in
-      signedOutContainer.classList.add('hidden');
-      appContainer.classList.remove('hidden');
-      userNameSpan.textContent = user.email || user.uid;
-      userNameSpan.classList.remove('hidden');
-      signOutBtn.classList.remove('hidden');
+      document.getElementById('signedOutContainer').classList.add('hidden');
+      document.getElementById('appContainer').classList.remove('hidden');
+      document.getElementById('userName').textContent = user.email || user.uid;
+      document.getElementById('userName').classList.remove('hidden');
+      document.getElementById('signOutBtn').classList.remove('hidden');
 
       // Resolve role
       currentRole = await fetchRoleFor(user.uid);
       roleBadge.textContent = `Role: ${currentRole}`;
       const isAdmin = currentRole === 'admin';
       const isContributor = isAdmin || currentRole === 'contributor';
-      if (isAdmin) adminToolsBtn.classList.remove('hidden'); else adminToolsBtn.classList.add('hidden');
+      if (isAdmin) document.getElementById('adminToolsBtn').classList.remove('hidden'); else document.getElementById('adminToolsBtn').classList.add('hidden');
       analyzeBtn.disabled = !isContributor;
       if (!isContributor) contribHint.classList.remove('hidden'); else contribHint.classList.add('hidden');
 
