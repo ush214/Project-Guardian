@@ -35,7 +35,7 @@ import {
 // Cloud Functions
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
-// App config (keys already public in client app)
+// App config
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",
@@ -47,28 +47,25 @@ const firebaseConfig = {
 };
 
 // Initialize
-const appId = "guardian"; // storage namespace; reading collections are explicit below
+const appId = "guardian"; // used for Storage uploads; Firestore paths set below
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
-// Optional callable functions (we'll probe availability before calling)
-const callable = {
-  reassessWerps: null,
-  repairWerps: null,
-};
+// Optional callable functions (probe safely)
+const callable = { reassessWerps: null, repairWerps: null };
 try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
 try { callable.repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
 
-// Collections to READ assessments from (explicit; avoids permission errors on other paths)
+// READ from these collections (includes guardian-agent-default for Amakasu)
 const READ_COLLECTIONS = [
   "artifacts/guardian/public/data/werpassessments",
-  "artifacts/guardian-agent-default/public/data/werpassessments" // contains Amakasu Maru No. 1
+  "artifacts/guardian-agent-default/public/data/werpassessments"
 ];
 
-// Default collection to WRITE new assessments to (Analyze). Change if needed.
+// New assessments created by Analyze will be written here (adjust if needed)
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
 
 // DOM refs
@@ -248,7 +245,6 @@ function isWerpAssessment(d) {
     (et.includes("SEISMIC") && et.includes("EVENT")) ||
     name.includes("SEISMIC_EVENT");
   if (looksSeismic) return false;
-  // Default to include assessments
   return true;
 }
 
@@ -285,7 +281,7 @@ function resolveRPMMultiplier(item) {
   return 1.0;
 }
 
-// WCS normalizer (canonical 4 categories, normalizes 0–10 to 0–5)
+// WCS normalizer (canonical 4 categories, robust matching on name + rationale, 0–10 => 0–5)
 function normalizeWcsParameters(rawParams = []) {
   const params = (Array.isArray(rawParams) ? rawParams : [])
     .map(p => ({
@@ -293,39 +289,107 @@ function normalizeWcsParameters(rawParams = []) {
       rationale: String(p?.rationale ?? "").trim(),
       score: Number(p?.score)
     }))
-    .filter(p => p.name && Number.isFinite(p.score));
+    .filter(p => (p.name || p.rationale) && Number.isFinite(p.score));
 
+  // Detect provided scale (0–5 vs 0–10)
   const rawScores = params.map(p => p.score);
   const maxScore = rawScores.length ? Math.max(...rawScores) : 0;
   const scale = maxScore > 5 && maxScore <= 10 ? 10 : 5;
   const scaleNote = maxScore > 5;
 
+  // Keyword families
   const rx = {
-    age: [/^age\b/i, /modern/i, /year/i, /built/i, /commission/i, /since\s*sink/i],
-    vessel: [/(vessel|ship)\s*(type|size)/i, /tonnage/i, /displacement/i, /\bclass\b/i],
-    trauma: /(sinking|trauma|attack|torpedo|explosion|breach|scuttl)/i,
-    integrity: /(structur|integrit|intact|collapse|fragment|condition|hull)/i
+    age: [
+      /\bage\b/i, /\byear/i, /\bbuilt\b/i, /\blaunched\b/i, /\bcommission/i, /\bdecommission/i,
+      /since\s*sink/i, /\bsubmerged\b/i, /\bdecade/i, /\bcentur/i, /\bmodern\b/i
+    ],
+    vessel: [
+      /\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i,
+      /\bdisplacement\b/i, /\blength\b/i, /\bbeam\b/i, /\bdraft\b/i, /\bauxiliary\b/i, /\boiler\b/i,
+      /\btanker\b/i, /\bdestroyer\b/i, /\bcruiser\b/i, /\bmerchant\b/i, /\bsubmarine\b/i, /\btransport\b/i
+    ],
+    trauma: [
+      /\btorpedo/i, /\btype\s*93\b/i, /\bdepth\s*charge/i, /\bmine\b/i, /\bbomb/i, /\bexplosion/i,
+      /\bdetonat/i, /\bshell(hit|ing)?\b/i, /\bgunfire\b/i, /\bcollision\b/i, /\bgrounding\b/i,
+      /\bscuttl/i, /\bsinking\b/i, /\bbreach\b/i, /\bcatastroph/i
+    ],
+    integrity: [
+      /\bstructur/i, /\bintegrit/i, /\bintact\b/i, /\bcollaps/i, /\bfragment/i, /\bbroken\b/i,
+      /\bruptur/i, /\bbuckl/i, /\bcondition\b/i, /\bhull\b/i, /\bsection/i, /\bsevered\b/i
+    ]
   };
-  const findBy = (a) => params.find(p => (Array.isArray(a) ? a : [a]).some(r => r.test(p.name)));
+
+  // Match quality using both name and rationale (name weighted higher)
+  function matchScore(p, patterns) {
+    const name = p.name || "";
+    const rat = p.rationale || "";
+    let score = 0;
+    for (const pat of (Array.isArray(patterns) ? patterns : [patterns])) {
+      if (pat.test(name)) score += 3; // name hit
+      if (pat.test(rat)) score += 1;  // rationale hit
+    }
+    return score;
+  }
+  function bestMatch(patterns) {
+    let best = null;
+    for (const p of params) {
+      const s = matchScore(p, patterns);
+      if (s > 0 && (!best || s > best.s)) best = { p, s };
+    }
+    return best?.p;
+  }
 
   const picks = {
-    age: findBy(rx.age),
-    vessel: findBy(rx.vessel),
-    trauma: findBy(rx.trauma),
-    integrity: findBy(rx.integrity)
+    age: bestMatch(rx.age),
+    vessel: bestMatch(rx.vessel),
+    trauma: bestMatch(rx.trauma),
+    integrity: bestMatch(rx.integrity)
   };
 
+  // Normalize a single score onto 0–5
   const norm = (v) => {
     if (!Number.isFinite(v)) return 0;
     if (scale === 10) return Math.max(0, Math.min(5, v / 2));
     return Math.max(0, Math.min(5, v));
   };
 
+  // Derive Trauma from Integrity rationale if no explicit trauma param
+  let traumaNormalized;
+  let traumaRationale = "Not provided.";
+  if (picks.trauma) {
+    traumaNormalized = norm(picks.trauma.score);
+    traumaRationale = picks.trauma.rationale || "Not provided.";
+  } else if (picks.integrity) {
+    const rat = picks.integrity.rationale || "";
+    const name = picks.integrity.name || "";
+    const looksTraumatic = rx.trauma.some(re => re.test(rat) || re.test(name));
+    traumaNormalized = looksTraumatic ? 5 : 0; // set to max if clearly traumatic sinking
+    traumaRationale = looksTraumatic ? (rat || "Derived from integrity rationale.") : "Not provided.";
+  } else {
+    traumaNormalized = 0;
+  }
+
   const rows = [
-    { title: "Age", rationale: picks.age?.rationale || "Not provided.", normalized: norm(picks.age?.score ?? 0) },
-    { title: "Vessel Type/Size", rationale: picks.vessel?.rationale || "Not provided.", normalized: norm(picks.vessel?.score ?? 0) },
-    { title: "Sinking Trauma", rationale: picks.trauma?.rationale || "Not provided.", normalized: norm(picks.trauma?.score ?? 0) },
-    { title: "Current Structural Integrity", rationale: picks.integrity?.rationale || "Not provided.", normalized: norm(picks.integrity?.score ?? 0) }
+    {
+      title: "Age",
+      rationale: picks.age?.rationale || "Not provided.",
+      normalized: norm(picks.age?.score ?? 0)
+    },
+    {
+      title: "Vessel Type/Size",
+      rationale: picks.vessel?.rationale || "Not provided.",
+      normalized: norm(picks.vessel?.score ?? 0)
+    },
+    {
+      title: "Sinking Trauma",
+      rationale: traumaRationale,
+      normalized: traumaNormalized
+    },
+    {
+      title: "Current Structural Integrity",
+      rationale: picks.integrity?.rationale || "Not provided.",
+      normalized: norm(picks.integrity?.score ?? 0)
+    }
   ];
 
   const total = rows.reduce((s, r) => s + (Number(r.normalized) || 0), 0);
@@ -499,10 +563,7 @@ function getMarkerImageUrl(item) {
     item?.image, item?.photo, item?.thumbnail, item?.bannerImage
   ].filter(Boolean);
   for (const u of candidates) {
-    try {
-      const s = String(u);
-      if (webExt.test(s)) return s;
-    } catch {}
+    try { const s = String(u); if (webExt.test(s)) return s; } catch {}
   }
   return null;
 }
@@ -628,7 +689,7 @@ function getVesselName(it) {
   return getText(it.id) || "Unknown";
 }
 
-// Section summaries
+// Summaries/recommendations
 function factorSummaryTable(item) {
   const rows = [];
   if (hasUnifiedV2(item)) {
@@ -693,6 +754,7 @@ function buildReportHtml(item) {
 
   blocks.push(factorSummaryTable(item));
 
+  // Compact factor table (legacy paths)
   const W = readNumberByPaths(item, ["wcs","scores.WCS","WCS"]) ?? 0;
   const P = readNumberByPaths(item, ["phs","scores.PHS","PHS"]) ?? 0;
   const E = readNumberByPaths(item, ["esi","scores.ESI","ESI"]) ?? 0;
@@ -914,13 +976,13 @@ function render() {
 
   const initial = [], completed = [], reassessArr = [];
   for (const it of filtered) {
-    // Completed: explicit completion signals OR Phase 2 notes/status, but NOT just assets
+    // Completed: explicit completion OR Phase 2 notes/status (not just assets)
     const phase2HasNotes = !!getText(it?.phase2?.summary);
     const phase2CompletedFlag = (it?.phase2?.status === 'completed') || (it?.phase2?.completed === true);
     const completedExplicit = (it?.completed === true) || (it?.status === "completed") || !!it?.phase3 || !!it?.finalizedAt;
     const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes;
 
-    // Reassessment: unack alerts OR explicit/seismic events flags
+    // Reassessment: unack alerts OR seismic flags/events
     const alerts = Array.isArray(it?.alerts) ? it.alerts : [];
     const hasUnackedAlert = alerts.some(a => a && a.acknowledged === false);
     const seismicFlag = it?.seismicEvent === true;
@@ -1164,7 +1226,7 @@ saveFeedbackBtn?.addEventListener("click", async () => {
   }
 });
 
-// Analyze new vessel (fix: add handler; pick first available function name)
+// Analyze new vessel (tries common function names; writes to DEFAULT_WRITE_COLLECTION)
 const analyzeFunctionNames = [
   "analyzeWreck",
   "analyzeWerps",
@@ -1204,7 +1266,6 @@ analyzeBtn?.addEventListener("click", async () => {
     await fn(payload);
     statusMessage.textContent = `Analysis requested via ${fnName}. It will appear in the lists when ready.`;
     vesselNameInput.value = "";
-    // Refresh will be automatic via onSnapshot listeners
   } catch (e) {
     statusMessage.textContent = `Analysis failed: ${e?.message || String(e)}`;
   } finally {
@@ -1319,7 +1380,14 @@ onAuthStateChanged(auth, async (user) => {
   await startData();
 });
 
-// Export helpers (rename to avoid any scope/name collisions; bind after definitions)
+// Export helpers and bindings
+function downloadFile(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 function getCurrentHtml() {
   if (!currentItem) return "";
   if (hasUnifiedV2(currentItem)) return lastRenderedHtml || renderReportV2HTML(currentItem);
@@ -1363,9 +1431,10 @@ function onExportPdf() {
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title>
     <style>
       body { font-family: Inter, Arial, sans-serif; color:#111; line-height:1.5; padding:24px; }
-      .pdf-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-      .pdf-header img { height: 42px; }
-      h1 { font-size: 20px; margin: 6px 0 12px; text-align:center; }
+      .pdf-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+      /* Increased logo size */
+      .pdf-header img { height: 72px; width: auto; }
+      h1 { font-size: 20px; margin: 8px 0 14px; text-align:center; }
       h2,h3,h4 { margin: 10px 0 6px; }
       table { width:100%; border-collapse: collapse; margin: 8px 0; }
       th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
@@ -1394,20 +1463,12 @@ function onExportPdf() {
     setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 500);
   }
 }
-function downloadFile(filename, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-// Bind export buttons (fix: ensure handlers exist before binding)
 exportPdfBtn?.addEventListener("click", onExportPdf);
 exportHtmlBtn?.addEventListener("click", onExportHtml);
 exportMdBtn?.addEventListener("click", onExportMarkdown);
 exportJsonBtn?.addEventListener("click", onExportJson);
 
-// Normalize doc
+// Flatten helper
 function normalizeDoc(d) {
   const out = { ...d };
   if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
