@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Project Guardian — Sign in</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; background:#f5f7fa; color:#0f172a; }
+    header { background:#0b2a6b; color:#fff; padding: 1rem 1.25rem; }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    h1 { margin: 0; font-size: 1.35rem; }
+    main { max-width: 720px; margin: 1.25rem auto; padding: 0 1.25rem 2rem; }
+    .panel { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:1.2rem; }
+    .row { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+    .muted { color:#64748b; font-size: 13px; }
+    .actions { display:flex; gap:.6rem; margin-top: 1rem; }
+    button { background:#2563eb; color:#fff; border:0; padding:.6rem .9rem; border-radius:8px; font-size:14px; cursor:pointer; }
+    button.secondary { background:#475569; }
+    button:disabled { opacity:.55; cursor: not-allowed; }
+    .links { margin-top: 1rem; display:flex; gap:.6rem; flex-wrap:wrap; }
+    a.btn { text-decoration: none; background:#1e40af; color:#fff; padding:.55rem .9rem; border-radius:8px; font-size:14px; display:inline-block; }
+    .error { color:#b91c1c; font-size: 13px; margin-top:.5rem; }
+    .ok { color:#15803d; font-size: 13px; margin-top:.5rem; }
+    .card { background:#f8fafc; border:1px dashed #e5e7eb; border-radius:10px; padding:.8rem; margin-top: .8rem; }
+    code { background:#0b1020; color:#e5e7eb; padding:.3rem .5rem; border-radius:6px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Project Guardian — Sign in</h1>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="panel">
+      <div class="row">
+        <strong>Status:</strong>
+        <span id="status" class="muted">Checking sign-in…</span>
+      </div>
+
+      <div class="actions">
+        <button id="signInBtn">Sign in with Google</button>
+        <button id="signOutBtn" class="secondary" style="display:none;">Sign out</button>
+      </div>
+
+      <div id="msg" class="error" style="display:none;"></div>
+      <div id="ok" class="ok" style="display:none;"></div>
+
+      <div class="card">
+        <div class="muted">After signing in:</div>
+        <div class="links">
+          <a class="btn" href="/reports.html">Open Reports</a>
+          <a class="btn" href="/admin-tools.html">Open Admin Tools</a>
+          <a class="btn" href="/">Back to App</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+      authDomain: "project-guardian-agent.firebaseapp.com",
+      projectId: "project-guardian-agent",
+      storageBucket: "project-guardian-agent.firebasestorage.app",
+      messagingSenderId: "84395007243",
+      appId: "1:84395007243:web:b07e5f4c4264d27611160e",
+      measurementId: "G-NRLH3WSCQ9"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+
+    const status = document.getElementById("status");
+    const msg = document.getElementById("msg");
+    const ok = document.getElementById("ok");
+    const signInBtn = document.getElementById("signInBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+
+    function setError(e){
+      msg.textContent = typeof e === "string" ? e : (e?.message || String(e));
+      msg.style.display = msg.textContent ? "" : "none";
+      ok.style.display = "none";
+    }
+    function setOk(t){
+      ok.textContent = t || "";
+      ok.style.display = ok.textContent ? "" : "none";
+      msg.style.display = "none";
+    }
+
+    signInBtn.addEventListener("click", async () => {
+      try {
+        setError("");
+        await signInWithPopup(auth, provider);
+      } catch (e) {
+        setError(e);
+      }
+    });
+
+    signOutBtn.addEventListener("click", async () => {
+      try {
+        setError("");
+        await signOut(auth);
+      } catch (e) {
+        setError(e);
+      }
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        status.textContent = `Signed in as ${user.email || user.uid}`;
+        signInBtn.style.display = "none";
+        signOutBtn.style.display = "";
+        setOk("You can now open Reports and Admin Tools.");
+      } else {
+        status.textContent = "Not signed in";
+        signInBtn.style.display = "";
+        signOutBtn.style.display = "none";
+        setError("");
+        setOk("");
+      }
+    });
+  </script>
+</body>
+</html>

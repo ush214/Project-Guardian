@@ -2,37 +2,31 @@
  * Functions entrypoint (ESM).
  *
  * Exports (callable / triggered):
- *  - callGeminiApi                  (ad‑hoc model call for contributors/admins)
- *  - guardianSentry                 (scheduled heartbeat / telemetry hook)
- *  - migrateWerps                   (legacy artifact path migration, if still needed)
+ *  - callGeminiApi
+ *  - guardianSentry
+ *  - migrateWerps (legacy)
  *
- *  Bulk import pipeline:
- *    - enqueueBulkImport
- *    - processBulkImportFromStorage
- *    - runBulkImportQueue
- *    - runBulkImportQueueNow
+ * Bulk import pipeline:
+ *  - enqueueBulkImport
+ *  - processBulkImportFromStorage
+ *  - runBulkImportQueue
+ *  - runBulkImportQueueNow
  *
- *  Schema + data maintenance:
- *    - schemaDiffReport             (dry-run diff of prospective normalization changes)
- *    - normalizeWerps               (canonical shape & totals enforcement)
- *    - migrateToPHSv2               (legacy → PHS v2 upgrade; 4-param weighted)
- *    - migrateToPHSv3               (remove Vessel Integrity → 3-param weights 0.50/0.30/0.20)
- *    - migrateAgeScores             (recompute WCS Age from buildYear metadata)
- *    - backfillRationales           (LLM pass to enrich placeholder / missing rationales)
- *    - repairWerps                  (targeted regeneration of incomplete/misaligned PHS/ESI/RPM)
+ * Schema + data maintenance:
+ *  - schemaDiffReport
+ *  - normalizeWerps
+ *  - migrateToPHSv2
+ *  - migrateToPHSv3
+ *  - migrateAgeScores
+ *  - backfillRationales
+ *  - repairWerps
+ *  - reassessWerps
  *
- * Support libraries (not exported here) live in separate modules:
- *  - bulkImport.js
- *  - backfillRationales.js
- *  - repairWerps.js
- *  - normalizeWerps.js
- *  - migrateToPHSv2.js
- *  - migrateToPHSv3.js
- *  - migrateAgeScores.js
- *  - schemaDiffReport.js
- *  - migrateAssessments.js (legacy)
- *  - guardianSentry.js
- *  - admin.js (Firebase Admin initialization)
+ * Phase 2 (In Situ) and Event Impact:
+ *  - addInSituUpdate
+ *  - flagForReassessment
+ *  - clearReassessmentFlag
+ *  - recordEnvironmentalEvent
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -40,9 +34,6 @@ import { defineSecret } from "firebase-functions/params";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "./admin.js";
 
-// ---------------------------------------------------------------------------
-// Secrets / Config
-// ---------------------------------------------------------------------------
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
 const REGION = "us-central1";
@@ -56,9 +47,6 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5000"
 ];
 
-// ---------------------------------------------------------------------------
-// Role utility
-// ---------------------------------------------------------------------------
 async function getRole(uid) {
   try {
     const snap = await db.doc(`system/allowlist/users/${uid}`).get();
@@ -69,9 +57,6 @@ async function getRole(uid) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// callGeminiApi (general purpose prompt -> JSON passthrough)
-// ---------------------------------------------------------------------------
 function createGeminiClient() {
   const key = GEMINI_API_KEY.value();
   if (!key) throw new Error("GEMINI_API_KEY secret missing at runtime.");
@@ -79,10 +64,7 @@ function createGeminiClient() {
   return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }
 
-/**
- * Generic callable for experimentation (returns raw model JSON text).
- * Restricted to contributor + admin roles.
- */
+// Generic ad-hoc model call
 export const callGeminiApi = onCall(
   {
     region: REGION,
@@ -116,10 +98,6 @@ export const callGeminiApi = onCall(
   }
 );
 
-// ---------------------------------------------------------------------------
-// Domain-specific exports (imported from their modules)
-// ---------------------------------------------------------------------------
-
 // Bulk import (queue + triggers)
 export {
   enqueueBulkImport,
@@ -146,3 +124,12 @@ export { migrateAgeScores } from "./migrateAgeScores.js";
 // Content enhancement & repair
 export { backfillRationales } from "./backfillRationales.js";
 export { repairWerps } from "./repairWerps.js";
+export { reassessWerps } from "./reassessWerps.js";
+
+// Phase 2 in-situ & event impact management
+export {
+  addInSituUpdate,
+  flagForReassessment,
+  clearReassessmentFlag,
+  recordEnvironmentalEvent
+} from "./inSitu.js";

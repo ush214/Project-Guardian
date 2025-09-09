@@ -229,6 +229,7 @@
     const auth = getAuth(app);
     const functions = getFunctions(app, 'us-central1');
 
+    // Callable functions (used by analyze flow if needed)
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
     const repairWerpsFn    = httpsCallable(functions, 'repairWerps');
 
@@ -319,7 +320,7 @@
       }
     }
     async function handlePasswordReset() {
-      const email = ui.emailInput.value.trim();
+      const email = ui.emailInput.value.trim(); // be robust
       if (!email) return setAuthMessage("Enter your email to reset password.", true);
       try {
         setAuthMessage("Sending reset email...");
@@ -383,7 +384,7 @@
       const color = band === "high" ? "red" : band === "medium" ? "orange" : "green";
       return L.icon({
         iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
-        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        shadowUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png',
         iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
       });
     }
@@ -443,19 +444,20 @@
       const s = doc?.phase2?.latest?.status || doc?.phase2?.status || "";
       return String(s || "").toLowerCase();
     }
-    // Tightened reassessment logic: only explicit flag OR unacknowledged alerts
+    // Reassessment logic: explicit flag OR any unacknowledged alert
     function needsReassessment(doc){
       if (doc?.needsReassessment === true) return true;
       if (Array.isArray(doc?.alerts) && doc.alerts.some(a => !a?.acknowledged)) return true;
       return false;
     }
+    const searchBoxEl = document.getElementById('searchBox');
     function matchesFilters(item){
       const band = item?.severity?.band || "low";
-      if (band === "high" && !ui.sevHigh.checked) return false;
-      if (band === "medium" && !ui.sevMedium.checked) return false;
-      if (band === "low" && !ui.sevLow.checked) return false;
-
-      const q = (ui.searchBox?.value || "").trim().toLowerCase();
+      if (band === "high" && !document.getElementById('sevHigh').checked) return false;
+      if (band === "medium" && !document.getElementById('sevMedium').checked) return false;
+      if (band === "low" && !document.getElementById('sevLow').checked) return false;
+    
+      const q = (searchBoxEl?.value || "").trim().toLowerCase();
       if (q) {
         const name = String(item?.vesselName || item?.id || "").toLowerCase();
         if (!name.includes(q)) return false;
@@ -515,17 +517,16 @@
     function setLoading(v, text = 'Analyzing...'){
       isLoading = v;
       const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
-      ui.analyzeBtn.disabled = v || !canContribute;
-      ui.analyzeText.textContent = v ? text : 'Analyze Wreck';
+      document.getElementById('analyzeBtn').disabled = v || !canContribute;
+      document.getElementById('analyzeText').textContent = v ? text : 'Analyze Wreck';
     }
     function updateStatus(message, isError = false) {
-      ui.statusMessage.textContent = message || '';
-      ui.statusMessage.style.color = isError ? '#ef4444' : '#6b7280';
+      document.getElementById('statusMessage').textContent = message || '';
+      document.getElementById('statusMessage').style.color = isError ? '#ef4444' : '#6b7280';
     }
 
     // Render pipeline
     function render() {
-      // Filter + sort by severity
       const filtered = [];
       for (const d of allDocs){
         const item = { ...d, severity: computeSeverity(d) };
@@ -533,7 +534,6 @@
         filtered.push(item);
       }
 
-      // Separate groups
       const initial = [];
       const completed = [];
       const reassess = [];
@@ -550,25 +550,23 @@
         }
       }
 
-      // Sort (high → low)
       const bySev = (a,b)=> (b?.severity?.value||0) - (a?.severity?.value||0);
       initial.sort(bySev);
       completed.sort(bySev);
       reassess.sort(bySev);
 
-      // Lists
-      drawList(ui.initialList, initial);
-      drawList(ui.completedList, completed);
-      drawList(ui.reassessList, reassess);
+      drawList(document.getElementById('initialWreckList'), initial);
+      drawList(document.getElementById('completedWreckList'), completed);
+      drawList(document.getElementById('reassessList'), reassess);
 
-      ui.initialCount.textContent = `${initial.length} shown`;
-      ui.completedCount.textContent = `${completed.length} shown`;
-      ui.reassessCount.textContent = `${reassess.length} shown`;
-      ui.visibleCounts.textContent = `${initial.length + completed.length + reassess.length} total`;
+      document.getElementById('initialCount').textContent = `${initial.length} shown`;
+      document.getElementById('completedCount').textContent = `${completed.length} shown`;
+      document.getElementById('reassessCount').textContent = `${reassess.length} shown`;
+      document.getElementById('visibleCounts').textContent = `${initial.length + completed.length + reassess.length} total`;
 
-      ui.noInitialMsg.classList.toggle('hidden', initial.length > 0);
-      ui.noCompletedMsg.classList.toggle('hidden', completed.length > 0);
-      ui.noReassessMsg.classList.toggle('hidden', reassess.length > 0);
+      document.getElementById('noInitialWrecksMessage').classList.toggle('hidden', initial.length > 0);
+      document.getElementById('noCompletedWrecksMessage').classList.toggle('hidden', completed.length > 0);
+      document.getElementById('noReassessMessage').classList.toggle('hidden', reassess.length > 0);
 
       // Map markers: rebuild from filtered set to reflect severity filters
       clearMarkers();
@@ -606,12 +604,13 @@
     }
 
     function setAuthError(msg){
+      const authError = document.getElementById('authError');
       if (msg) {
-        ui.authError.textContent = msg;
-        ui.authError.classList.remove("hidden");
+        authError.textContent = msg;
+        authError.classList.remove("hidden");
       } else {
-        ui.authError.textContent = "";
-        ui.authError.classList.add("hidden");
+        authError.textContent = "";
+        authError.classList.add("hidden");
       }
     }
 
@@ -747,7 +746,6 @@ Vessel: ${vesselName}`;
       const wcs20 = (wcs / 20) * 20;
       const phs20 = (phs / 10) * 20;
       const esi20 = (esi / (esiMax || 30)) * 20;
-      // RPM 0.5..2.5 => 0..20
       const rpm20 = ((Math.min(Math.max(rpm, 0.5), 2.5) - 0.5) / 2.0) * 20;
 
       const profile = [wcs20, phs20, esi20, rpm20].map(v => Math.max(0, Math.min(20, v)));
@@ -782,26 +780,27 @@ Vessel: ${vesselName}`;
 
     async function handleSelect(docId) {
       try {
-        ui.reportContainer.classList.add('hidden');
-        ui.reportContent.innerHTML = '';
-        ui.reportTitle.textContent = '';
+        document.getElementById('reportContainer').classList.add('hidden');
+        document.getElementById('reportContent').innerHTML = '';
+        document.getElementById('reportTitle').textContent = '';
         const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) return;
 
         const data = docSnap.data();
-        ui.reportTitle.textContent = `WERP Assessment: ${data.vesselName}`;
+        document.getElementById('reportTitle').textContent = `WERP Assessment: ${data.vesselName}`;
 
+        const alertDisplaySection = document.getElementById('alert-display-section');
         if (Array.isArray(data.alerts) && data.alerts.some(a => !a.acknowledged)) {
-          ui.alertDisplaySection.classList.remove('hidden');
-          ui.alertDisplaySection.innerHTML = `
+          alertDisplaySection.classList.remove('hidden');
+          alertDisplaySection.innerHTML = `
             <div class="p-3 mb-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-md">
               <h3 class="font-bold text-yellow-800">Recent Environmental Incident</h3>
               <p class="text-sm text-yellow-700 mt-1">A recent event was detected near this wreck. Re-assessment recommended.</p>
             </div>`;
         } else {
-          ui.alertDisplaySection.classList.add('hidden');
-          ui.alertDisplaySection.innerHTML = '';
+          alertDisplaySection.classList.add('hidden');
+          alertDisplaySection.innerHTML = '';
         }
 
         const wcsTotal = Number(data?.wcs?.totalScore ?? 0);
@@ -810,7 +809,7 @@ Vessel: ${vesselName}`;
         const esiMax  = Number(data?.esi?.maxScore ?? (esiTotal <= 30 ? 30 : 40));
         const rpmMult = Number(data?.rpm?.finalMultiplier ?? 1.0);
 
-        ui.reportContent.innerHTML = `
+        document.getElementById('reportContent').innerHTML = `
           <section>
             <h3>Case Study Background</h3>
             <p>${data?.phase1?.summary?.background ?? '—'}</p>
@@ -904,16 +903,17 @@ Vessel: ${vesselName}`;
           rpm: Number(rpmMult || 1.0)
         });
 
-        ui.reportContainer.classList.remove('hidden');
-        ui.reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const container = document.getElementById('reportContainer');
+        container.classList.remove('hidden');
+        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (e) {
         console.error('Failed to render report:', e);
       }
     }
 
     // Analyze events
-    ui.analyzeBtn.addEventListener('click', runFullAnalysis);
-    ui.vesselNameInput.addEventListener('keypress', (e) => (e.key === 'Enter') && runFullAnalysis());
+    document.getElementById('analyzeBtn').addEventListener('click', runFullAnalysis);
+    document.getElementById('vesselName').addEventListener('keypress', (e) => (e.key === 'Enter') && runFullAnalysis());
     let isRateLimited = false;
     function requireContributor(actionName = "this action") {
       const ok = (currentRole === 'contributor' || currentRole === 'admin');
@@ -927,7 +927,7 @@ Vessel: ${vesselName}`;
     async function runFullAnalysis() {
       if (!requireContributor("run analyses")) return;
       if (isRateLimited) { updateStatus("Please wait before next analysis.", true); return; }
-      const vesselName = ui.vesselNameInput.value.trim();
+      const vesselName = document.getElementById('vesselName').value.trim();
       if (!vesselName) { updateStatus("Please enter a vessel name.", true); return; }
 
       setLoading(true);
@@ -954,18 +954,18 @@ Vessel: ${vesselName}`;
     }
 
     // Filters
-    [ui.sevHigh, ui.sevMedium, ui.sevLow].forEach(cb => cb?.addEventListener("change", render));
-    ui.searchBox?.addEventListener("input", render);
-    ui.clearSearch?.addEventListener("click", () => { if (ui.searchBox) ui.searchBox.value = ""; render(); });
+    ['sevHigh','sevMedium','sevLow'].forEach(id => document.getElementById(id)?.addEventListener("change", render));
+    document.getElementById('searchBox')?.addEventListener("input", render);
+    document.getElementById('clearSearch')?.addEventListener("click", () => { const sb = document.getElementById('searchBox'); if (sb) sb.value = ""; render(); });
 
     // Auth state
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        ui.appContainer.classList.add('hidden');
-        ui.signedOutContainer.classList.remove('hidden');
-        ui.userName.classList.add('hidden');
-        ui.signOutBtn.classList.add('hidden');
-        ui.adminToolsBtn?.classList.add('hidden');
+        document.getElementById('appContainer').classList.add('hidden');
+        document.getElementById('signedOutContainer').classList.remove('hidden');
+        document.getElementById('userName').classList.add('hidden');
+        document.getElementById('signOutBtn').classList.add('hidden');
+        document.getElementById('adminToolsBtn')?.classList.add('hidden');
         if (roleUnsub) { roleUnsub(); roleUnsub = null; }
         currentRole = 'user';
         applyPermissions();
@@ -973,11 +973,11 @@ Vessel: ${vesselName}`;
       }
 
       // Signed-in UI
-      ui.signedOutContainer.classList.add('hidden');
-      ui.appContainer.classList.remove('hidden');
-      ui.userName.classList.remove('hidden');
-      ui.userName.textContent = user.email || "Signed in";
-      ui.signOutBtn.classList.remove('hidden');
+      document.getElementById('signedOutContainer').classList.add('hidden');
+      document.getElementById('appContainer').classList.remove('hidden');
+      document.getElementById('userName').classList.remove('hidden');
+      document.getElementById('userName').textContent = user.email || "Signed in";
+      document.getElementById('signOutBtn').classList.remove('hidden');
 
       // Role subscribe
       if (roleUnsub) { roleUnsub(); roleUnsub = null; }
@@ -995,14 +995,14 @@ Vessel: ${vesselName}`;
     });
 
     // Sign-out
-    ui.signOutBtn?.addEventListener('click', () => signOut(auth));
-    ui.signInEmailBtn?.addEventListener('click', handleSignInEmailPassword);
-    ui.createAccountBtn?.addEventListener('click', handleCreateAccount);
-    ui.resetPasswordBtn?.addEventListener('click', handlePasswordReset);
+    document.getElementById('signOutBtn')?.addEventListener('click', () => signOut(auth));
+    document.getElementById('signInEmailBtn')?.addEventListener('click', handleSignInEmailPassword);
+    document.getElementById('createAccountBtn')?.addEventListener('click', handleCreateAccount);
+    document.getElementById('resetPasswordBtn')?.addEventListener('click', handlePasswordReset);
 
     // Init
     initMap();
-    ui.modelNote.textContent = "Schema v2: WCS(0–20) PHS(4 weighted; 0–10) ESI(0–30) RPM(0.5–2.5). High = higher risk.";
+    document.getElementById('modelNote').textContent = "Schema v2: WCS(0–20) PHS(4 weighted; 0–10) ESI(0–30) RPM(0.5–2.5). High = higher risk.";
     startListener();
   </script>
 </body>

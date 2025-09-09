@@ -6,33 +6,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { color-scheme: light; }
-    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif; margin:2rem; color:#111; background:#f5f7fa; }
-    .box { max-width:1080px; margin:0 auto; padding:1.5rem 1.5rem 2rem; border:1px solid #e5e7eb; border-radius:10px; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.04); }
-    h1 { font-size:1.65rem; margin:0 0 0.85rem; }
-    h2 { font-size:1.15rem; margin:1.65rem 0 0.65rem; display:flex; align-items:center; gap:.5rem; }
-    .muted { color:#6b7280; }
-    .warn { background:#fef3c7; border:1px solid #fde68a; color:#92400e; padding:.75rem; border-radius:6px; }
-    .row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
-    .col { display:flex; flex-direction:column; gap:.5rem; }
-    label { font-size:12px; color:#374151; display:flex; flex-direction:column; gap:4px; font-weight:500; }
-    input[type="text"], input[type="number"] {
-      border:1px solid #d1d5db; border-radius:6px; padding:.5rem .65rem; min-width:190px; font-size:14px; background:#fff;
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 2rem; color: #111; background:#f5f7fa; }
+    .box { max-width: 1080px; margin: 0 auto; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 8px; background:#fff; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.85rem; }
+    h2 { font-size: 1.15rem; margin: 1.4rem 0 0.6rem; display:flex; gap:.5rem; align-items:center; }
+    .muted { color: #6b7280; }
+    .warn { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; padding: 0.75rem; border-radius: 6px; }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .col { display: flex; flex-direction: column; gap: 0.5rem; }
+    label { font-size: 12px; color: #374151; display:flex; flex-direction:column; gap:4px; }
+    input[type="text"], input[type="number"], textarea {
+      border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.45rem 0.6rem; min-width: 200px; font-size:14px; background:#fff;
     }
-    input:focus { outline:2px solid #4f46e5; outline-offset:1px; }
-    button { background:#1e40af; color:#fff; border:0; padding:.55rem .95rem; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; letter-spacing:.2px; }
-    button.secondary { background:#065f46; }
-    button.alt { background:#4f46e5; }
-    button.warn { background:#b45309; }
-    button.danger { background:#b91c1c; }
-    button[disabled] { opacity:.55; cursor:not-allowed; }
-    .badge { font-size:11px; border:1px solid #e5e7eb; padding:2px 7px; border-radius:999px; color:#374151; background:#f9fafb; font-weight:500; }
-    pre { background:#0b1020; color:#e5e7eb; padding:1rem; border-radius:6px; overflow:auto; font-size:12px; line-height:1.4; max-height:380px; }
-    .section { border-top:1px dashed #e5e7eb; margin-top:1.5rem; padding-top:1.25rem; }
-    .hint { font-size:11px; color:#6b7280; }
-    .progress { font-size:12px; color:#374151; margin-top:4px; }
-    a { color:#1d4ed8; }
+    textarea { min-height: 70px; resize: vertical; width:100%; }
+    button { background: #1e40af; color: #fff; border: 0; padding: 0.55rem 0.95rem; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    button.secondary { background: #065f46; }
+    button.alt { background: #4f46e5; }
+    button.warn { background: #b45309; }
+    button[disabled] { opacity: 0.55; cursor: not-allowed; }
+    .badge { font-size: 12px; border: 1px solid #e5e7eb; padding: 0.15rem 0.55rem; border-radius: 999px; color: #374151; background: #f9fafb; }
+    pre { background: #0b1020; color: #e5e7eb; padding: 1rem; border-radius: 6px; overflow: auto; font-size: 12px; line-height:1.4; max-height:420px; }
+    .section { border-top: 1px dashed #e5e7eb; margin-top: 1.25rem; padding-top: 1.25rem; }
+    .hint { font-size: 11px; color: #6b7280; }
+    .progress { font-size: 12px; color: #374151; margin-top:4px; }
     .pill { background:#eef2ff; color:#4338ca; font-weight:500; padding:2px 8px; font-size:11px; border-radius:12px; border:1px solid #c7d2fe; }
-    .flexBetween { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.75rem; }
   </style>
 </head>
 <body>
@@ -44,17 +41,21 @@
 
     <div id="tools" style="display:none;">
       <div class="muted" style="margin-bottom:1rem;">
-        Target Schema: <span class="pill">WERP v3 (PHS v3 weights 0.50 / 0.30 / 0.20)</span>
+        Target Schema: <span class="pill">WERP v3 (PHS 0.50 / 0.30 / 0.20)</span>
+      </div>
+
+      <!-- Analysis Guidance -->
+      <div class="section" id="analysisGuidanceSection">
+        <h2>Analysis Guidance <span class="badge">Optional</span></h2>
+        <p class="hint">Provide context to steer reassessment and rationale backfill (e.g., “WWII-era wreck; extreme age. Integrity not part of PHS. Cyclone-prone region.”)</p>
+        <textarea id="analysisContext" placeholder="Enter guidance for the model..."></textarea>
       </div>
 
       <!-- 1. Schema Diff -->
       <div class="section" id="schemaDiffSection">
-        <div class="flexBetween">
-          <h2>1. Schema Diff <span class="badge">schemaDiffReport</span></h2>
-          <span class="hint">Preview structural differences (read-only)</span>
-        </div>
+        <h2>1. Schema Diff <span class="badge">schemaDiffReport</span></h2>
         <div class="row" style="margin:.5rem 0 .75rem;">
-          <label>Limit/page<input type="number" id="diffLimit" min="10" max="500" step="10" value="100" /></label>
+          <label>Limit<input type="number" id="diffLimit" min="10" max="500" step="10" value="100" /></label>
           <label>Start After<input type="text" id="diffStartAfter" placeholder="optional doc id" /></label>
           <button id="runDiffBtn">Run Diff Page</button>
           <button id="nextDiffBtn" class="secondary" disabled>Next Page</button>
@@ -65,12 +66,9 @@
         <pre id="diffOut">{ }</pre>
       </div>
 
-      <!-- 2. Migrate PHS v2 (legacy) -->
+      <!-- 2. (Legacy) PHS v2 -->
       <div class="section" id="migrateV2Section">
-        <div class="flexBetween">
-          <h2>2. (Legacy) Migrate PHS v2 <span class="badge">migrateToPHSv2</span></h2>
-          <span class="hint">Only needed if any lingering 4-param docs remain</span>
-        </div>
+        <h2>2. (Legacy) Migrate PHS v2 <span class="badge">migrateToPHSv2</span></h2>
         <div class="row" style="margin:.6rem 0 .75rem;">
           <button id="migrateV2DryBtn">Dry-run</button>
           <button id="migrateV2ApplyBtn" class="secondary">Apply</button>
@@ -79,12 +77,9 @@
         <pre id="migrateV2Out">{ }</pre>
       </div>
 
-      <!-- 3. Migrate PHS v3 -->
+      <!-- 3. PHS v3 -->
       <div class="section" id="migrateV3Section">
-        <div class="flexBetween">
-          <h2>3. Migrate to PHS v3 <span class="badge">migrateToPHSv3</span></h2>
-          <span class="hint">Removes Vessel Integrity param, reapplies weights (0.50/0.30/0.20)</span>
-        </div>
+        <h2>3. Migrate to PHS v3 <span class="badge">migrateToPHSv3</span></h2>
         <div class="row" style="margin:.6rem 0 .75rem;">
           <label>Page limit<input type="number" id="migrateV3Limit" min="50" max="450" step="50" value="300" /></label>
           <label>Start After<input type="text" id="migrateV3StartAfter" placeholder="optional doc id"/></label>
@@ -99,10 +94,7 @@
 
       <!-- 4. Normalize -->
       <div class="section">
-        <div class="flexBetween">
-          <h2>4. Normalize WERP Records <span class="badge">normalizeWerps</span></h2>
-          <span class="hint">Canonical shapes & totals after migrations</span>
-        </div>
+        <h2>4. Normalize WERP <span class="badge">normalizeWerps</span></h2>
         <div class="row" style="margin:.5rem 0 1rem;">
           <label>Page size<input type="number" id="normPageSize" min="50" max="450" step="50" value="300" /></label>
           <button id="dryRunNormalizeBtn">Dry-run</button>
@@ -114,10 +106,7 @@
 
       <!-- 5. Backfill Rationales -->
       <div class="section" id="backfillSection">
-        <div class="flexBetween">
-          <h2>5. Backfill Rationales <span class="badge">backfillRationales</span></h2>
-          <span class="hint">Fill placeholder rationales (no score changes)</span>
-        </div>
+        <h2>5. Backfill Rationales <span class="badge">backfillRationales</span></h2>
         <div class="row" style="margin:.6rem 0;">
           <label>Page size<input type="number" id="backfillPageSize" min="20" max="400" step="20" value="100" /></label>
           <label>Start After<input type="text" id="backfillStartAfter" placeholder="doc id (optional)" /></label>
@@ -125,7 +114,7 @@
           <button id="backfillApplyBtn" class="secondary">Apply Page</button>
           <button id="backfillAutoDryBtn" class="alt">Auto All (Dry-run)</button>
           <button id="backfillAutoApplyBtn" class="warn">Auto All (Apply)</button>
-          <button id="backfillStopBtn" class="danger" disabled>Stop</button>
+          <button id="backfillStopBtn" class="warn" style="background:#b91c1c;" disabled>Stop</button>
           <span id="backfillBusy" class="badge" style="display:none;">Running...</span>
         </div>
         <div id="backfillProgress" class="progress"></div>
@@ -134,10 +123,7 @@
 
       <!-- 6. Age Rescore -->
       <div class="section" id="ageRescoreSection">
-        <div class="flexBetween">
-          <h2>6. Rescore Age from Build Year <span class="badge">migrateAgeScores</span></h2>
-          <span class="hint">Uses metadata.buildYear bands (≤1950 => 5)</span>
-        </div>
+        <h2>6. Rescore Age from Build Year <span class="badge">migrateAgeScores</span></h2>
         <div class="row" style="margin:.6rem 0 .75rem;">
           <label>Limit<input type="number" id="ageLimit" min="50" max="450" step="50" value="300" /></label>
           <label>Start After<input type="text" id="ageStartAfter" placeholder="optional doc id" /></label>
@@ -150,46 +136,60 @@
         <pre id="ageOut">{ }</pre>
       </div>
 
-      <!-- 7. Repair Sections -->
+      <!-- 7. Repair -->
       <div class="section">
-        <div class="flexBetween">
-          <h2>7. Repair Missing Sections <span class="badge">repairWerps</span></h2>
-          <span class="hint">Target anomalies post-migration</span>
-        </div>
-        <div class="row" style="margin:.5rem 0;">
+        <h2>7. Repair Missing Sections <span class="badge">repairWerps</span></h2>
+        <div class="row" style="margin: 0.5rem 0;">
           <div class="col">
-            <label>Doc ID (optional)<input id="repairDocId" type="text" placeholder="e.g., uss-chevalier-dd-451" /></label>
+            <label for="repairDocId">Doc ID (optional)</label>
+            <input id="repairDocId" type="text" placeholder="e.g., uss-chevalier-dd-451" />
             <div class="row">
               <button id="slugifyBtn" type="button" class="alt">Slugify</button>
               <span id="slugHint" class="hint"></span>
             </div>
           </div>
           <div class="col">
-            <label>Start After<input id="repairStartAfter" type="text" placeholder="for paging" /></label>
-          </div>
-            <div class="col">
-            <label>Page size<input id="repairPageSize" type="number" min="50" max="450" step="50" value="150" /></label>
+            <label for="repairStartAfter">Start After Doc ID</label>
+            <input id="repairStartAfter" type="text" placeholder="for paging" />
           </div>
           <div class="col">
-            <label>Max docs/write<input id="repairMaxDocs" type="number" min="1" max="450" value="50" /></label>
+            <label for="repairPageSize">Page size</label>
+            <input id="repairPageSize" type="number" min="50" max="450" step="50" value="150" />
           </div>
           <div class="col">
-            <label>Time budget (s)<input id="repairBudget" type="number" min="10" max="480" step="5" value="45" /></label>
+            <label for="repairMaxDocs">Max docs per call</label>
+            <input id="repairMaxDocs" type="number" min="1" max="450" value="50" />
+          </div>
+          <div class="col">
+            <label for="repairBudget">Time budget (s)</label>
+            <input id="repairBudget" type="number" min="10" max="480" step="5" value="45" />
           </div>
         </div>
-        <div class="row" style="margin:.5rem 0 .75rem;">
+        <div class="row" style="margin: 0.5rem 0 0.75rem;">
           <button id="dryRunRepairBtn" class="alt">Dry-run Page</button>
           <button id="applyRepairBtn" class="secondary">Apply Page</button>
-          <button id="autoRepairBtn" class="warn">Auto Until Done</button>
+          <button id="autoRepairBtn" class="warn">Auto-continue</button>
           <span id="repairBusy" class="badge" style="display:none;">Running...</span>
         </div>
         <div id="repairProgress" class="progress"></div>
         <pre id="repairOut">{ }</pre>
         <p class="hint" id="repairHint" style="display:none;">repairWerps not deployed in us-central1.</p>
       </div>
+
+      <!-- 8. Reassess (full re-generation, single doc) -->
+      <div class="section" id="reassessSection">
+        <h2>8. Reassess WERP (Single Doc) <span class="badge">reassessWerps</span></h2>
+        <div class="row" style="margin:.5rem 0;">
+          <label>Doc ID<input type="text" id="reassessDocId" placeholder="required: e.g., ijn-kirishima" /></label>
+          <button id="reassessDryBtn" class="alt">Dry-run</button>
+          <button id="reassessApplyBtn" class="secondary">Apply</button>
+          <span id="reassessBusy" class="badge" style="display:none;">Running...</span>
+        </div>
+        <pre id="reassessOut">{ }</pre>
+      </div>
     </div>
 
-    <p class="muted" style="margin-top:1.25rem;">Back to app: <a href="/">Home</a></p>
+    <p class="muted" style="margin-top:1rem;">Back to app: <a href="/">Home</a></p>
   </div>
 
   <script type="module">
@@ -213,25 +213,31 @@
     const db = getFirestore(app);
     const functions = getFunctions(app, "us-central1");
 
-    // Callable bindings
-    const schemaDiffReport = safeCallable("schemaDiffReport");
-    const migrateToPHSv2   = safeCallable("migrateToPHSv2");
-    const migrateToPHSv3   = safeCallable("migrateToPHSv3");
-    const normalizeWerps   = safeCallable("normalizeWerps");
-    const backfillRationales = safeCallable("backfillRationales");
-    const migrateAgeScores = safeCallable("migrateAgeScores");
-    const repairWerps      = safeCallable("repairWerps");
+    // Callables
+    const safe = (name) => { try { return httpsCallable(functions, name); } catch { return null; } };
+    const schemaDiffReport = safe("schemaDiffReport");
+    const migrateToPHSv2 = safe("migrateToPHSv2");
+    const migrateToPHSv3 = safe("migrateToPHSv3");
+    const normalizeWerps = safe("normalizeWerps");
+    const backfillRationales = safe("backfillRationales");
+    const migrateAgeScores = safe("migrateAgeScores");
+    const repairWerps = safe("repairWerps");
+    const reassessWerps = safe("reassessWerps");
 
-    function safeCallable(name){
-      try { return httpsCallable(functions, name); }
-      catch { return null; }
-    }
-
-    // Role gating
+    // UI refs
     const authState = document.getElementById("authState");
     const roleState = document.getElementById("roleState");
     const notAdmin = document.getElementById("notAdmin");
     const tools = document.getElementById("tools");
+    const analysisContextEl = document.getElementById("analysisContext");
+
+    function toSlug(s){
+      return String(s||"")
+        .toLowerCase().normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g,"")
+        .replace(/[^a-z0-9]+/g,"-")
+        .replace(/(^-|-$)/g,"");
+    }
 
     async function getRole(uid) {
       try {
@@ -242,69 +248,38 @@
       } catch { return "user"; }
     }
 
+    function setBusy(id, busy){ const el=document.getElementById(id); if(el) el.style.display = busy ? "" : "none"; }
+    function print(id, obj){ const el=document.getElementById(id); if(!el) return; el.textContent = typeof obj === "string" ? obj : JSON.stringify(obj,null,2); }
+    function disableSection(id, reason){
+      if(!id) return;
+      const root = document.getElementById(id); if(!root) return;
+      const msg = document.createElement("div"); msg.className="hint"; msg.style.marginTop="4px"; msg.textContent = reason;
+      root.appendChild(msg); root.querySelectorAll("button").forEach(b=>b.disabled=true);
+    }
+
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        authState.textContent = "Not signed in. Sign in on the main app, then reload.";
+        authState.textContent = "Not signed in. Please sign in on the main app, then reload this page.";
         roleState.textContent = "";
-        notAdmin.style.display = "";
-        tools.style.display = "none";
-        return;
+        tools.style.display = "none"; notAdmin.style.display = ""; return;
       }
       authState.textContent = `Signed in as ${user.email || user.uid}`;
       const role = await getRole(user.uid);
       roleState.textContent = `Role: ${role}`;
-      if (role !== "admin") {
-        notAdmin.style.display = "";
-        tools.style.display = "none";
-        return;
-      }
-      notAdmin.style.display = "none";
-      tools.style.display = "";
+      if (role !== "admin") { tools.style.display = "none"; notAdmin.style.display = ""; return; }
+      notAdmin.style.display = "none"; tools.style.display = "";
 
-      // Disable sections if functions not deployed
       if (!schemaDiffReport) disableSection("schemaDiffSection", "schemaDiffReport not deployed.");
       if (!migrateToPHSv2) disableSection("migrateV2Section", "migrateToPHSv2 not deployed.");
       if (!migrateToPHSv3) disableSection("migrateV3Section", "migrateToPHSv3 not deployed.");
       if (!normalizeWerps) disableSection(null, "normalizeWerps not deployed.");
       if (!backfillRationales) disableSection("backfillSection", "backfillRationales not deployed.");
       if (!migrateAgeScores) disableSection("ageRescoreSection", "migrateAgeScores not deployed.");
-      if (!repairWerps) {
-        document.getElementById("repairHint").style.display = "";
-        disableButtons(["dryRunRepairBtn","applyRepairBtn","autoRepairBtn"]);
-      }
+      if (!repairWerps) { document.getElementById("repairHint").style.display = ""; document.querySelectorAll("#dryRunRepairBtn,#applyRepairBtn,#autoRepairBtn").forEach(b=>b.disabled=true); }
+      if (!reassessWerps) disableSection("reassessSection", "reassessWerps not deployed.");
     });
 
-    function disableSection(id, reason){
-      if(!id) return;
-      const root = document.getElementById(id);
-      if(!root) return;
-      const msg = document.createElement("div");
-      msg.className="hint";
-      msg.style.marginTop="4px";
-      msg.textContent = reason;
-      root.appendChild(msg);
-      root.querySelectorAll("button").forEach(b=>b.disabled=true);
-    }
-
-    function disableButtons(ids){
-      ids.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.disabled = true;
-      });
-    }
-
-    function setBusy(id, busy){
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.style.display = busy ? "" : "none";
-    }
-    function print(id, obj){
-      const el = document.getElementById(id);
-      if(!el) return;
-      el.textContent = typeof obj === "string" ? obj : JSON.stringify(obj,null,2);
-    }
-
-    /* ---------------- Schema Diff ---------------- */
+    // Schema Diff
     const diffLimit = document.getElementById("diffLimit");
     const diffStartAfter = document.getElementById("diffStartAfter");
     const runDiffBtn = document.getElementById("runDiffBtn");
@@ -313,122 +288,78 @@
     let diffToken = ""; let diffPage=0;
 
     runDiffBtn?.addEventListener("click", async ()=>{
-      if(!schemaDiffReport) return;
-      setBusy("diffBusy", true);
+      if(!schemaDiffReport) return; setBusy("diffBusy", true);
       try {
         const payload = { limit: Number(diffLimit.value||100) };
         const manual = diffStartAfter.value.trim();
-        if (manual) payload.startAfterId = manual;
-        else if (diffToken) payload.startAfterId = diffToken;
-
+        if (manual) payload.startAfterId = manual; else if (diffToken) payload.startAfterId = diffToken;
         const r = await schemaDiffReport(payload);
-        const data = r.data || r;
-        diffPage++;
-        diffToken = data.nextPageStartAfterId || "";
-        document.getElementById("diffProgress").textContent =
-          `Page ${diffPage} | next token: ${diffToken || "—"}`;
-        print("diffOut", data);
-        nextDiffBtn.disabled = !diffToken;
-      } catch(e){
-        print("diffOut",{error:e?.message||String(e)});
-      } finally {
-        setBusy("diffBusy", false);
-      }
+        const data = r.data || r; diffPage++; diffToken = data.nextPageStartAfterId || "";
+        document.getElementById("diffProgress").textContent = `Page ${diffPage} | next: ${diffToken || "—"}`;
+        print("diffOut", data); nextDiffBtn.disabled = !diffToken;
+      } catch(e){ print("diffOut",{error:e?.message||String(e)}); }
+      finally { setBusy("diffBusy", false); }
     });
     nextDiffBtn?.addEventListener("click", ()=> runDiffBtn.click());
-    resetDiffBtn?.addEventListener("click", ()=>{
-      diffToken=""; diffPage=0; diffStartAfter.value="";
-      nextDiffBtn.disabled=true;
-      document.getElementById("diffProgress").textContent="Reset.";
-      print("diffOut", {});
-    });
+    resetDiffBtn?.addEventListener("click", ()=>{ diffToken=""; diffPage=0; diffStartAfter.value=""; nextDiffBtn.disabled=true; document.getElementById("diffProgress").textContent="Reset."; print("diffOut", {}); });
 
-    /* ---------------- PHS v2 Migration (legacy) ---------------- */
+    // Legacy PHS v2
     document.getElementById("migrateV2DryBtn")?.addEventListener("click", async ()=>{
-      if(!migrateToPHSv2) return;
-      setBusy("migrateV2Busy", true); print("migrateV2Out",{status:"Dry-run..."});
-      try {
-        const r= await migrateToPHSv2({ dryRun:true });
-        print("migrateV2Out", r.data||r);
-      } catch(e){ print("migrateV2Out",{error:e?.message||String(e)});}
-      finally{ setBusy("migrateV2Busy", false); }
+      if(!migrateToPHSv2) return; setBusy("migrateV2Busy", true); print("migrateV2Out",{status:"Dry-run..."});
+      try { const r= await migrateToPHSv2({ dryRun:true }); print("migrateV2Out", r.data||r); }
+      catch(e){ print("migrateV2Out",{error:e?.message||String(e)}); }
+      finally { setBusy("migrateV2Busy", false); }
     });
     document.getElementById("migrateV2ApplyBtn")?.addEventListener("click", async ()=>{
-      if(!migrateToPHSv2) return;
-      if(!confirm("Apply PHS v2 migration page?")) return;
+      if(!migrateToPHSv2) return; if(!confirm("Apply PHS v2 migration page?")) return;
       setBusy("migrateV2Busy", true); print("migrateV2Out",{status:"Applying..."});
-      try {
-        const r= await migrateToPHSv2({ dryRun:false });
-        print("migrateV2Out", r.data||r);
-      } catch(e){ print("migrateV2Out",{error:e?.message||String(e)});}
-      finally{ setBusy("migrateV2Busy", false); }
+      try { const r= await migrateToPHSv2({ dryRun:false }); print("migrateV2Out", r.data||r); }
+      catch(e){ print("migrateV2Out",{error:e?.message||String(e)}); }
+      finally { setBusy("migrateV2Busy", false); }
     });
 
-    /* ---------------- PHS v3 Migration ---------------- */
+    // PHS v3
     const migrateV3Limit = document.getElementById("migrateV3Limit");
     const migrateV3StartAfter = document.getElementById("migrateV3StartAfter");
-    let migrateV3Auto = false;
-
     document.getElementById("migrateV3DryBtn")?.addEventListener("click", ()=> runMigrateV3(true,false));
     document.getElementById("migrateV3ApplyBtn")?.addEventListener("click", ()=> runMigrateV3(false,false));
-    document.getElementById("migrateV3AutoBtn")?.addEventListener("click", ()=> {
-      if(!confirm("Auto-run all pages applying PHS v3 migration?")) return;
-      runMigrateV3(false,true);
-    });
+    document.getElementById("migrateV3AutoBtn")?.addEventListener("click", ()=> { if(!confirm("Auto-run all pages applying PHS v3 migration?")) return; runMigrateV3(false,true); });
 
     async function runMigrateV3(dryRun, auto){
-      if(!migrateToPHSv3) return;
-      migrateV3Auto = auto;
-      setBusy("migrateV3Busy", true);
-      const limit = Number(migrateV3Limit.value||300);
-      let startAfter = migrateV3StartAfter.value.trim();
+      if(!migrateToPHSv3) return; setBusy("migrateV3Busy", true);
+      const limit = Number(migrateV3Limit.value||300); let startAfter = migrateV3StartAfter.value.trim();
       let totalMigrated=0, pass=0;
       try {
         while(true){
-          pass++;
-          print("migrateV3Out",{status:`${dryRun?"Dry-run":"Apply"} pass ${pass} startAfter=${startAfter||"(none)"}`});
+          pass++; print("migrateV3Out",{status:`${dryRun?"Dry-run":"Apply"} pass ${pass} startAfter=${startAfter||"(none)"}`});
           const r = await migrateToPHSv3({ dryRun, limit, startAfterId:startAfter });
-          const data = r.data || r;
-          print("migrateV3Out", data);
+          const data = r.data || r; print("migrateV3Out", data);
           totalMigrated += (data.migrated||0);
-          document.getElementById("migrateV3Progress").textContent =
-            `Pass ${pass} | Migrated this pass: ${data.migrated} | Total: ${totalMigrated}`;
-          if (!migrateV3Auto || !data.nextPageStartAfterId) break;
-          startAfter = data.nextPageStartAfterId;
-          migrateV3StartAfter.value = startAfter;
+          document.getElementById("migrateV3Progress").textContent = `Pass ${pass} | Migrated this pass: ${data.migrated} | Total: ${totalMigrated}`;
+          if (!auto || !data.nextPageStartAfterId) break;
+          startAfter = data.nextPageStartAfterId; migrateV3StartAfter.value = startAfter;
           await new Promise(r=>setTimeout(r, 400));
         }
-      } catch(e){
-        print("migrateV3Out",{error:e?.message||String(e)});
-      } finally {
-        setBusy("migrateV3Busy", false);
-      }
+      } catch(e){ print("migrateV3Out",{error:e?.message||String(e)}); }
+      finally { setBusy("migrateV3Busy", false); }
     }
 
-    /* ---------------- Normalize ---------------- */
+    // Normalize
     document.getElementById("dryRunNormalizeBtn")?.addEventListener("click", async ()=>{
-      if(!normalizeWerps) return;
-      setBusy("normBusy", true); print("normOut",{status:"Dry-run..."});
-      try {
-        const pageSize = Number(document.getElementById("normPageSize").value||300);
-        const r= await normalizeWerps({ dryRun:true, pageSize });
-        print("normOut", r.data||r);
-      } catch(e){ print("normOut",{error:e?.message||String(e)});}
-      finally{ setBusy("normBusy", false); }
+      if(!normalizeWerps) return; setBusy("normBusy", true); print("normOut",{status:"Dry-run..."});
+      try { const pageSize = Number(document.getElementById("normPageSize").value||300); const r= await normalizeWerps({ dryRun:true, pageSize }); print("normOut", r.data||r); }
+      catch(e){ print("normOut",{error:e?.message||String(e)}); }
+      finally { setBusy("normBusy", false); }
     });
     document.getElementById("applyNormalizeBtn")?.addEventListener("click", async ()=>{
-      if(!normalizeWerps) return;
-      if(!confirm("Apply normalization changes?")) return;
+      if(!normalizeWerps) return; if(!confirm("Apply normalization changes?")) return;
       setBusy("normBusy", true); print("normOut",{status:"Applying..."});
-      try {
-        const pageSize = Number(document.getElementById("normPageSize").value||300);
-        const r= await normalizeWerps({ dryRun:false, pageSize });
-        print("normOut", r.data||r);
-      } catch(e){ print("normOut",{error:e?.message||String(e)});}
-      finally{ setBusy("normBusy", false); }
+      try { const pageSize = Number(document.getElementById("normPageSize").value||300); const r= await normalizeWerps({ dryRun:false, pageSize }); print("normOut", r.data||r); }
+      catch(e){ print("normOut",{error:e?.message||String(e)}); }
+      finally { setBusy("normBusy", false); }
     });
 
-    /* ---------------- Backfill Rationales ---------------- */
+    // Backfill Rationales
     const backfillProgress = document.getElementById("backfillProgress");
     let backfillCancel = false;
     document.getElementById("backfillDryBtn")?.addEventListener("click",()=> runBackfillSingle(true));
@@ -437,101 +368,69 @@
     document.getElementById("backfillAutoApplyBtn")?.addEventListener("click",()=> runBackfillAuto(false));
     document.getElementById("backfillStopBtn")?.addEventListener("click",()=> { backfillCancel=true; });
 
+    function getContext(){ const txt = analysisContextEl?.value?.trim(); return txt ? txt : ""; }
+
     async function runBackfillSingle(dryRun){
-      if(!backfillRationales) return;
-      setBusy("backfillBusy", true); print("backfillOut",{status:dryRun?"Dry-run...":"Applying..."});
+      if(!backfillRationales) return; setBusy("backfillBusy", true); print("backfillOut",{status:dryRun?"Dry-run...":"Applying..."});
       try {
         const pageSize = Number(document.getElementById("backfillPageSize").value||100);
         const startAfterId = document.getElementById("backfillStartAfter").value.trim();
-        const r= await backfillRationales({ dryRun, pageSize, startAfterId });
-        const data = r.data||r;
-        print("backfillOut", data);
+        const payload = { dryRun, pageSize, startAfterId };
+        const context = getContext(); if (context) payload.context = context;
+        const r= await backfillRationales(payload);
+        const data = r.data||r; print("backfillOut", data);
         if (data.nextPageStartAfterId) document.getElementById("backfillStartAfter").value = data.nextPageStartAfterId;
         backfillProgress.textContent = `Scanned:${data.scanned} Updated:${data.updated} Next:${data.nextPageStartAfterId||"—"}`;
-      } catch(e){
-        print("backfillOut",{error:e?.message||String(e)});
-      } finally {
-        setBusy("backfillBusy", false);
-      }
+      } catch(e){ print("backfillOut",{error:e?.message||String(e)}); }
+      finally { setBusy("backfillBusy", false); }
     }
     async function runBackfillAuto(dryRun){
-      if(!backfillRationales) return;
-      if(!dryRun && !confirm("Run full APPLY across all pages?")) return;
-      backfillCancel=false;
-      setBusy("backfillBusy", true);
-      print("backfillOut",{status:`Auto run started (dryRun=${dryRun})`});
+      if(!backfillRationales) return; if(!dryRun && !confirm("Run full APPLY across all pages?")) return;
+      backfillCancel=false; setBusy("backfillBusy", true); print("backfillOut",{status:`Auto run started (dryRun=${dryRun})`});
       let next = document.getElementById("backfillStartAfter").value.trim();
       const pageSize = Number(document.getElementById("backfillPageSize").value||100);
-      let loops=0, totalUpdated=0;
+      const context = getContext(); let loops=0, totalUpdated=0;
       try {
         while(!backfillCancel){
           loops++;
-          const payload = { dryRun, pageSize };
-          if (next) payload.startAfterId = next;
+          const payload = { dryRun, pageSize }; if (next) payload.startAfterId = next; if (context) payload.context = context;
           const r = await backfillRationales(payload);
-          const data = r.data||r;
-          totalUpdated += (data.updated||0);
-          print("backfillOut", data);
-          backfillProgress.textContent =
-            `Loops:${loops} TotalUpdated:${totalUpdated} LastUpdated:${data.updated} Next:${data.nextPageStartAfterId||"—"}`;
-          if (!data.nextPageStartAfterId) break;
-          next = data.nextPageStartAfterId;
-          document.getElementById("backfillStartAfter").value = next;
+          const data = r.data||r; totalUpdated += (data.updated||0); print("backfillOut", data);
+          backfillProgress.textContent = `Loops:${loops} TotalUpdated:${totalUpdated} LastUpdated:${data.updated} Next:${data.nextPageStartAfterId||"—"}`;
+          if (!data.nextPageStartAfterId) break; next = data.nextPageStartAfterId; document.getElementById("backfillStartAfter").value = next;
           await new Promise(r=>setTimeout(r,400));
         }
-        if(backfillCancel) backfillProgress.textContent += " (Stopped)";
-        else backfillProgress.textContent += " (Completed)";
-      } catch(e){
-        print("backfillOut",{error:e?.message||String(e)});
-      } finally {
-        setBusy("backfillBusy", false);
-      }
+        if(backfillCancel) backfillProgress.textContent += " (Stopped)"; else backfillProgress.textContent += " (Completed)";
+      } catch(e){ print("backfillOut",{error:e?.message||String(e)}); }
+      finally { setBusy("backfillBusy", false); }
     }
 
-    /* ---------------- Age Rescore ---------------- */
+    // Age Rescore
     const ageLimit = document.getElementById("ageLimit");
     const ageStartAfter = document.getElementById("ageStartAfter");
     const ageProgress = document.getElementById("ageProgress");
     document.getElementById("ageDryBtn")?.addEventListener("click", ()=> runAge(false,true));
     document.getElementById("ageApplyBtn")?.addEventListener("click", ()=> runAge(false,false));
-    document.getElementById("ageAutoBtn")?.addEventListener("click", ()=> {
-      if(confirm("Auto-run Age rescore across all pages?")) runAge(true,false);
-    });
+    document.getElementById("ageAutoBtn")?.addEventListener("click", ()=> { if(confirm("Auto-run Age rescore across all pages?")) runAge(true,false); });
 
     async function runAge(auto, dryRun){
-      // Overload: runAge(autoApplyBoolean, dryRunBoolean) preserved
-      // For clarity call with runAge(true,false)=auto apply, runAge(false,true)=single page dry-run
-      if(!migrateAgeScores) return;
-      let doAuto = auto;
-      let isDry = dryRun;
-      if (arguments.length===2) { doAuto=auto; isDry=dryRun; }
-      setBusy("ageBusy", true);
-      let limit = Number(ageLimit.value||300);
-      let startAfter = ageStartAfter.value.trim();
+      if(!migrateAgeScores) return; setBusy("ageBusy", true);
+      let doAuto = auto, isDry = dryRun; let limit = Number(ageLimit.value||300); let startAfter = ageStartAfter.value.trim();
       let pass=0, totalUpdated=0;
       try {
         while(true){
-          pass++;
-          print("ageOut",{status:`${isDry?"Dry-run":"Apply"} pass ${pass} start=${startAfter||"(none)"}`});
+          pass++; print("ageOut",{status:`${isDry?"Dry-run":"Apply"} pass ${pass} start=${startAfter||"(none)"}`});
           const r = await migrateAgeScores({ dryRun:isDry, limit, startAfterId:startAfter });
-          const data = r.data||r;
-          print("ageOut", data);
-          totalUpdated += (data.updated||0);
-          ageProgress.textContent =
-            `Pass ${pass} Scanned:${data.scanned} Updated:${data.updated} TotalUpdated:${totalUpdated}`;
-          if (!doAuto || !data.nextPageStartAfterId) break;
-          startAfter = data.nextPageStartAfterId;
-          ageStartAfter.value = startAfter;
+          const data = r.data||r; print("ageOut", data); totalUpdated += (data.updated||0);
+          ageProgress.textContent = `Pass ${pass} Scanned:${data.scanned} Updated:${data.updated} TotalUpdated:${totalUpdated}`;
+          if (!doAuto || !data.nextPageStartAfterId) break; startAfter = data.nextPageStartAfterId; ageStartAfter.value = startAfter;
           await new Promise(r=>setTimeout(r,400));
         }
-      } catch(e){
-        print("ageOut",{error:e?.message||String(e)});
-      } finally {
-        setBusy("ageBusy", false);
-      }
+      } catch(e){ print("ageOut",{error:e?.message||String(e)}); }
+      finally { setBusy("ageBusy", false); }
     }
 
-    /* ---------------- Repair (existing with enhancements) ---------------- */
+    // Repair
     const repairDocId = document.getElementById("repairDocId");
     const repairStartAfter = document.getElementById("repairStartAfter");
     const repairPageSize = document.getElementById("repairPageSize");
@@ -548,87 +447,64 @@
     });
 
     document.getElementById("dryRunRepairBtn")?.addEventListener("click",()=> runRepair(true));
-    document.getElementById("applyRepairBtn")?.addEventListener("click",()=> {
-      if(confirm("Apply repairs for this page?")) runRepair(false);
-    });
-    document.getElementById("autoRepairBtn")?.addEventListener("click",()=> {
-      if(confirm("Auto-continue repair across pages (apply)?")) autoRepair();
-    });
+    document.getElementById("applyRepairBtn")?.addEventListener("click",()=> { if(confirm("Apply repairs for this page?")) runRepair(false); });
+    document.getElementById("autoRepairBtn")?.addEventListener("click",()=> { if(confirm("Auto-continue repair across pages (apply)?")) autoRepair(); });
 
-    function toSlug(s){
-      return String(s||"")
-        .toLowerCase()
-        .normalize("NFKD")
-        .replace(/[\u0300-\u036f]/g,"")
-        .replace(/[^a-z0-9]+/g,"-")
-        .replace(/(^-|-$)/g,"");
-    }
+    function contextPayload(base={}){ const ctx = analysisContextEl?.value?.trim(); if (ctx) base.context = ctx; return base; }
 
     async function runRepair(dryRun){
-      if(!repairWerps) return;
-      setBusy("repairBusy", true); print("repairOut",{status:dryRun?"Dry-run...":"Applying..."});
-      repairProgress.textContent="";
+      if(!repairWerps) return; setBusy("repairBusy", true); print("repairOut",{status:dryRun?"Dry-run...":"Applying..."}); repairProgress.textContent="";
       try {
-        const payload = {
+        const payload = contextPayload({
           dryRun,
           pageSize: Number(repairPageSize.value||150),
           maxDocs: Number(repairMaxDocs.value||50),
           timeBudgetSeconds: Number(repairBudget.value||45)
-        };
-        const id = repairDocId.value.trim();
-        const start = repairStartAfter.value.trim();
-        if (id) payload.docId = id;
-        if (start) payload.startAfterId = start;
+        });
+        const id = repairDocId.value.trim(); const start = repairStartAfter.value.trim();
+        if (id) payload.docId = id; if (start) payload.startAfterId = start;
         const r = await repairWerps(payload);
-        const data = r.data||r;
-        print("repairOut", data);
-        repairProgress.textContent = data.nextPageStartAfterId
-          ? "Next startAfterId: " + data.nextPageStartAfterId
-          : "No continuation token.";
-      } catch(e){
-        print("repairOut",{error:e?.message||String(e)});
-      } finally {
-        setBusy("repairBusy", false);
-      }
+        const data = r.data||r; print("repairOut", data);
+        repairProgress.textContent = data.nextPageStartAfterId ? "Next startAfterId: " + data.nextPageStartAfterId : "No continuation token.";
+      } catch(e){ print("repairOut",{error:e?.message||String(e)}); }
+      finally { setBusy("repairBusy", false); }
     }
 
     async function autoRepair(){
-      if(!repairWerps) return;
-      const payloadBase = {
+      if(!repairWerps) return; const payloadBase = contextPayload({
         dryRun:false,
         pageSize: Number(repairPageSize.value||150),
         maxDocs: Number(repairMaxDocs.value||50),
         timeBudgetSeconds: Number(repairBudget.value||45)
-      };
-      let next = repairStartAfter.value.trim();
-      if (repairDocId.value.trim()) {
-        alert("Auto mode is for multi-doc passes; leave Doc ID blank.");
-        return;
-      }
-      setBusy("repairBusy", true);
-      let calls=0, totalUpdated=0;
+      });
+      let next = repairStartAfter.value.trim(); if (repairDocId.value.trim()) { alert("Auto mode is for multi-doc passes; leave Doc ID blank."); return; }
+      setBusy("repairBusy", true); let calls=0, totalUpdated=0;
       try {
         while(true){
-          calls++;
-          const payload = { ...payloadBase };
-          if (next) payload.startAfterId = next;
-          const r = await repairWerps(payload);
-          const data = r.data||r;
-          print("repairOut", data);
+          calls++; const payload = { ...payloadBase }; if (next) payload.startAfterId = next;
+          const r = await repairWerps(payload); const data = r.data||r; print("repairOut", data);
           totalUpdated += (data.updated||0);
-          repairProgress.textContent =
-            `Calls:${calls} Updated:${totalUpdated} PHS:${data.phsFixed} ESI:${data.esiFixed} RPM:${data.rpmFixed}`;
-          if (!data.nextPageStartAfterId) break;
-          next = data.nextPageStartAfterId;
-          repairStartAfter.value = next;
-          await new Promise(r=>setTimeout(r,700));
+          repairProgress.textContent = `Calls:${calls} Updated:${totalUpdated} PHS:${data.phsFixed} ESI:${data.esiFixed} RPM:${data.rpmFixed}`;
+          if (!data.nextPageStartAfterId) break; next = data.nextPageStartAfterId; repairStartAfter.value = next; await new Promise(r=>setTimeout(r,700));
         }
         repairProgress.textContent += " (Completed)";
-      } catch(e){
-        print("repairOut",{error:e?.message||String(e)});
-      } finally {
-        setBusy("repairBusy", false);
-      }
+      } catch(e){ print("repairOut",{error:e?.message||String(e)}); }
+      finally { setBusy("repairBusy", false); }
+    }
+
+    // Reassess (single doc)
+    const reassessDocId = document.getElementById("reassessDocId");
+    document.getElementById("reassessDryBtn")?.addEventListener("click", ()=> runReassess(true));
+    document.getElementById("reassessApplyBtn")?.addEventListener("click", ()=> { if(confirm("Apply full reassessment to this doc? This will overwrite WCS/PHS/ESI/RPM.")) runReassess(false); });
+
+    async function runReassess(dryRun){
+      if(!reassessWerps) return; const id = reassessDocId.value.trim(); if (!id) { alert("Doc ID is required."); return; }
+      setBusy("reassessBusy", true); print("reassessOut",{status:dryRun?"Dry-run reassessment...":"Applying reassessment..."});
+      try {
+        const payload = { docId:id, dryRun }; const ctx = analysisContextEl?.value?.trim(); if (ctx) payload.context = ctx;
+        const r = await reassessWerps(payload); const data = r.data || r; print("reassessOut", data);
+      } catch(e){ print("reassessOut",{error:e?.message||String(e)}); }
+      finally { setBusy("reassessBusy", false); }
     }
   </script>
 </body>
