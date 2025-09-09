@@ -38,6 +38,8 @@
     .prose table { width: 100%; border-collapse: collapse; margin-top: .25rem; }
     .prose th, .prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
     .prose th { background: #f9fafb; font-weight: 600; }
+    .list-item { cursor: pointer; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; }
+    .list-item:hover { background: #f9fafb; }
   </style>
 </head>
 <body class="bg-slate-50 text-gray-900">
@@ -98,7 +100,7 @@
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-3">
             <h2 class="text-lg font-semibold text-gray-800">Analyze New Vessel</h2>
-            <span id="modelNote" class="note"></span>
+            <span id="modelNote" class="note">Using Gemini 2.5 Flash</span>
           </div>
           <div class="flex items-center gap-2">
             <span id="roleBadge" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">Role: —</span>
@@ -229,7 +231,7 @@
     const auth = getAuth(app);
     const functions = getFunctions(app, 'us-central1');
 
-    // Callable functions (used by analyze flow if needed)
+    // Callable functions used by analyze flow if needed
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
     const repairWerpsFn    = httpsCallable(functions, 'repairWerps');
 
@@ -238,138 +240,159 @@
     // Mapbox
     const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
 
-    // UI refs
-    const ui = {
-      // containers
-      appContainer: document.getElementById('appContainer'),
-      signedOutContainer: document.getElementById('signedOutContainer'),
-      // header/auth
-      adminToolsBtn: document.getElementById('adminToolsBtn'),
-      userName: document.getElementById('userName'),
-      signOutBtn: document.getElementById('signOutBtn'),
-      // auth form
-      emailInput: document.getElementById('emailInput'),
-      passwordInput: document.getElementById('passwordInput'),
-      signInEmailBtn: document.getElementById('signInEmailBtn'),
-      createAccountBtn: document.getElementById('createAccountBtn'),
-      resetPasswordBtn: document.getElementById('resetPasswordBtn'),
-      authMessage: document.getElementById('authMessage'),
-      // analyze
-      modelNote: document.getElementById('modelNote'),
-      vesselNameInput: document.getElementById('vesselName'),
-      analyzeBtn: document.getElementById('analyzeBtn'),
-      analyzeText: document.getElementById('analyzeText'),
-      statusMessage: document.getElementById('statusMessage'),
-      roleBadge: document.getElementById('roleBadge'),
-      contribHint: document.getElementById('contribHint'),
-      // filters
-      sevHigh: document.getElementById('sevHigh'),
-      sevMedium: document.getElementById('sevMedium'),
-      sevLow: document.getElementById('sevLow'),
-      searchBox: document.getElementById('searchBox'),
-      clearSearch: document.getElementById('clearSearch'),
-      authError: document.getElementById('authError'),
-      visibleCounts: document.getElementById('visibleCounts'),
-      // map
-      mapContainer: document.getElementById('map'),
-      // lists
-      initialList: document.getElementById('initialWreckList'),
-      completedList: document.getElementById('completedWreckList'),
-      reassessList: document.getElementById('reassessList'),
-      initialCount: document.getElementById('initialCount'),
-      completedCount: document.getElementById('completedCount'),
-      reassessCount: document.getElementById('reassessCount'),
-      noInitialMsg: document.getElementById('noInitialWrecksMessage'),
-      noCompletedMsg: document.getElementById('noCompletedWrecksMessage'),
-      noReassessMsg: document.getElementById('noReassessMessage'),
-      // report
-      reportContainer: document.getElementById('reportContainer'),
-      reportTitle: document.getElementById('reportTitle'),
-      reportContent: document.getElementById('reportContent'),
-      alertDisplaySection: document.getElementById('alert-display-section'),
-    };
-
-    // Auth handlers
-    function setAuthMessage(msg, isError = false) {
-      ui.authMessage.textContent = msg || "";
-      ui.authMessage.style.color = isError ? '#ef4444' : '#6b7280';
-    }
-    async function handleSignInEmailPassword() {
-      const email = ui.emailInput.value.trim();
-      const password = ui.passwordInput.value;
-      if (!email || !password) return setAuthMessage("Enter email and password.", true);
-      try {
-        setAuthMessage("Signing in...");
-        await signInWithEmailAndPassword(auth, email, password);
-        setAuthMessage("");
-      } catch (e) {
-        setAuthMessage(cleanAuthError(e), true);
-      }
-    }
-    async function handleCreateAccount() {
-      const email = ui.emailInput.value.trim();
-      const password = ui.passwordInput.value;
-      if (!email || !password) return setAuthMessage("Enter email and a password.", true);
-      if (password.length < 6) return setAuthMessage("Password must be at least 6 characters.", true);
-      try {
-        setAuthMessage("Creating account...");
-        await createUserWithEmailAndPassword(auth, email, password);
-        setAuthMessage("");
-      } catch (e) {
-        setAuthMessage(cleanAuthError(e), true);
-      }
-    }
-    async function handlePasswordReset() {
-      const email = ui.emailInput.value.trim(); // be robust
-      if (!email) return setAuthMessage("Enter your email to reset password.", true);
-      try {
-        setAuthMessage("Sending reset email...");
-        await sendPasswordResetEmail(auth, email);
-        setAuthMessage("Password reset email sent.");
-      } catch (e) {
-        setAuthMessage(cleanAuthError(e), true);
-      }
-    }
-    function cleanAuthError(e) {
-      const code = e?.code || "";
-      switch (code) {
-        case "auth/invalid-email": return "Invalid email address.";
-        case "auth/user-disabled": return "This account is disabled.";
-        case "auth/user-not-found": return "No account found with that email.";
-        case "auth/wrong-password": return "Incorrect password.";
-        case "auth/email-already-in-use": return "Email already in use.";
-        case "auth/weak-password": return "Password must be at least 6 characters.";
-        default: return e?.message || "Authentication error.";
-      }
-    }
-
     // Role/permissions
     let currentRole = 'user';
     let roleUnsub = null;
-    function updateRoleUI() {
-      const roleText = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
-      ui.roleBadge.textContent = `Role: ${roleText}`;
-      ui.roleBadge.className = "text-xs px-2 py-1 rounded-full border " +
-        ((currentRole === 'contributor' || currentRole === 'admin')
-          ? "bg-green-50 text-green-700 border-green-300"
-          : "bg-gray-100 text-gray-700 border-gray-300");
-      ui.contribHint.classList.toggle('hidden', (currentRole === 'contributor' || currentRole === 'admin'));
-      ui.adminToolsBtn?.classList.toggle('hidden', currentRole !== 'admin');
-    }
-    function applyPermissions() {
-      const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
-      ui.analyzeBtn.disabled = !canContribute || isLoading;
-      updateRoleUI();
-    }
 
     // Map and markers
     let map;
     let markers = new Map();
 
+    // Chart instance
+    let radarChart = null;
+
+    // DOM refs
+    const signedOutContainer = document.getElementById('signedOutContainer');
+    const appContainer = document.getElementById('appContainer');
+    const adminToolsBtn = document.getElementById('adminToolsBtn');
+    const userNameSpan = document.getElementById('userName');
+    const signOutBtn = document.getElementById('signOutBtn');
+    const roleBadge = document.getElementById('roleBadge');
+    const contribHint = document.getElementById('contribHint');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const analyzeText = document.getElementById('analyzeText');
+    const vesselNameInput = document.getElementById('vesselName');
+    const statusMessage = document.getElementById('statusMessage');
+    const authMessage = document.getElementById('authMessage');
+
+    const sevHigh = document.getElementById('sevHigh');
+    const sevMedium = document.getElementById('sevMedium');
+    const sevLow = document.getElementById('sevLow');
+    const searchBox = document.getElementById('searchBox');
+    const clearSearch = document.getElementById('clearSearch');
+    const visibleCounts = document.getElementById('visibleCounts');
+
+    const initialList = document.getElementById('initialWreckList');
+    const completedList = document.getElementById('completedWreckList');
+    const reassessList = document.getElementById('reassessList');
+    const initialCount = document.getElementById('initialCount');
+    const completedCount = document.getElementById('completedCount');
+    const reassessCount = document.getElementById('reassessCount');
+    const noInitial = document.getElementById('noInitialWrecksMessage');
+    const noCompleted = document.getElementById('noCompletedWrecksMessage');
+    const noReassess = document.getElementById('noReassessMessage');
+
+    const reportContainer = document.getElementById('reportContainer');
+    const reportTitle = document.getElementById('reportTitle');
+    const reportContent = document.getElementById('reportContent');
+
+    // Auth UI
+    document.getElementById('signInEmailBtn').addEventListener('click', async () => {
+      const email = document.getElementById('emailInput').value.trim();
+      const password = document.getElementById('passwordInput').value;
+      authMessage.textContent = '';
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (e) {
+        authMessage.textContent = e.message || 'Sign-in failed.';
+      }
+    });
+
+    document.getElementById('createAccountBtn').addEventListener('click', async () => {
+      const email = document.getElementById('emailInput').value.trim();
+      const password = document.getElementById('passwordInput').value;
+      authMessage.textContent = '';
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        // Create a basic user profile doc (optional)
+        await setDoc(doc(db, `artifacts/${appId}/private/users/${cred.user.uid}`), {
+          email,
+          role: 'user',
+          createdAt: serverTimestamp()
+        }, { merge: true });
+        authMessage.textContent = 'Account created. You are signed in as User.';
+      } catch (e) {
+        authMessage.textContent = e.message || 'Account creation failed.';
+      }
+    });
+
+    document.getElementById('resetPasswordBtn').addEventListener('click', async () => {
+      const email = document.getElementById('emailInput').value.trim();
+      if (!email) { authMessage.textContent = 'Enter your email first.'; return; }
+      try {
+        await sendPasswordResetEmail(auth, email);
+        authMessage.textContent = 'Password reset email sent.';
+      } catch (e) {
+        authMessage.textContent = e.message || 'Password reset failed.';
+      }
+    });
+
+    signOutBtn.addEventListener('click', async () => {
+      try { await signOut(auth); } catch {}
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        // Signed out
+        signedOutContainer.classList.remove('hidden');
+        appContainer.classList.add('hidden');
+        adminToolsBtn.classList.add('hidden');
+        userNameSpan.classList.add('hidden');
+        signOutBtn.classList.add('hidden');
+        currentRole = 'user';
+        roleBadge.textContent = 'Role: —';
+        analyzeBtn.disabled = true;
+        contribHint.classList.remove('hidden');
+        return;
+      }
+
+      // Signed in
+      signedOutContainer.classList.add('hidden');
+      appContainer.classList.remove('hidden');
+      userNameSpan.textContent = user.email || user.uid;
+      userNameSpan.classList.remove('hidden');
+      signOutBtn.classList.remove('hidden');
+
+      // Fetch role from Firestore (graceful fallback to 'user')
+      try {
+        const roleDoc = await getDoc(doc(db, `artifacts/${appId}/private/users/${user.uid}`));
+        currentRole = (roleDoc.exists() && roleDoc.data().role) ? String(roleDoc.data().role) : 'user';
+      } catch { currentRole = 'user'; }
+
+      roleBadge.textContent = `Role: ${currentRole}`;
+      const isAdmin = currentRole === 'admin';
+      const isContributor = isAdmin || currentRole === 'contributor';
+      if (isAdmin) adminToolsBtn.classList.remove('hidden'); else adminToolsBtn.classList.add('hidden');
+      analyzeBtn.disabled = !isContributor;
+      if (!isContributor) contribHint.classList.remove('hidden'); else contribHint.classList.add('hidden');
+    });
+
+    // Analyze action
+    analyzeBtn.addEventListener('click', async () => {
+      const name = vesselNameInput.value.trim();
+      statusMessage.textContent = '';
+      if (!name) { statusMessage.textContent = 'Enter a vessel name.'; return; }
+      if (analyzeBtn.disabled) { statusMessage.textContent = 'Contributor access required.'; return; }
+
+      analyzeBtn.disabled = true;
+      analyzeText.textContent = 'Analyzing...';
+      try {
+        // Trigger backend pipeline; backend should handle FA, phase1..n, etc.
+        await callGeminiFunction({ vesselName: name, appId });
+        statusMessage.textContent = 'Analysis requested. It may take a moment to appear.';
+        vesselNameInput.value = '';
+      } catch (e) {
+        statusMessage.textContent = e.message || 'Failed to start analysis.';
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeText.textContent = 'Analyze Wreck';
+      }
+    });
+
+    // Map
     function initMap(){
       if (map) return;
       map = L.map('map').setView([10, 150], 3);
-
       // Mapbox tiles
       L.tileLayer('https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}', {
         id: 'mapbox/streets-v12',
@@ -390,13 +413,13 @@
     }
 
     function upsertMarker(item){
-      const coords = item?.phase1?.screening?.coordinates;
+      const coords = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location;
       const id = item?.id;
       if (!id || !coords?.latitude || !coords?.longitude) return;
 
-      const band = item?.severity?.band || "low";
+      const band = item?.severity?.band || bandFromValue(item?.severity?.value);
       const pos = [coords.latitude, coords.longitude];
-      const title = escapeHtml(item?.vesselName || item?.id || "Unknown");
+      const title = escapeHtml(item?.vesselName || item?.name || item?.id || "Unknown");
       const popupHtml = `<div><strong>${title}</strong><br/>Severity: ${(band||"").toUpperCase()} ${num(item?.severity?.value)}</div>`;
 
       if (markers.has(id)) {
@@ -417,593 +440,193 @@
       markers = new Map();
     }
 
-    // Utilities
-    function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function num(v){
-      const n = Number(v);
-      if (!Number.isFinite(n)) return "—";
-      return n % 1 === 0 ? n.toFixed(0) : n.toFixed(1);
-    }
-    function clamp(n, lo, hi){
-      n = Number(n);
-      if (!Number.isFinite(n)) n = lo;
-      return Math.min(hi, Math.max(lo, n));
-    }
-    function computeSeverity(doc){
-      const wcs = clamp(doc?.wcs?.totalScore, 0, 20);
-      const phs = clamp(doc?.phs?.totalWeightedScore, 0, 10);
-      const esi = clamp(doc?.esi?.totalScore, 0, 30);
-      const rpm = clamp(doc?.rpm?.finalMultiplier, 0.5, 2.5);
-      const composite = (wcs + phs + (esi / 3)) * rpm; // ~0..100
-      let band = "low";
-      if (composite >= 70) band = "high";
-      else if (composite >= 40) band = "medium";
-      return { value: Number(composite.toFixed(1)), band };
-    }
-    function phase2Status(doc){
-      const s = doc?.phase2?.latest?.status || doc?.phase2?.status || "";
-      return String(s || "").toLowerCase();
-    }
-    // Reassessment logic: explicit flag OR any unacknowledged alert
-    function needsReassessment(doc){
-      if (doc?.needsReassessment === true) return true;
-      if (Array.isArray(doc?.alerts) && doc.alerts.some(a => !a?.acknowledged)) return true;
-      return false;
-    }
-    const searchBoxEl = document.getElementById('searchBox');
-    function matchesFilters(item){
-      const band = item?.severity?.band || "low";
-      if (band === "high" && !document.getElementById('sevHigh').checked) return false;
-      if (band === "medium" && !document.getElementById('sevMedium').checked) return false;
-      if (band === "low" && !document.getElementById('sevLow').checked) return false;
-    
-      const q = (searchBoxEl?.value || "").trim().toLowerCase();
-      if (q) {
-        const name = String(item?.vesselName || item?.id || "").toLowerCase();
-        if (!name.includes(q)) return false;
-      }
-      return true;
+    // Radar chart
+    function renderRadar(item) {
+      const ctx = document.getElementById('werSpiderChart').getContext('2d');
+      const wcs = getNum(item?.scores?.WCS ?? item?.wcs);
+      const phs = getNum(item?.scores?.PHS ?? item?.phs);
+      const esi = getNum(item?.scores?.ESI ?? item?.esi);
+      const rpm = getNum(item?.scores?.RPM ?? item?.rpm);
+
+      const data = {
+        labels: ['WCS', 'PHS', 'ESI', 'RPM'],
+        datasets: [{
+          label: 'Risk',
+          data: [wcs, phs, esi, rpm],
+          fill: true,
+          backgroundColor: 'rgba(79, 70, 229, 0.2)',
+          borderColor: 'rgba(79, 70, 229, 1)',
+          pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+          pointBorderColor: '#fff',
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: 'rgba(79, 70, 229, 1)'
+        }]
+      };
+      const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          r: {
+            beginAtZero: true,
+            suggestedMax: 10,
+            grid: { color: 'rgba(0,0,0,0.1)' },
+            angleLines: { color: 'rgba(0,0,0,0.1)' },
+            pointLabels: { color: '#111827', font: { size: 12 } }
+          }
+        },
+        plugins: { legend: { display: false } }
+      };
+
+      if (radarChart) { radarChart.destroy(); }
+      radarChart = new Chart(ctx, { type: 'radar', data, options });
     }
 
-    // Lists rendering
-    function makeRow(item){
-      const sevClass = item?.severity?.band || "low";
-      const p2Updates = Array.isArray(item?.phase2?.updates) ? item.phase2.updates.length : 0;
-      const latestAt = item?.updatedAt?._seconds ? new Date(item.updatedAt._seconds*1000).toISOString().slice(0,10) : "—";
+    // Data subscription
+    let dataUnsub = null;
+    let allItems = [];
+    initMap();
 
-      const el = document.createElement('button');
-      el.type = 'button';
-      el.className = 'w-full text-left border border-gray-200 rounded-lg p-3 hover:bg-indigo-50/40 transition';
-      el.innerHTML = `
-        <div class="flex items-start gap-3">
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <h3 class="text-sm font-semibold">${escapeHtml(item.vesselName || item.id || "Unknown")}</h3>
-              <span class="pill ${sevClass}">${(item?.severity?.band || "LOW").toUpperCase()} ${num(item?.severity?.value)}</span>
-            </div>
-            <div class="text-xs text-gray-700 mt-1 flex flex-wrap gap-3">
-              <span>WCS ${num(item?.wcs?.totalScore)}/20</span>
-              <span>PHS ${num(item?.phs?.totalWeightedScore)}/10</span>
-              <span>ESI ${num(item?.esi?.totalScore)}/30</span>
-              <span>RPM ×${num(item?.rpm?.finalMultiplier)}</span>
-              <span>Phase 2: ${escapeHtml(phase2Status(item) || "none")}</span>
-              <span>Updates: ${p2Updates}</span>
-              <span>Last Updated: ${latestAt}</span>
-            </div>
-          </div>
-        </div>
-      `;
-      el.addEventListener('click', () => {
-        const coords = item?.phase1?.screening?.coordinates;
-        const m = markers.get(item.id);
-        if (map && coords?.latitude && coords?.longitude) {
-          map.flyTo([coords.latitude, coords.longitude], 8);
-          setTimeout(()=> m?.openPopup(), 300);
-        }
-        handleSelect(item.id);
+    function startData() {
+      if (dataUnsub) return;
+      const q = query(assessmentsCollection, orderBy('severity.value', 'desc'));
+      dataUnsub = onSnapshot(q, (snap) => {
+        allItems = [];
+        snap.forEach(docSnap => {
+          const d = docSnap.data() || {};
+          // Ensure id present
+          d.id = d.id || docSnap.id;
+          // Normalize severity band if missing
+          if (!d.severity) d.severity = {};
+          if (d.severity.value == null) d.severity.value = 0;
+          d.severity.band = d.severity.band || bandFromValue(d.severity.value);
+          allItems.push(d);
+        });
+        render();
+      }, (err) => {
+        console.error('Snapshot error', err);
       });
-      return el;
     }
+    startData();
 
-    function drawList(root, arr){
-      root.innerHTML = '';
-      for (const d of arr) root.appendChild(makeRow(d));
-    }
+    // Filtering + rendering
+    [sevHigh, sevMedium, sevLow].forEach(cb => cb.addEventListener('change', render));
+    searchBox.addEventListener('input', render);
+    clearSearch.addEventListener('click', () => { searchBox.value = ''; render(); });
 
-    // State
-    let allDocs = [];
-    let isLoading = false;
-
-    function setLoading(v, text = 'Analyzing...'){
-      isLoading = v;
-      const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
-      document.getElementById('analyzeBtn').disabled = v || !canContribute;
-      document.getElementById('analyzeText').textContent = v ? text : 'Analyze Wreck';
-    }
-    function updateStatus(message, isError = false) {
-      document.getElementById('statusMessage').textContent = message || '';
-      document.getElementById('statusMessage').style.color = isError ? '#ef4444' : '#6b7280';
-    }
-
-    // Render pipeline
     function render() {
-      const filtered = [];
-      for (const d of allDocs){
-        const item = { ...d, severity: computeSeverity(d) };
-        if (!matchesFilters(item)) continue;
-        filtered.push(item);
-      }
+      const activeBands = new Set();
+      if (sevHigh.checked) activeBands.add('high');
+      if (sevMedium.checked) activeBands.add('medium');
+      if (sevLow.checked) activeBands.add('low');
+      const term = searchBox.value.trim().toLowerCase();
 
+      const filtered = allItems.filter(it => {
+        const band = it?.severity?.band || 'low';
+        if (!activeBands.has(band)) return false;
+        if (term) {
+          const name = (it?.vesselName || it?.name || it?.id || '').toLowerCase();
+          if (!name.includes(term)) return false;
+        }
+        return true;
+      });
+
+      // Partition
       const initial = [];
       const completed = [];
       const reassess = [];
 
-      for (const item of filtered){
-        const st = phase2Status(item);
-        const flag = needsReassessment(item);
-        if (flag) {
-          reassess.push(item);
-        } else if (item?.status === 'completed' || st === 'completed') {
-          completed.push(item);
-        } else {
-          initial.push(item);
-        }
+      for (const it of filtered) {
+        const needsRe = Boolean(it?.needsReassessment);
+        const hasAlerts = Array.isArray(it?.alerts) && it.alerts.some(a => a && a.acknowledged === false);
+        const reqReassess = needsRe || hasAlerts;
+
+        const isCompleted = Boolean(it?.completed || it?.status === 'completed' || it?.phase3 || it?.finalizedAt);
+        const isInitial = !isCompleted && !reqReassess;
+
+        if (reqReassess) reassess.push(it);
+        else if (isCompleted) completed.push(it);
+        else initial.push(it);
       }
 
-      const bySev = (a,b)=> (b?.severity?.value||0) - (a?.severity?.value||0);
-      initial.sort(bySev);
-      completed.sort(bySev);
-      reassess.sort(bySev);
+      // Sort by severity value desc
+      const bySeverity = (a, b) => num(b?.severity?.value) - num(a?.severity?.value);
+      initial.sort(bySeverity);
+      completed.sort(bySeverity);
+      reassess.sort(bySeverity);
 
-      drawList(document.getElementById('initialWreckList'), initial);
-      drawList(document.getElementById('completedWreckList'), completed);
-      drawList(document.getElementById('reassessList'), reassess);
+      // Render lists
+      drawList(initialList, initial, 'initial');
+      drawList(completedList, completed, 'completed');
+      drawList(reassessList, reassess, 'reassess');
 
-      document.getElementById('initialCount').textContent = `${initial.length} shown`;
-      document.getElementById('completedCount').textContent = `${completed.length} shown`;
-      document.getElementById('reassessCount').textContent = `${reassess.length} shown`;
-      document.getElementById('visibleCounts').textContent = `${initial.length + completed.length + reassess.length} total`;
+      initialCount.textContent = String(initial.length);
+      completedCount.textContent = String(completed.length);
+      reassessCount.textContent = String(reassess.length);
 
-      document.getElementById('noInitialWrecksMessage').classList.toggle('hidden', initial.length > 0);
-      document.getElementById('noCompletedWrecksMessage').classList.toggle('hidden', completed.length > 0);
-      document.getElementById('noReassessMessage').classList.toggle('hidden', reassess.length > 0);
+      noInitial.classList.toggle('hidden', initial.length !== 0);
+      noCompleted.classList.toggle('hidden', completed.length !== 0);
+      noReassess.classList.toggle('hidden', reassess.length !== 0);
 
-      // Map markers: rebuild from filtered set to reflect severity filters
+      // Map markers for currently visible items
       clearMarkers();
-      for (const item of filtered) upsertMarker(item);
+      for (const it of filtered) upsertMarker(it);
+
+      // Visible counts summary
+      visibleCounts.textContent = `${filtered.length} of ${allItems.length}`;
     }
 
-    // Live data
-    let unsub = null;
-    async function startListener(){
-      if (unsub) { unsub(); unsub = null; }
-      try {
-        const qy = query(assessmentsCollection, orderBy("vesselName"));
-        unsub = onSnapshot(qy, (snap) => {
-          allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          render();
-          setAuthError("");
-        }, (err) => {
-          console.error("Snapshot error:", err);
-          if (String(err?.code||"").includes("permission-denied")) {
-            setAuthError("Sign-in required to view reports.");
-          } else {
-            setAuthError(err?.message || "Failed to load reports.");
-          }
-          allDocs = [];
-          render();
-        });
-      } catch (e) {
-        console.error("Listener start failed:", e);
-        if (String(e?.code||"").includes("permission-denied")) {
-          setAuthError("Sign-in required to view reports.");
-        } else {
-          setAuthError(e?.message || "Failed to load reports.");
-        }
-      }
-    }
-
-    function setAuthError(msg){
-      const authError = document.getElementById('authError');
-      if (msg) {
-        authError.textContent = msg;
-        authError.classList.remove("hidden");
-      } else {
-        authError.textContent = "";
-        authError.classList.add("hidden");
-      }
-    }
-
-    // Analyze flow (contributors/admin only)
-    async function callGemini(prompt) {
-      const result = await callGeminiFunction({ prompt });
-      const raw = result?.data;
-      if (typeof raw !== "string") throw new Error("Model response not a string.");
-      const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-      try {
-        return JSON.parse(cleaned);
-      } catch (e) {
-        throw new Error("Model returned invalid JSON.");
-      }
-    }
-    function buildUnifiedAssessmentPrompt(vesselName) {
-      return `You are an expert OSINT analyst and marine environmental risk assessor.
-Return ONLY JSON (no markdown):
-
-{
-  "wcs_hull_structure": {
-    "parameters": [
-      {"parameter":"Age","rationale":"...","score":0},
-      {"parameter":"Construction Quality","rationale":"...","score":0},
-      {"parameter":"Wreck Integrity","rationale":"...","score":0},
-      {"parameter":"Corrosion Environment","rationale":"...","score":0}
-    ],
-    "maxScore": 20
-  },
-  "phs_pollution_hazard": {
-    "parameters": [
-      {"parameter":"Fuel Volume & Type","weight":0.40,"rationale":"...","score":0},
-      {"parameter":"Ordnance","weight":0.25,"rationale":"...","score":0},
-      {"parameter":"Vessel Integrity","weight":0.20,"rationale":"...","score":0},
-      {"parameter":"Hazardous Materials","weight":0.15,"rationale":"...","score":0}
-    ]
-  },
-  "esi_environmental_sensitivity": {
-    "parameters": [
-      {"parameter":"Proximity to Sensitive Ecosystems","rationale":"...","score":0},
-      {"parameter":"Biodiversity Value","rationale":"...","score":0},
-      {"parameter":"Socioeconomic Sensitivity","rationale":"...","score":0}
-    ],
-    "maxScore": 30
-  },
-  "rpm_risk_pressure_modifiers": {
-    "factors": [
-      {"factor":"Thermal Stress (Ocean Warming)","rationale":"...","value":1.0},
-      {"factor":"Seismic Activity","rationale":"...","value":1.0},
-      {"factor":"Anthropogenic Disturbance","rationale":"...","value":1.0}
-    ]
-  },
-  "final_summary": {
-    "summativeAssessment":"...",
-    "remediationSuggestions":[
-      {"priority":1,"title":"...","description":"..."},
-      {"priority":2,"title":"...","description":"..."},
-      {"priority":3,"title":"...","description":"..."}
-    ]
-  }
-}
-
-Rules:
-- High score/value => higher risk.
-- WCS 0–5 each (sum 0–20).
-- PHS scores 0–10, weights: 0.40,0.25,0.20,0.15 => weighted sum 0–10.
-- ESI scores 0–10 each (sum 0–30).
-- RPM values 0.5–2.5 (1 baseline).
-Vessel: ${vesselName}`;
-    }
-    function clampNum(v, min, max) {
-      const n = typeof v === 'number' ? v : parseFloat(String(v));
-      if (!Number.isFinite(n)) return min;
-      return Math.min(max, Math.max(min, n));
-    }
-    async function performNewAnalysis(vesselName) {
-      updateStatus("Generating assessment...");
-      const obj = await callGemini(buildUnifiedAssessmentPrompt(vesselName));
-
-      const wcsParams = (obj.wcs_hull_structure?.parameters || []).map(p => ({
-        name: p.parameter, rationale: p.rationale, score: clampNum(p.score, 0, 5)
-      }));
-      const wcsTotal = wcsParams.reduce((s, p) => s + p.score, 0);
-
-      const phsParams = (obj.phs_pollution_hazard?.parameters || []).map(p => ({
-        name: p.parameter, rationale: p.rationale, weight: p.weight, score: clampNum(p.score, 0, 10)
-      }));
-      const phsWeighted = phsParams.reduce((s, p) => s + (p.score * p.weight), 0);
-
-      const esiParams = (obj.esi_environmental_sensitivity?.parameters || []).map(p => ({
-        name: p.parameter, rationale: p.rationale, score: clampNum(p.score, 0, 10)
-      }));
-      const esiTotal = esiParams.reduce((s, p) => s + p.score, 0);
-
-      const rpmFactors = (obj.rpm_risk_pressure_modifiers?.factors || []).map(f => ({
-        name: f.factor, rationale: f.rationale, value: clampNum(f.value, 0.5, 2.5)
-      }));
-      const rpmAvg = rpmFactors.length ? rpmFactors.reduce((s, f) => s + f.value, 0) / rpmFactors.length : 1.0;
-
-      return {
-        vesselName,
-        wcs: { parameters: wcsParams, totalScore: wcsTotal },
-        phs: { parameters: phsParams, totalWeightedScore: clampNum(phsWeighted, 0, 10) },
-        esi: { parameters: esiParams, totalScore: clampNum(esiTotal, 0, 30), maxScore: 30 },
-        rpm: { factors: rpmFactors, finalMultiplier: parseFloat(rpmAvg.toFixed(2)) },
-        finalSummary: { summativeAssessment: obj.final_summary?.summativeAssessment || "", remediationSuggestions: obj.final_summary?.remediationSuggestions || [] },
-        status: "initial"
-      };
-    }
-
-    // Full report rendering
-    function createTable(rows, headers, keys, cellFormat = {}) {
-      let table = '<table><thead><tr>';
-      headers.forEach(h => table += `<th>${h}</th>`);
-      table += '</tr></thead><tbody>';
-      rows.forEach(row => {
-        table += '<tr>';
-        keys.forEach(k => {
-          const val = row?.[k];
-          const f = cellFormat[k];
-          const out = f ? f(val, row) : (val ?? '');
-          table += `<td>${out}</td>`;
-        });
-        table += '</tr>';
-      });
-      table += '</tbody></table>';
-      return table;
-    }
-
-    function createOrUpdateSpiderChart({ wcs, phs, esi, esiMax, rpm }) {
-      const ctx = document.getElementById('werSpiderChart').getContext('2d');
-
-      const wcs20 = (wcs / 20) * 20;
-      const phs20 = (phs / 10) * 20;
-      const esi20 = (esi / (esiMax || 30)) * 20;
-      const rpm20 = ((Math.min(Math.max(rpm, 0.5), 2.5) - 0.5) / 2.0) * 20;
-
-      const profile = [wcs20, phs20, esi20, rpm20].map(v => Math.max(0, Math.min(20, v)));
-
-      const lowCap = [6, 6, 6, 6];
-      const medCap = [12, 12, 12, 12];
-      const highCap = [20, 20, 20, 20];
-
-      if (window.spiderChart) {
-        window.spiderChart.data.datasets[0].data = lowCap;
-        window.spiderChart.data.datasets[1].data = medCap;
-        window.spiderChart.data.datasets[2].data = highCap;
-        window.spiderChart.data.datasets[3].data = profile;
-        window.spiderChart.update();
-        return;
-      }
-
-      window.spiderChart = new Chart(ctx, {
-        type: 'radar',
-        data: {
-          labels: ['WCS', 'PHS', 'ESI', 'RPM'],
-          datasets: [
-            { label: 'Low benchmark', data: lowCap, backgroundColor: 'rgba(16,185,129,0.18)', borderColor: 'rgba(16,185,129,0.45)', pointRadius: 0, order: 1 },
-            { label: 'Medium benchmark', data: medCap, backgroundColor: 'rgba(245,158,11,0.14)', borderColor: 'rgba(245,158,11,0.45)', pointRadius: 0, fill: '-1', order: 2 },
-            { label: 'High benchmark', data: highCap, backgroundColor: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.45)', pointRadius: 0, fill: '-1', order: 3 },
-            { label: 'Risk Profile', data: profile, backgroundColor: 'rgba(30,64,175,0.22)', borderColor: 'rgba(30,64,175,1)', pointBackgroundColor: 'rgba(30,64,175,1)', order: 4 }
-          ]
-        },
-        options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { r: { suggestedMin: 0, suggestedMax: 20, ticks: { stepSize: 4 } } } }
-      });
-    }
-
-    async function handleSelect(docId) {
-      try {
-        document.getElementById('reportContainer').classList.add('hidden');
-        document.getElementById('reportContent').innerHTML = '';
-        document.getElementById('reportTitle').textContent = '';
-        const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
-        const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) return;
-
-        const data = docSnap.data();
-        document.getElementById('reportTitle').textContent = `WERP Assessment: ${data.vesselName}`;
-
-        const alertDisplaySection = document.getElementById('alert-display-section');
-        if (Array.isArray(data.alerts) && data.alerts.some(a => !a.acknowledged)) {
-          alertDisplaySection.classList.remove('hidden');
-          alertDisplaySection.innerHTML = `
-            <div class="p-3 mb-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-md">
-              <h3 class="font-bold text-yellow-800">Recent Environmental Incident</h3>
-              <p class="text-sm text-yellow-700 mt-1">A recent event was detected near this wreck. Re-assessment recommended.</p>
-            </div>`;
-        } else {
-          alertDisplaySection.classList.add('hidden');
-          alertDisplaySection.innerHTML = '';
-        }
-
-        const wcsTotal = Number(data?.wcs?.totalScore ?? 0);
-        const phsTotal = Number(data?.phs?.totalWeightedScore ?? 0);
-        const esiTotal = Number(data?.esi?.totalScore ?? 0);
-        const esiMax  = Number(data?.esi?.maxScore ?? (esiTotal <= 30 ? 30 : 40));
-        const rpmMult = Number(data?.rpm?.finalMultiplier ?? 1.0);
-
-        document.getElementById('reportContent').innerHTML = `
-          <section>
-            <h3>Case Study Background</h3>
-            <p>${data?.phase1?.summary?.background ?? '—'}</p>
-            <p><strong>Location:</strong> ${data?.phase1?.summary?.location ?? '—'}</p>
-            <p><strong>Discovery:</strong> ${data?.phase1?.summary?.discovery ?? '—'}</p>
-          </section>
-
-          <section>
-            <h3>Phase 1: Scoping & Screening</h3>
-            <ul class="list-disc ml-5 space-y-1">
-              <li><strong>Vessel Type:</strong> ${data?.phase1?.screening?.vesselType ?? '—'}</li>
-              <li><strong>Tonnage:</strong> ${data?.phase1?.screening?.tonnage ?? '—'}</li>
-              <li><strong>Year Built:</strong> ${data?.phase1?.screening?.yearBuilt ?? '—'}</li>
-              <li><strong>Last Owner:</strong> ${data?.phase1?.screening?.lastOwner ?? '—'}</li>
-              <li><strong>Coordinates:</strong> ${data?.phase1?.screening?.coordinates?.latitude ?? '—'}, ${data?.phase1?.screening?.coordinates?.longitude ?? '—'}</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3>Phase 3: WCS (Hull & Structure)</h3>
-            ${createTable(
-              data?.wcs?.parameters ?? [],
-              ['Parameter', 'Rationale', 'Score (0–5)'],
-              ['name', 'rationale', 'score']
-            )}
-            <p class="mt-2"><strong>Total:</strong> ${Number.isFinite(wcsTotal) ? wcsTotal : '—'} / 20</p>
-          </section>
-
-          <section>
-            <h3>Phase 3: PHS (Pollution Hazard)</h3>
-            <p class="note mb-2">Weights: Fuel 0.40, Ordnance 0.25, Vessel Integrity 0.20, Hazardous Materials 0.15.</p>
-            ${createTable(
-              (data?.phs?.parameters ?? []).map(p => ({ ...p })),
-              ['Parameter', 'Weight', 'Rationale', 'Score (0–10)'],
-              ['name', 'weight', 'rationale', 'score']
-            )}
-            <p class="mt-2"><strong>Total Weighted Score:</strong> ${Number.isFinite(phsTotal) ? phsTotal.toFixed(2) : '—'} / 10</p>
-          </section>
-
-          <section>
-            <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
-            ${createTable(
-              data?.esi?.parameters ?? [],
-              ['Parameter', 'Rationale', 'Score (0–10)'],
-              ['name', 'rationale', 'score']
-            )}
-            <p class="mt-2"><strong>Total:</strong> ${Number.isFinite(esiTotal) ? esiTotal : '—'} / ${esiMax}</p>
-          </section>
-
-          <section>
-            <h3>Phase 3: RPM (Risk Pressure Modifiers)</h3>
-            ${createTable(
-              (data?.rpm?.factors ?? []).map(f => ({
-                ...f,
-                rationale: (typeof f?.rationale === 'string' && f.rationale.trim()) ? f.rationale : 'Not specified.'
-              })),
-              ['Factor', 'Rationale', 'Value (0.5–2.5)'],
-              ['name', 'rationale', 'value']
-            )}
-            <p class="mt-2"><strong>Final Multiplier:</strong> ${Number.isFinite(rpmMult) ? rpmMult.toFixed(2) : '—'}× <span class="note">(1.00 baseline)</span></p>
-          </section>
-
-          <section>
-            <h3>${data?.status === 'completed' ? 'Final' : 'Preliminary'} Risk Synthesis & Classification</h3>
-            ${data?.status === 'completed'
-              ? ''
-              : `<p class="italic text-gray-600">Preliminary scores; Phase 2 field verification may adjust risk classification.</p>`}
-          </section>
-
-          <section>
-            <h3>Summative Assessment</h3>
-            <p>${data?.finalSummary?.summativeAssessment ?? '—'}</p>
-          </section>
-
-          <section>
-            <h3>Remediation Suggestions</h3>
-            ${(data?.finalSummary?.remediationSuggestions ?? []).map(s => `
-              <div class="mt-3">
-                <h4 class="font-semibold">Priority ${s?.priority ?? ''}: ${s?.title ?? ''}</h4>
-                <p>${s?.description ?? ''}</p>
-              </div>
-            `).join('')}
-          </section>
+    function drawList(container, items, section) {
+      container.innerHTML = '';
+      for (const it of items) {
+        const li = document.createElement('div');
+        li.className = 'list-item flex items-center justify-between gap-3';
+        const band = it?.severity?.band || 'low';
+        const vessel = escapeHtml(it?.vesselName || it?.name || it?.id || 'Unknown');
+        li.innerHTML = `
+          <div class="min-w-0">
+            <div class="text-sm font-semibold text-gray-900 truncate">${vessel}</div>
+            <div class="text-xs text-gray-500">Severity: ${band.toUpperCase()} ${num(it?.severity?.value)}</div>
+          </div>
+          <span class="pill ${band}">${band.toUpperCase()}</span>
         `;
-
-        createOrUpdateSpiderChart({
-          wcs: Number(wcsTotal || 0),
-          phs: Number(phsTotal || 0),
-          esi: Number(esiTotal || 0),
-          esiMax: Number(esiMax || 30),
-          rpm: Number(rpmMult || 1.0)
-        });
-
-        const container = document.getElementById('reportContainer');
-        container.classList.remove('hidden');
-        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } catch (e) {
-        console.error('Failed to render report:', e);
+        li.addEventListener('click', () => openReport(it));
+        container.appendChild(li);
       }
     }
 
-    // Analyze events
-    document.getElementById('analyzeBtn').addEventListener('click', runFullAnalysis);
-    document.getElementById('vesselName').addEventListener('keypress', (e) => (e.key === 'Enter') && runFullAnalysis());
-    let isRateLimited = false;
-    function requireContributor(actionName = "this action") {
-      const ok = (currentRole === 'contributor' || currentRole === 'admin');
-      if (!ok) updateStatus(`Contributor access required to ${actionName}.`, true);
-      return ok;
-    }
-    function setRateLimit() {
-      isRateLimited = true;
-      setTimeout(() => { isRateLimited = false; updateStatus(""); }, 30000);
-    }
-    async function runFullAnalysis() {
-      if (!requireContributor("run analyses")) return;
-      if (isRateLimited) { updateStatus("Please wait before next analysis.", true); return; }
-      const vesselName = document.getElementById('vesselName').value.trim();
-      if (!vesselName) { updateStatus("Please enter a vessel name.", true); return; }
-
-      setLoading(true);
-      try {
-        const docId = vesselName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-        const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          updateStatus(`Report for ${vesselName} already exists. Opening...`);
-          handleSelect(docId);
-        } else {
-          const newReportData = await performNewAnalysis(vesselName);
-          await setDoc(docRef, { ...newReportData, createdAt: serverTimestamp() });
-          updateStatus(`Analysis complete for ${vesselName}.`);
-          handleSelect(docId);
-        }
-        setRateLimit();
-      } catch (error) {
-        updateStatus(`Error: ${error.message}`, true);
-      } finally {
-        setLoading(false);
+    function openReport(item) {
+      reportTitle.textContent = item?.vesselName || item?.name || item?.id || 'Assessment';
+      // Prefer HTML report if present
+      const html = item?.report?.html || item?.html;
+      if (html) {
+        reportContent.innerHTML = html;
+      } else {
+        // Fallback: synthesize a summary table
+        reportContent.innerHTML = `
+          <h3>Summary</h3>
+          <table>
+            <tr><th>Vessel</th><td>${escapeHtml(item?.vesselName || item?.name || item?.id || '')}</td></tr>
+            <tr><th>Severity</th><td>${(item?.severity?.band || 'low').toUpperCase()} ${num(item?.severity?.value)}</td></tr>
+            <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
+            <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
+          </table>
+        `;
       }
+      renderRadar(item);
+      reportContainer.classList.remove('hidden');
+      reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    // Filters
-    ['sevHigh','sevMedium','sevLow'].forEach(id => document.getElementById(id)?.addEventListener("change", render));
-    document.getElementById('searchBox')?.addEventListener("input", render);
-    document.getElementById('clearSearch')?.addEventListener("click", () => { const sb = document.getElementById('searchBox'); if (sb) sb.value = ""; render(); });
-
-    // Auth state
-    onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        document.getElementById('appContainer').classList.add('hidden');
-        document.getElementById('signedOutContainer').classList.remove('hidden');
-        document.getElementById('userName').classList.add('hidden');
-        document.getElementById('signOutBtn').classList.add('hidden');
-        document.getElementById('adminToolsBtn')?.classList.add('hidden');
-        if (roleUnsub) { roleUnsub(); roleUnsub = null; }
-        currentRole = 'user';
-        applyPermissions();
-        return startListener(); // attempt (will show permission hint if denied)
-      }
-
-      // Signed-in UI
-      document.getElementById('signedOutContainer').classList.add('hidden');
-      document.getElementById('appContainer').classList.remove('hidden');
-      document.getElementById('userName').classList.remove('hidden');
-      document.getElementById('userName').textContent = user.email || "Signed in";
-      document.getElementById('signOutBtn').classList.remove('hidden');
-
-      // Role subscribe
-      if (roleUnsub) { roleUnsub(); roleUnsub = null; }
-      const roleDocRef = doc(db, 'system', 'allowlist', 'users', user.uid);
-      roleUnsub = onSnapshot(roleDocRef, (snap) => {
-        const role = (snap.exists() && typeof snap.data().Role === 'string') ? snap.data().Role : 'user';
-        currentRole = ['user', 'contributor', 'admin'].includes(role) ? role : 'user';
-        applyPermissions();
-      }, () => {
-        currentRole = 'user';
-        applyPermissions();
-      });
-
-      startListener();
-    });
-
-    // Sign-out
-    document.getElementById('signOutBtn')?.addEventListener('click', () => signOut(auth));
-    document.getElementById('signInEmailBtn')?.addEventListener('click', handleSignInEmailPassword);
-    document.getElementById('createAccountBtn')?.addEventListener('click', handleCreateAccount);
-    document.getElementById('resetPasswordBtn')?.addEventListener('click', handlePasswordReset);
-
-    // Init
-    initMap();
-    document.getElementById('modelNote').textContent = "Schema v2: WCS(0–20) PHS(4 weighted; 0–10) ESI(0–30) RPM(0.5–2.5). High = higher risk.";
-    startListener();
+    // Utilities
+    function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function num(v){ const n = Number(v); return isFinite(n) ? n : 0; }
+    function getNum(v){ return num(v); }
+    function bandFromValue(val){
+      const v = num(val);
+      if (v >= 7.5) return 'high';
+      if (v >= 4) return 'medium';
+      return 'low';
+    }
   </script>
 </body>
 </html>

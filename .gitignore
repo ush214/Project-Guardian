@@ -1,3 +1,6 @@
+# Local working folder from README examples — do not commit
+project-guardian-local/
+
 # Logs
 logs
 *.log
