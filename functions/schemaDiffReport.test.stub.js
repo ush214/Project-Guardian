@@ -1,0 +1,1 @@
+// (Optional stub if you add test harness later – not required for deployment)

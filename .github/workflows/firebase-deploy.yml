@@ -1,0 +1,38 @@
+name: Deploy to Firebase
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "public/**"
+      - "firebase.json"
+      - ".firebaserc"
+      - "functions/**"
+      - ".github/workflows/firebase-deploy.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Firebase CLI
+        run: npm i -g firebase-tools@latest
+
+      - name: Install Functions dependencies
+        if: ${{ hashFiles('functions/package.json') != '' }}
+        working-directory: functions
+        run: npm ci
+
+      - name: Deploy Hosting and Functions
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          firebase deploy --only hosting,functions --project project-guardian-agent
