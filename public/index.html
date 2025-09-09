@@ -23,13 +23,11 @@
     crossorigin=""
   ></script>
 
-  <!-- Chart.js (for radar) -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- DOMPurify (sanitize HTML) -->
+  <!-- DOMPurify / Marked -->
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-
-  <!-- Marked (render Markdown to HTML) -->
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 
   <style>
@@ -42,41 +40,20 @@
     .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
     .pill.unknown { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
 
-    /* Report content containment and hygiene */
     .report-prose { max-width: none; }
     .report-prose * { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
-    .report-prose p,
-    .report-prose ul,
-    .report-prose ol,
-    .report-prose table,
-    .report-prose pre,
-    .report-prose blockquote,
-    .report-prose h1,
-    .report-prose h2,
-    .report-prose h3,
-    .report-prose h4,
-    .report-prose h5,
-    .report-prose h6 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
-
-    .report-prose table { width: 100%; border-collapse: collapse; }
     .report-prose th, .report-prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
     .report-prose th { background: #f9fafb; font-weight: 600; }
 
-    .report-prose pre { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb; }
-    .report-prose blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid #e5e7eb; color:#374151; }
-
-    /* Ensure the report panel scrolls naturally */
     #reportScroll { max-height: 75vh; overflow-y: auto; padding-right: 4px; }
     #reportScroll::-webkit-scrollbar { width: 8px; }
     #reportScroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
 
-    /* Gallery */
     .gallery-tile img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; }
     .gallery-tile .file-tile { height: 120px; display:flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#f8fafc; font-size:12px; color:#475569; padding:6px; text-align:center; }
   </style>
 </head>
 <body class="bg-slate-50 text-gray-900">
-  <!-- Header -->
   <header class="bg-gray-900 text-white">
     <div class="max-w-6xl mx-auto px-4 py-3 grid grid-cols-3 gap-3 items-center">
       <div class="flex items-center gap-3">
@@ -87,7 +64,7 @@
         <h1 class="text-lg sm:text-xl font-semibold">Project Guardian – WERP Reports</h1>
       </div>
       <div class="flex items-center justify-end gap-2">
-        <a id="adminToolsBtn" href="/admin-tools.html" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded" title="Open Admin Tools">Admin Tools</a>
+        <a id="adminToolsBtn" href="/admin-tools.html" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded">Admin Tools</a>
         <span id="userName" class="hidden text-xs text-indigo-200"></span>
         <button id="signOutBtn" class="hidden bg-gray-600 hover:bg-gray-500 text-white text-xs px-3 py-1.5 rounded">Sign out</button>
       </div>
@@ -95,7 +72,7 @@
   </header>
 
   <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <!-- Signed-out auth -->
+    <!-- Auth -->
     <section id="signedOutContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 max-w-md mx-auto">
       <h2 class="text-xl font-semibold text-gray-800 mb-2 text-center">Welcome</h2>
       <p class="text-gray-600 mb-4 text-center">Sign in with your email and password to continue.</p>
@@ -121,29 +98,26 @@
       </p>
     </section>
 
-    <!-- App container -->
     <div id="appContainer" class="hidden space-y-6">
       <!-- Analyze -->
       <section class="bg-white border border-gray-200 rounded-xl shadow p-6">
         <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-3">
-            <h2 class="text-lg font-semibold text-gray-800">Analyze New Vessel</h2>
-          </div>
+          <h2 class="text-lg font-semibold text-gray-800">Analyze New Vessel</h2>
           <div class="flex items-center gap-2">
             <span id="roleBadge" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">Role: —</span>
             <span id="contribHint" class="text-xs text-gray-500 hidden">Contributor access required</span>
           </div>
         </div>
         <div class="flex flex-col sm:flex-row gap-3">
-          <input type="text" id="vesselName" class="flex-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="e.g., USS Chevalier" aria-label="Vessel name" />
-          <button id="analyzeBtn" class="bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-800 transition disabled:opacity-50 disabled:cursor-not-allowed" title="Run analysis (Contributors only)">
+          <input type="text" id="vesselName" class="flex-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="e.g., USS Chevalier" />
+          <button id="analyzeBtn" class="bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-800 transition disabled:opacity-50 disabled:cursor-not-allowed">
             <span id="analyzeText">Analyze Wreck</span>
           </button>
         </div>
         <p id="statusMessage" class="text-sm text-gray-500 mt-3 h-5" aria-live="polite"></p>
       </section>
 
-      <!-- Map moved here (top, below Analyze, above lists) -->
+      <!-- Map (top) -->
       <section class="bg-white border border-gray-200 rounded-xl shadow p-3">
         <div id="map"></div>
       </section>
@@ -170,7 +144,6 @@
 
       <!-- Lists -->
       <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <!-- Initial -->
         <div class="bg-white border border-gray-200 rounded-xl shadow p-4">
           <div class="flex items-center justify-between mb-2">
             <h2 class="text-base font-semibold text-gray-800">Initial Assessments</h2>
@@ -179,8 +152,6 @@
           <div id="initialWreckList" class="space-y-2"></div>
           <div id="noInitialWrecksMessage" class="text-sm text-gray-500 border border-dashed border-gray-300 rounded-md p-3 mt-2 hidden">No initial assessments match your filters.</div>
         </div>
-
-        <!-- Completed -->
         <div class="bg-white border border-gray-200 rounded-xl shadow p-4">
           <div class="flex items-center justify-between mb-2">
             <h2 class="text-base font-semibold text-gray-800">Completed Assessments</h2>
@@ -189,8 +160,6 @@
           <div id="completedWreckList" class="space-y-2"></div>
           <div id="noCompletedWrecksMessage" class="text-sm text-gray-500 border border-dashed border-gray-300 rounded-md p-3 mt-2 hidden">No completed assessments match your filters.</div>
         </div>
-
-        <!-- Reassessment -->
         <div class="bg-white border border-gray-200 rounded-xl shadow p-4">
           <div class="flex items-center justify-between mb-2">
             <h2 class="text-base font-semibold text-gray-800">Requiring Reassessment</h2>
@@ -201,27 +170,26 @@
         </div>
       </section>
 
-      <!-- No data banner -->
+      <!-- No data -->
       <section id="noDataBanner" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-md p-3 hidden">
         No assessments found at <span id="assessPathSpan" class="font-mono"></span> for appId
         <span id="appIdSpan" class="font-mono"></span>. Check the collection name and casing in Firestore.
       </section>
 
-      <!-- Full report panel -->
+      <!-- Report -->
       <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden">
         <div class="flex items-center justify-between mb-3">
           <h2 id="reportTitle" class="text-2xl font-bold text-gray-900"></h2>
           <div class="flex items-center gap-2">
-            <button id="exportPdfBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50" title="Export PDF">Export PDF</button>
-            <button id="exportHtmlBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50" title="Export HTML">HTML</button>
-            <button id="exportMdBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50" title="Export Markdown">MD</button>
-            <button id="exportJsonBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50" title="Export JSON">JSON</button>
+            <button id="exportPdfBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">Export PDF</button>
+            <button id="exportHtmlBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">HTML</button>
+            <button id="exportMdBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">MD</button>
+            <button id="exportJsonBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">JSON</button>
           </div>
         </div>
 
-        <!-- Top row: radar chart + gallery -->
+        <!-- Top row: chart + gallery -->
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <!-- Chart -->
           <div class="lg:col-span-3">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
             <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white h-[360px]">
@@ -229,8 +197,6 @@
             </div>
             <div id="benchLegend" class="mt-2 text-xs text-gray-600 text-center"></div>
           </div>
-
-          <!-- Gallery -->
           <div class="lg:col-span-2">
             <h3 class="text-base font-bold mb-3 text-gray-900">Phase 2 Image Gallery</h3>
             <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
@@ -238,7 +204,7 @@
           </div>
         </div>
 
-        <!-- Scrollable report content -->
+        <!-- Report content -->
         <div id="reportScroll" class="mt-4">
           <div id="reportContent" class="report-prose"></div>
         </div>
@@ -249,7 +215,6 @@
           <p class="text-xs text-gray-500 mb-3">Provide UT readings, ROV imagery, and diver logs to finalize classification.</p>
 
           <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <!-- Notes -->
             <div class="lg:col-span-3">
               <label class="text-sm text-gray-700">In-situ notes</label>
               <textarea id="phase2Input" class="w-full min-h-[120px] p-2 border border-gray-300 rounded-md" placeholder="Paste Phase 2 field observations here..."></textarea>
@@ -259,8 +224,6 @@
                 <span id="phase2Status" class="text-xs text-gray-500"></span>
               </div>
             </div>
-
-            <!-- Upload -->
             <div class="lg:col-span-2">
               <label class="text-sm text-gray-700">Upload files (images, PDFs, logs)</label>
               <input id="phase2Files" type="file" multiple class="block w-full mt-1 text-sm file:mr-2 file:py-2 file:px-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:text-gray-700 hover:file:bg-gray-50" />
@@ -273,10 +236,9 @@
           </div>
         </div>
 
-        <!-- Per-report feedback -->
+        <!-- Feedback -->
         <div id="feedbackSection" class="mt-6 border-t pt-4">
           <h3 class="text-base font-semibold text-gray-800 mb-2">Assessment Feedback (per report)</h3>
-          <p class="text-xs text-gray-500 mb-2">Use this to leave guidance or note errors for this specific assessment; entries are saved on the report document.</p>
           <div class="flex flex-col gap-2">
             <textarea id="feedbackInput" class="w-full min-h-[80px] p-2 border border-gray-300 rounded-md" placeholder="Highlight issues, corrections, or guidance for reassessment..."></textarea>
             <div class="flex items-center gap-2">
@@ -293,7 +255,6 @@
     </div>
   </main>
 
-  <!-- App module -->
   <script type="module" src="/app.js"></script>
 </body>
 </html>
