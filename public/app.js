@@ -35,7 +35,7 @@ import {
 // Cloud Functions
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
-// App config
+// App config (keys already public in client app)
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",
@@ -47,23 +47,29 @@ const firebaseConfig = {
 };
 
 // Initialize
-const appId = "guardian";
+const appId = "guardian"; // storage namespace; reading collections are explicit below
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
-// Optional callable functions
-let reassessWerpsFn = null;
-try { reassessWerpsFn = httpsCallable(functions, "reassessWerps"); } catch {}
-const repairWerpsFn = httpsCallable(functions, "repairWerps");
+// Optional callable functions (we'll probe availability before calling)
+const callable = {
+  reassessWerps: null,
+  repairWerps: null,
+};
+try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
+try { callable.repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
 
-// Paths: primary + alternate (guardian-agent-default)
-const assessmentsPath = `artifacts/guardian/public/data/werpassessments`;
-const altAssessmentPaths = [
-  `artifacts/guardian-agent-default/public/data/werpassessments`
+// Collections to READ assessments from (explicit; avoids permission errors on other paths)
+const READ_COLLECTIONS = [
+  "artifacts/guardian/public/data/werpassessments",
+  "artifacts/guardian-agent-default/public/data/werpassessments" // contains Amakasu Maru No. 1
 ];
+
+// Default collection to WRITE new assessments to (Analyze). Change if needed.
+const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
 
 // DOM refs
 const signedOutContainer = document.getElementById("signedOutContainer");
@@ -102,7 +108,7 @@ const reportTitle = document.getElementById("reportTitle");
 const reportContent = document.getElementById("reportContent");
 const benchLegend = document.getElementById("benchLegend");
 
-// Gallery
+// Gallery + Phase 2 inputs
 const galleryGrid = document.getElementById("galleryGrid");
 const galleryEmpty = document.getElementById("galleryEmpty");
 const phase2Input = document.getElementById("phase2Input");
@@ -129,13 +135,13 @@ const exportJsonBtn = document.getElementById("exportJsonBtn");
 const assessPathSpan = document.getElementById("assessPathSpan");
 const appIdSpan = document.getElementById("appIdSpan");
 if (appIdSpan) appIdSpan.textContent = appId;
-if (assessPathSpan) assessPathSpan.textContent = assessmentsPath;
+if (assessPathSpan) assessPathSpan.textContent = READ_COLLECTIONS.join(" + ");
 
 // State
 let currentRole = "user";
 let currentItem = null;
 let currentDocId = null;
-let currentDocPath = assessmentsPath; // Track originating collection path for writes
+let currentDocPath = READ_COLLECTIONS[0]; // track originating path for writes
 let map;
 let markers = new Map();
 let radarChart = null;
@@ -147,7 +153,7 @@ let lastRenderedHtml = "";
 const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
 const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
-// Chart config
+// Chart config (overridable via Firestore config docs)
 let chartConfig = {
   scaleMax: 10,
   benchmarks: { high: 9, medium: 6, low: 3 },
@@ -230,13 +236,11 @@ function readNumberByPaths(obj, paths) {
   return null;
 }
 
-// Identify if a doc is a WERP assessment (exclude seismic/event-only docs)
+// Identify if a doc is a WERP assessment (exclude seismic-only docs)
 function isWerpAssessment(d) {
   const t = String(d?.type ?? d?.recordType ?? d?.category ?? d?.kind ?? d?.meta?.type ?? "").toUpperCase();
   const et = String(d?.eventType ?? d?.events?.type ?? "").toUpperCase();
   const name = String(d?.name ?? d?.title ?? d?.id ?? "").toUpperCase();
-
-  // Exclude if clearly a seismic event record
   const looksSeismic =
     t === "SEISMIC_EVENT" ||
     et === "SEISMIC_EVENT" ||
@@ -244,12 +248,7 @@ function isWerpAssessment(d) {
     (et.includes("SEISMIC") && et.includes("EVENT")) ||
     name.includes("SEISMIC_EVENT");
   if (looksSeismic) return false;
-
-  // Likely a WERP assessment if it has these structures
-  if (hasUnifiedV2(d)) return true;
-  if (d?.wcs || d?.phs || d?.esi || d?.phase1 || d?.phase3) return true;
-
-  // Default: include (fail open) unless clearly event-only
+  // Default to include assessments
   return true;
 }
 
@@ -439,7 +438,7 @@ function getSeverityValue(item) {
   return computeFormulaSeverity(item);
 }
 
-// Config loader
+// Load chart config (optional)
 async function loadChartConfig() {
   const paths = [
     `artifacts/${appId}/public/config/werpChart`,
@@ -629,7 +628,7 @@ function getVesselName(it) {
   return getText(it.id) || "Unknown";
 }
 
-// Summaries/recommendations
+// Section summaries
 function factorSummaryTable(item) {
   const rows = [];
   if (hasUnifiedV2(item)) {
@@ -880,24 +879,14 @@ async function startData() {
     render();
   };
 
-  // Primary
-  try {
-    const un = onSnapshot(collection(db, assessmentsPath),
-      (snap) => applySnap(snap, assessmentsPath),
-      (err) => console.error("Snapshot error (primary)", err)
-    );
-    dataUnsubs.push(un);
-  } catch (e) { console.error("Listener error (primary)", e); }
-
-  // Alternates
-  for (const p of altAssessmentPaths) {
+  for (const p of READ_COLLECTIONS) {
     try {
       const un = onSnapshot(collection(db, p),
         (snap) => applySnap(snap, p),
         (err) => console.error(`Snapshot error (${p})`, err)
       );
       dataUnsubs.push(un);
-    } catch (e) { console.error("Listener error (alt)", p, e); }
+    } catch (e) { console.error("Listener error", p, e); }
   }
 }
 
@@ -998,7 +987,7 @@ function drawList(container, items) {
 function openReport(item) {
   currentItem = item;
   currentDocId = item?.id || null;
-  currentDocPath = item?._path || assessmentsPath; // set path for subsequent writes
+  currentDocPath = item?._path || READ_COLLECTIONS[0]; // set path for subsequent writes
   const vessel = getVesselName(item);
   if (reportTitle) reportTitle.textContent = vessel || "Assessment";
 
@@ -1114,7 +1103,8 @@ reassessBtn?.addEventListener("click", async () => {
   phase2Status.textContent = "Submitting reassessment...";
   try {
     const payload = { docId: currentDocId, docPath: currentDocPath, usePhase2: true, normalize: true };
-    if (reassessWerpsFn) await reassessWerpsFn(payload); else await repairWerpsFn(payload);
+    if (callable.reassessWerps) await callable.reassessWerps(payload);
+    else if (callable.repairWerps) await callable.repairWerps(payload);
 
     setTimeout(async () => {
       const snap = await getDoc(doc(db, currentDocPath, currentDocId));
@@ -1174,6 +1164,55 @@ saveFeedbackBtn?.addEventListener("click", async () => {
   }
 });
 
+// Analyze new vessel (fix: add handler; pick first available function name)
+const analyzeFunctionNames = [
+  "analyzeWreck",
+  "analyzeWerps",
+  "ingestWerps",
+  "createWerpsAssessment",
+  "createAssessmentFromName"
+];
+function getCallableByName(name) {
+  try { return httpsCallable(functions, name); } catch { return null; }
+}
+analyzeBtn?.addEventListener("click", async () => {
+  const name = vesselNameInput?.value?.trim();
+  if (!name) { statusMessage.textContent = "Enter a vessel name to analyze."; return; }
+  analyzeBtn.disabled = true;
+  analyzeText.textContent = "Analyzing...";
+  statusMessage.textContent = "Submitting analysis request...";
+
+  let fn = null;
+  let fnName = "";
+  for (const n of analyzeFunctionNames) {
+    const c = getCallableByName(n);
+    if (c) { fn = c; fnName = n; break; }
+  }
+  if (!fn) {
+    statusMessage.textContent = "No analysis function is deployed (expected one of: " + analyzeFunctionNames.join(", ") + ").";
+    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck";
+    return;
+  }
+
+  try {
+    const payload = {
+      name,
+      appId,
+      targetPath: DEFAULT_WRITE_COLLECTION, // where to create the assessment
+      source: "web-app"
+    };
+    await fn(payload);
+    statusMessage.textContent = `Analysis requested via ${fnName}. It will appear in the lists when ready.`;
+    vesselNameInput.value = "";
+    // Refresh will be automatic via onSnapshot listeners
+  } catch (e) {
+    statusMessage.textContent = `Analysis failed: ${e?.message || String(e)}`;
+  } finally {
+    analyzeBtn.disabled = false;
+    analyzeText.textContent = "Analyze Wreck";
+  }
+});
+
 // Auth UI handlers
 document.getElementById("signInEmailBtn")?.addEventListener("click", async () => {
   const email = document.getElementById("emailInput").value.trim();
@@ -1206,7 +1245,7 @@ document.getElementById("resetPasswordBtn")?.addEventListener("click", async () 
 });
 signOutBtn?.addEventListener("click", async () => { try { await signOut(auth); } catch {} });
 
-// Role fetch
+// Roles
 async function fetchRoleFor(uid) {
   try {
     const allowDocRef = doc(db, "system", "allowlist", "users", uid);
@@ -1280,39 +1319,32 @@ onAuthStateChanged(auth, async (user) => {
   await startData();
 });
 
-// Export helpers
-function downloadFile(filename, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+// Export helpers (rename to avoid any scope/name collisions; bind after definitions)
 function getCurrentHtml() {
   if (!currentItem) return "";
   if (hasUnifiedV2(currentItem)) return lastRenderedHtml || renderReportV2HTML(currentItem);
   return lastRenderedHtml || buildReportHtml(currentItem);
 }
-function exportHtml() {
+function onExportHtml() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || "assessment";
   const html = getCurrentHtml();
   const docHtml = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${html}</body></html>`;
   downloadFile(`${vessel.replace(/\s+/g,"_")}.html`, new Blob([docHtml], { type: "text/html;charset=utf-8" }));
 }
-function exportMarkdown() {
+function onExportMarkdown() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || "assessment";
   const md = buildReportMarkdown(currentItem);
   downloadFile(`${vessel.replace(/\s+/g,"_")}.md`, new Blob([md], { type: "text/markdown;charset=utf-8" }));
 }
-function exportJson() {
+function onExportJson() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || "assessment";
   const json = JSON.stringify(currentItem, null, 2);
   downloadFile(`${vessel.replace(/\s+/g,"_")}.json`, new Blob([json], { type: "application/json;charset=utf-8" }));
 }
-function exportPdf() {
+function onExportPdf() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || "assessment";
 
@@ -1362,12 +1394,20 @@ function exportPdf() {
     setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 500);
   }
 }
-exportPdfBtn?.addEventListener("click", exportPdf);
-exportHtmlBtn?.addEventListener("click", exportHtml);
-exportMdBtn?.addEventListener("click", exportMarkdown);
-exportJsonBtn?.addEventListener("click", exportJson);
+function downloadFile(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// Bind export buttons (fix: ensure handlers exist before binding)
+exportPdfBtn?.addEventListener("click", onExportPdf);
+exportHtmlBtn?.addEventListener("click", onExportHtml);
+exportMdBtn?.addEventListener("click", onExportMarkdown);
+exportJsonBtn?.addEventListener("click", onExportJson);
 
-// Flatten helper
+// Normalize doc
 function normalizeDoc(d) {
   const out = { ...d };
   if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
