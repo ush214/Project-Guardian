@@ -212,11 +212,7 @@
       getDoc,
       serverTimestamp,
       collection,
-      query,
-      orderBy,
-      onSnapshot,
-      getDocs,
-      limit
+      onSnapshot
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
@@ -240,38 +236,9 @@
 
     // Callable functions
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
-    const repairWerpsFn    = httpsCallable(functions, 'repairWerps');
 
-    // Candidate collection paths (case/camel variants)
-    const candidateAssessmentPaths = [
-      `artifacts/${appId}/public/data/werpassessments`,
-      `artifacts/${appId}/public/data/werpAssessments`,
-      `artifacts/${appId}/public/werpassessments`,
-      `artifacts/${appId}/public/werpAssessments`,
-      `artifacts/${appId}/data/werpassessments`,
-      `artifacts/${appId}/data/werpAssessments`,
-      `artifacts/${appId}/public/data/assessments`
-    ];
-    let currentAssessmentsPath = candidateAssessmentPaths[0];
-    let assessmentsCollectionRef = null;
-
-    async function probeForAssessmentsPath() {
-      for (const p of candidateAssessmentPaths) {
-        try {
-          const qs = await getDocs(query(collection(db, p), limit(1)));
-          if (!qs.empty) {
-            console.log('[WERP] Using assessments path:', p);
-            currentAssessmentsPath = p;
-            return p;
-          }
-        } catch (e) {
-          console.warn('[WERP] Probe failed for', p, e?.message || e);
-        }
-      }
-      console.log('[WERP] No docs found in candidates. Using default path:', candidateAssessmentPaths[0]);
-      currentAssessmentsPath = candidateAssessmentPaths[0];
-      return currentAssessmentsPath;
-    }
+    // Assessments path (no capitalization)
+    const assessmentsPath = `artifacts/${appId}/public/data/werpassessments`;
 
     // Role helper: reads Role/role (case-insensitive) from allowlist, fallback to legacy private path
     async function fetchRoleFor(uid) {
@@ -311,6 +278,35 @@
       } catch (e) { /* ignore */ }
 
       return 'user';
+    }
+
+    // Compute severity value from multiple possible fields or from formula
+    function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+    function pickNum(...vals) { for (const v of vals) { const n = toNum(v); if (n !== null) return n; } return null; }
+    function computeFormulaSeverity(item) {
+      const W = pickNum(item?.scores?.WCS, item?.wcs, item?.WCS);
+      const P = pickNum(item?.scores?.PHS, item?.phs, item?.PHS);
+      const E = pickNum(item?.scores?.ESI, item?.esi, item?.ESI);
+      const R = pickNum(item?.scores?.RPM, item?.rpm, item?.RPM);
+      if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
+      return null;
+    }
+    function getSeverityValue(item) {
+      const direct = pickNum(
+        item?.severity?.value,
+        item?.severityValue,
+        item?.severity_score,
+        item?.severityScore,
+        item?.score
+      );
+      const formula = computeFormulaSeverity(item);
+      return direct ?? formula ?? 0;
+    }
+    function bandFromValue(val){
+      const v = Number(val) || 0;
+      if (v >= 7.5) return 'high';
+      if (v >= 4) return 'medium';
+      return 'low';
     }
 
     // Role/permissions
@@ -365,7 +361,9 @@
     const noDataBanner = document.getElementById('noDataBanner');
     const assessPathSpan = document.getElementById('assessPathSpan');
     const appIdSpan = document.getElementById('appIdSpan');
+
     appIdSpan.textContent = appId;
+    assessPathSpan.textContent = assessmentsPath;
 
     // Auth UI
     document.getElementById('signInEmailBtn').addEventListener('click', async () => {
@@ -448,6 +446,11 @@
     });
 
     // Analyze action
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const analyzeText = document.getElementById('analyzeText');
+    const vesselNameInput = document.getElementById('vesselName');
+    const statusMessage = document.getElementById('statusMessage');
+
     analyzeBtn.addEventListener('click', async () => {
       const name = vesselNameInput.value.trim();
       statusMessage.textContent = '';
@@ -469,6 +472,8 @@
     });
 
     // Map
+    const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
+
     function initMap(){
       if (map) return;
       map = L.map('map').setView([10, 150], 3);
@@ -476,7 +481,7 @@
         id: 'mapbox/streets-v12',
         tileSize: 512,
         zoomOffset: -1,
-        accessToken: "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w",
+        accessToken: MAPBOX_TOKEN,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a>'
       }).addTo(map);
     }
@@ -495,10 +500,11 @@
       const id = item?.id;
       if (!id || !coords?.latitude || !coords?.longitude) return;
 
-      const band = item?.severity?.band || bandFromValue(item?.severity?.value);
+      const sv = getSeverityValue(item);
+      const band = item?.severity?.band || bandFromValue(sv);
       const pos = [coords.latitude, coords.longitude];
       const title = escapeHtml(item?.vesselName || item?.name || item?.id || "Unknown");
-      const popupHtml = `<div><strong>${title}</strong><br/>Severity: ${(band||"").toUpperCase()} ${num(item?.severity?.value)}</div>`;
+      const popupHtml = `<div><strong>${title}</strong><br/>Severity: ${(band||"").toUpperCase()} ${sv.toFixed(2)}</div>`;
 
       if (markers.has(id)) {
         const m = markers.get(id);
@@ -521,10 +527,10 @@
     // Radar chart
     function renderRadar(item) {
       const ctx = document.getElementById('werSpiderChart').getContext('2d');
-      const wcs = getNum(item?.scores?.WCS ?? item?.wcs);
-      const phs = getNum(item?.scores?.PHS ?? item?.phs);
-      const esi = getNum(item?.scores?.ESI ?? item?.esi);
-      const rpm = getNum(item?.scores?.RPM ?? item?.rpm);
+      const wcs = pickNum(item?.scores?.WCS, item?.wcs, item?.WCS) ?? 0;
+      const phs = pickNum(item?.scores?.PHS, item?.phs, item?.PHS) ?? 0;
+      const esi = pickNum(item?.scores?.ESI, item?.esi, item?.ESI) ?? 0;
+      const rpm = pickNum(item?.scores?.RPM, item?.rpm, item?.RPM) ?? 0;
 
       const data = {
         labels: ['WCS', 'PHS', 'ESI', 'RPM'],
@@ -561,22 +567,24 @@
 
     async function startData() {
       if (dataUnsub) return;
-      const path = await probeForAssessmentsPath();
-      assessmentsCollectionRef = collection(db, path);
-      assessPathSpan.textContent = path;
+      const colRef = collection(db, assessmentsPath);
 
-      const qy = query(assessmentsCollectionRef, orderBy('severity.value', 'desc'));
-      dataUnsub = onSnapshot(qy, (snap) => {
+      dataUnsub = onSnapshot(colRef, (snap) => {
         allItems = [];
         snap.forEach(docSnap => {
           const d = docSnap.data() || {};
           d.id = d.id || docSnap.id;
-          if (!d.severity) d.severity = {};
-          if (d.severity.value == null) d.severity.value = 0;
-          d.severity.band = d.severity.band || bandFromValue(d.severity.value);
+
+          // Compute severity value and band without relying on a specific field name
+          const sv = getSeverityValue(d);
+          if (!d.severity || typeof d.severity !== 'object') d.severity = {};
+          d.severity.value = sv;
+          d.severity.band = d.severity.band || bandFromValue(sv);
+
           allItems.push(d);
         });
-        console.log('[WERP] Loaded docs:', allItems.length, 'from', path);
+
+        console.log('[WERP] Loaded docs:', allItems.length, 'from', assessmentsPath);
         render();
       }, (err) => {
         console.error('Snapshot error', err);
@@ -624,7 +632,8 @@
         else initial.push(it);
       }
 
-      const bySeverity = (a, b) => num(b?.severity?.value) - num(a?.severity?.value);
+      // Sort by computed severity value desc
+      const bySeverity = (a, b) => (b?.severity?.value ?? 0) - (a?.severity?.value ?? 0);
       initial.sort(bySeverity);
       completed.sort(bySeverity);
       reassess.sort(bySeverity);
@@ -654,10 +663,11 @@
         li.className = 'list-item flex items-center justify-between gap-3';
         const band = it?.severity?.band || 'low';
         const vessel = escapeHtml(it?.vesselName || it?.name || it?.id || 'Unknown');
+        const sv = (it?.severity?.value ?? 0).toFixed(2);
         li.innerHTML = `
           <div class="min-w-0">
             <div class="text-sm font-semibold text-gray-900 truncate">${vessel}</div>
-            <div class="text-xs text-gray-500">Severity: ${band.toUpperCase()} ${num(it?.severity?.value)}</div>
+            <div class="text-xs text-gray-500">Severity: ${band.toUpperCase()} ${sv}</div>
           </div>
           <span class="pill ${band}">${band.toUpperCase()}</span>
         `;
@@ -676,7 +686,7 @@
           <h3>Summary</h3>
           <table>
             <tr><th>Vessel</th><td>${escapeHtml(item?.vesselName || item?.name || item?.id || '')}</td></tr>
-            <tr><th>Severity</th><td>${(item?.severity?.band || 'low').toUpperCase()} ${num(item?.severity?.value)}</td></tr>
+            <tr><th>Severity</th><td>${(item?.severity?.band || 'low').toUpperCase()} ${(item?.severity?.value ?? 0).toFixed(2)}</td></tr>
             <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
             <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
           </table>
@@ -689,14 +699,6 @@
 
     // Utilities
     function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function num(v){ const n = Number(v); return isFinite(n) ? n : 0; }
-    function getNum(v){ return num(v); }
-    function bandFromValue(val){
-      const v = num(val);
-      if (v >= 7.5) return 'high';
-      if (v >= 4) return 'medium';
-      return 'low';
-    }
   </script>
 </body>
 </html>
