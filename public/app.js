@@ -107,14 +107,19 @@ let chartConfig = {
   }
 };
 
-// Utility helpers
+// Utilities
 function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function isFiniteNum(n){ return typeof n === 'number' && Number.isFinite(n); }
 function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function getText(v) { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; }
 function deepGet(obj, path) { return path.split('.').reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj); }
-
-// Flatten entries with full path
+function toTitleCase(s) {
+  return String(s || '')
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+}
 function flattenEntries(obj, maxDepth = 4) {
   const out = [];
   (function rec(cur, path, depth){
@@ -127,56 +132,117 @@ function flattenEntries(obj, maxDepth = 4) {
     if (!keys.length) out.push([path, cur]);
     for (const k of keys) {
       const p = path ? `${path}.${k}` : k;
-      if (typeof cur[k] === 'object' && cur[k] !== null) {
-        rec(cur[k], p, depth + 1);
-      } else {
-        out.push([p, cur[k]]);
-      }
+      if (typeof cur[k] === 'object' && cur[k] !== null) rec(cur[k], p, depth + 1);
+      else out.push([p, cur[k]]);
     }
   })(obj, '', 0);
   return out;
 }
 
-function normalizeDoc(d) {
-  const out = { ...d };
-  if (d && typeof d.data === 'object' && d.data) Object.assign(out, d.data);
-  if (d && typeof d.payload === 'object' && d.payload) Object.assign(out, d.payload);
-  if (d && typeof d.attributes === 'object' && d.attributes) Object.assign(out, d.attributes);
-  if (d && typeof d.details === 'object' && d.details) Object.assign(out, d.details);
-  if (d && typeof d.meta === 'object' && d.meta) out.meta = { ...d.meta };
-  if (d && typeof d.metadata === 'object' && d.metadata) out.metadata = { ...d.metadata };
-  return out;
-}
+// Robust text extraction to avoid [object Object]
+function extractHtml(val) {
+  if (typeof val === 'string') {
+    const s = val.trim();
+    if (s) return sanitizeReportHtml(`<p>${escapeHtml(s).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
+    return null;
+  }
+  if (val == null) return null;
 
-function getVesselName(it) {
-  const direct = [
-    it.vesselName, it.name, it.title, it.displayName, it.label,
-    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
-    it.meta?.vesselName, it.meta?.name, it.meta?.title,
-    it.metadata?.vesselName, it.metadata?.name, it.metadata?.title,
-    it.phase1?.screening?.vesselName,
-    it['vessel_name'], it['Vessel Name'], it['VESSEL_NAME'],
-    it['wreck_title'], it['ship_name'], it['Ship Name'], it['Name']
-  ];
-  for (const c of direct) { const t = getText(c); if (t) return t; }
+  if (typeof val === 'object') {
+    const html = getText(val.html);
+    if (html) return sanitizeReportHtml(html);
 
-  // Heuristic scan
-  const pairs = flattenEntries(it, 2);
-  const keyRx = /(vessel|wreck|ship|name|title)/i;
-  for (const [k, v] of pairs) { if (!keyRx.test(k)) continue; const t = getText(v); if (t) return t; }
+    const md = getText(val.markdown ?? val.md);
+    if (md) return renderMarkdown(md);
 
-  return getText(it.id) || 'Unknown';
-}
+    const text = getText(val.text ?? val.content ?? val.value ?? val.body ?? val.summary);
+    if (text) {
+      return sanitizeReportHtml(`<p>${escapeHtml(text).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
+    }
 
-// Severity computation
-function computeFormulaSeverity(item) {
-  const W = readNumberByPaths(item, ['scores.WCS','wcs','WCS','risk.WCS','phase1.screening.WCS','phase2.scores.WCS']);
-  const P = readNumberByPaths(item, ['scores.PHS','phs','PHS','risk.PHS','phase1.screening.PHS','phase2.scores.PHS']);
-  const E = readNumberByPaths(item, ['scores.ESI','esi','ESI','risk.ESI','phase1.screening.ESI','phase2.scores.ESI']);
-  const R = readNumberByPaths(item, ['scores.RPM','rpm','RPM','risk.RPM','phase1.screening.RPM','phase2.scores.RPM']);
-  if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
+    const parts = Array.isArray(val.parts) ? val.parts : Array.isArray(val.content) ? val.content : null;
+    if (parts) {
+      const chunk = parts
+        .map(p => typeof p === 'string' ? p : (p?.text ?? p?.content ?? p?.markdown ?? p?.html ?? ''))
+        .filter(Boolean)
+        .join('\n\n')
+        .trim();
+      if (chunk) return extractHtml(chunk);
+    }
+
+    const acc = [];
+    (function dfs(o, depth = 0) {
+      if (o == null || acc.length >= 2 || depth > 3) return;
+      if (typeof o === 'string') { const t = o.trim(); if (t) acc.push(t); return; }
+      if (Array.isArray(o)) { for (const v of o) { dfs(v, depth + 1); if (acc.length >= 2) break; } return; }
+      if (typeof o === 'object') { for (const v of Object.values(o)) { dfs(v, depth + 1); if (acc.length >= 2) break; } }
+    })(val);
+    if (acc.length) {
+      const s = acc.join('\n\n');
+      return sanitizeReportHtml(`<p>${escapeHtml(s).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
+    }
+  }
+
+  if (Array.isArray(val)) {
+    const chunks = val.map(extractHtml).filter(Boolean);
+    if (chunks.length) return chunks.join('\n');
+  }
   return null;
 }
+function extractPlain(val) {
+  if (typeof val === 'string') return val.trim() || null;
+  if (val == null) return null;
+
+  if (typeof val === 'object') {
+    const text = getText(val.text ?? val.content ?? val.value ?? val.summary ?? val.body);
+    if (text) return text;
+
+    const md = getText(val.markdown ?? val.md);
+    if (md) return md;
+
+    const html = getText(val.html);
+    if (html) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = sanitizeReportHtml(html);
+      return tmp.textContent?.trim() || null;
+    }
+
+    const parts = Array.isArray(val.parts) ? val.parts : Array.isArray(val.content) ? val.content : null;
+    if (parts) {
+      const chunk = parts
+        .map(p => typeof p === 'string' ? p : (p?.text ?? p?.content ?? p?.markdown ?? p?.html ?? ''))
+        .filter(Boolean).join('\n\n').trim();
+      if (chunk) return chunk;
+    }
+
+    let out = null;
+    (function dfs(o, depth = 0) {
+      if (o == null || out || depth > 3) return;
+      if (typeof o === 'string') { const t = o.trim(); if (t) { out = t; } return; }
+      if (Array.isArray(o)) { for (const v of o) { dfs(v, depth + 1); if (out) break; } return; }
+      if (typeof o === 'object') { for (const v of Object.values(o)) { dfs(v, depth + 1); if (out) break; } }
+    })(val);
+    return out;
+  }
+
+  if (Array.isArray(val)) {
+    for (const v of val) {
+      const t = extractPlain(v);
+      if (t) return t;
+    }
+  }
+  return null;
+}
+function readTextByPaths(obj, paths) {
+  for (const p of paths) {
+    const v = deepGet(obj, p);
+    const t = extractPlain(v);
+    if (t) return t;
+  }
+  return null;
+}
+
+// Severity computation helpers
 function coerceToNumber(val) {
   if (typeof val === 'number') return Number.isFinite(val) ? val : null;
   if (typeof val === 'string') {
@@ -226,12 +292,36 @@ function readNumberByPaths(obj, paths) {
   }
   return null;
 }
+function computeFormulaSeverity(item) {
+  const W = readNumberByPaths(item, ['scores.WCS','wcs','WCS','risk.WCS','phase1.screening.WCS','phase2.scores.WCS']);
+  const P = readNumberByPaths(item, ['scores.PHS','phs','PHS','risk.PHS','phase1.screening.PHS','phase2.scores.PHS']);
+  const E = readNumberByPaths(item, ['scores.ESI','esi','ESI','risk.ESI','phase1.screening.ESI','phase2.scores.ESI']);
+  const R = readNumberByPaths(item, ['scores.RPM','rpm','RPM','risk.RPM','phase1.screening.RPM','phase2.scores.RPM']);
+  if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
+  return null;
+}
 function bandFromValue(val){
   const v = Number(val);
   if (!Number.isFinite(v)) return 'unknown';
   if (v >= 7.5) return 'high';
   if (v >= 4) return 'medium';
   return 'low';
+}
+function getSeverityValue(item) {
+  const direct = readNumberByPaths(item, ['severity.value','severityValue','severity_score','severityScore','score','risk.severity','risk.score']);
+  if (direct !== null) return direct;
+  const formula = computeFormulaSeverity(item);
+  if (formula !== null) return formula;
+  const sevBandText = deepGet(item, 'severity.band') ?? deepGet(item, 'severity.level') ?? item.severity;
+  const s = getText(sevBandText);
+  if (s) {
+    if (/^low$/i.test(s)) return 3;
+    if (/^med(iu)?m$/i.test(s)) return 6;
+    if (/^high$/i.test(s)) return 9;
+    const m = s.match(/-?\d+(\.\d+)?/);
+    if (m) return Number(m[0]);
+  }
+  return null;
 }
 
 // Config: load benchmark levels if present
@@ -250,9 +340,7 @@ async function loadChartConfig() {
             low: Number(cfg.benchmarks.low ?? chartConfig.benchmarks.low)
           };
         }
-        if (cfg.colors && typeof cfg.colors === 'object') {
-          chartConfig.colors = { ...chartConfig.colors, ...cfg.colors };
-        }
+        if (cfg.colors && typeof cfg.colors === 'object') chartConfig.colors = { ...chartConfig.colors, ...cfg.colors };
         return;
       }
     } catch {}
@@ -386,7 +474,7 @@ function renderRadar(item) {
   renderBenchLegend();
 }
 
-// Sanitize/compact report HTML or render Markdown/plain text
+// Sanitize/markdown
 function sanitizeReportHtml(html) {
   let safe = DOMPurify.sanitize(html || '', {
     RETURN_TRUSTED_TYPE: false,
@@ -409,16 +497,25 @@ function renderMarkdown(md) {
   }
 }
 
-// Title case utility
-function toTitleCase(s) {
-  return String(s || '')
-    .replace(/[_\-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+// Vessel name resolver
+function getVesselName(it) {
+  const direct = [
+    it.vesselName, it.name, it.title, it.displayName, it.label,
+    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
+    it.meta?.vesselName, it.meta?.name, it.meta?.title,
+    it.metadata?.vesselName, it.metadata?.name, it.metadata?.title,
+    it.phase1?.screening?.vesselName,
+    it['vessel_name'], it['Vessel Name'], it['VESSEL_NAME'],
+    it['wreck_title'], it['ship_name'], it['Ship Name'], it['Name']
+  ];
+  for (const c of direct) { const t = getText(c); if (t) return t; }
+  const pairs = flattenEntries(it, 2);
+  const keyRx = /(vessel|wreck|ship|name|title)/i;
+  for (const [k, v] of pairs) { if (!keyRx.test(k)) continue; const t = getText(v); if (t) return t; }
+  return getText(it.id) || 'Unknown';
 }
 
-// Extract factors and rationales for WCS/PHS/ESI/RPM
+// Axis details (scores + rationale)
 function extractAxisDetails(item) {
   const axes = ['WCS','PHS','ESI','RPM'];
   const flat = flattenEntries(item, 4);
@@ -433,13 +530,13 @@ function extractAxisDetails(item) {
       if (!path) continue;
       if (!path.toUpperCase().includes(ax)) continue;
       if (!ratRx.test(path)) continue;
-      const t = getText(value);
+      const t = extractPlain(value);
       if (t) { details[ax].rationale = t; break; }
     }
     if (!details[ax].rationale) {
       const obj = deepGet(item, ax.toLowerCase()) || deepGet(item, `scores.${ax}`) || deepGet(item, `phase1.screening.${ax}`) || deepGet(item, `screening.${ax}`);
       if (obj && typeof obj === 'object') {
-        const t = getText(obj.rationale || obj.justification || obj.reason || obj.explanation || obj.notes || obj.detail || obj.comment);
+        const t = extractPlain(obj.rationale || obj.justification || obj.reason || obj.explanation || obj.notes || obj.detail || obj.comment);
         if (t) details[ax].rationale = t;
       }
     }
@@ -447,78 +544,134 @@ function extractAxisDetails(item) {
   return details;
 }
 
-// Render any narrative sections in screening objects
+// Screening narratives (de-duplicated; exclude metadata and score fields)
 function renderScreeningSections(item) {
   const sections = [];
   const carriers = [ item?.screening, item?.phase1?.screening ];
-  const pick = (o, k) => getText(o?.[k]);
+  const seen = new Set();
+
+  const pushSection = (title, htmlOrText) => {
+    const html = extractHtml(htmlOrText);
+    if (!html) return;
+    const key = `${title}|${html}`;
+    if (seen.has(key)) return;
+    sections.push(`<h3>${escapeHtml(title)}</h3>`);
+    sections.push(html);
+    seen.add(key);
+  };
 
   for (const sc of carriers) {
     if (!sc || typeof sc !== 'object') continue;
+
     const candidates = {
-      'Screening Summary': pick(sc, 'summary'),
-      'Rationale': pick(sc, 'rationale'),
-      'Methodology': pick(sc, 'methodology'),
-      'Assumptions': pick(sc, 'assumptions'),
-      'Limitations': pick(sc, 'limitations'),
-      'Data Sources': pick(sc, 'sources') || pick(sc, 'dataSources')
+      'Screening Summary': sc.summary,
+      'Rationale': sc.rationale,
+      'Methodology': sc.methodology,
+      'Assumptions': sc.assumptions,
+      'Limitations': sc.limitations,
+      'Data Sources': sc.sources ?? sc.dataSources
     };
-    for (const [title, text] of Object.entries(candidates)) {
-      if (text) sections.push(`<h3>${escapeHtml(title)}</h3><p>${escapeHtml(text).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
-    }
+    for (const [title, val] of Object.entries(candidates)) pushSection(title, val);
 
     for (const [k, v] of Object.entries(sc)) {
-      if (candidates[toTitleCase(k)]) continue;
-      const tv = getText(v);
-      if (tv && typeof v === 'string') {
-        const keyPretty = toTitleCase(k);
-        if (/^(wcs|phs|esi|rpm|score|value|lat|lng|coordinates?)$/i.test(keyPretty)) continue;
-        sections.push(`<h4>${escapeHtml(keyPretty)}</h4><p>${escapeHtml(tv).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
+      const keyLower = String(k).toLowerCase();
+      const isNarrativeKey = /^(summary|rationale|methodology|assumptions|limitations|sources|datasources)$/.test(keyLower);
+      const isScoreKey = /^(wcs|phs|esi|rpm|score|value|lat|lng|latitude|longitude|coordinates?)$/.test(keyLower);
+      const isMetaKey = /^(vessel(type)?|shiptype|class|sunk(date)?|sinking(cause)?|datesunk|nation|flag|country|displacement|tonnage)$/.test(keyLower);
+      if (isNarrativeKey || isScoreKey || isMetaKey) continue;
+
+      const html = extractHtml(v);
+      if (html) {
+        const title = toTitleCase(k);
+        const dedupeKey = `sc:${title}|${html}`;
+        if (!seen.has(dedupeKey)) {
+          sections.push(`<h4>${escapeHtml(title)}</h4>`);
+          sections.push(html);
+          seen.add(dedupeKey);
+        }
       }
     }
   }
   return sections.join('\n');
 }
 
+// Key Facts + narrative composer
 function buildReportHtml(item) {
-  const htmlFields = [ item?.report?.html, item?.html, item?.reportHtml ]
-    .filter(v => typeof v === 'string' && v.trim().length);
-  if (htmlFields.length) return sanitizeReportHtml(htmlFields[0]);
-
-  const mdFields = [ item?.report?.markdown, item?.report_markdown, item?.markdown ]
-    .filter(v => typeof v === 'string' && v.trim().length);
-  if (mdFields.length) return renderMarkdown(mdFields[0]);
-
   const blocks = [];
-  const addSection = (title, text) => {
-    if (!text) return;
-    blocks.push(`<h3>${escapeHtml(title)}</h3>`);
-    blocks.push(`<p>${escapeHtml(text).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
+
+  // Top narratives
+  const summaryHtml = extractHtml(item?.summary) || extractHtml(item?.phase1?.summary);
+  if (summaryHtml) { blocks.push('<h3>Summary</h3>', summaryHtml); }
+
+  const finalSummaryHtml = extractHtml(item?.finalSummary);
+  if (finalSummaryHtml) { blocks.push('<h3>Final Summary</h3>', finalSummaryHtml); }
+
+  const conclusionHtml = extractHtml(item?.conclusion);
+  if (conclusionHtml) { blocks.push('<h3>Conclusion</h3>', conclusionHtml); }
+
+  // Key facts (de-duplicated)
+  const vesselType = readTextByPaths(item, ['vesselType','vessel_type','type','shipType','class','metadata.vesselType','meta.vesselType']);
+  const sunkDate = readTextByPaths(item, ['sunkDate','sunk_date','dateSunk','sunkdate','phase1.screening.sunkDate']);
+  const sinkingCause = readTextByPaths(item, ['sinkingCause','causeOfSinking','sinking_cause','cause','phase1.screening.sinkingCause']);
+  const coords = (() => {
+    const c = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
+    const lat = c?.latitude ?? c?.lat ?? c?.y;
+    const lng = c?.longitude ?? c?.lng ?? c?.x;
+    if (lat == null || lng == null) return null;
+    return `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`;
+  })();
+
+  const details = [];
+  const addDetail = (k, v) => {
+    const t = extractPlain(v);
+    if (!t) return;
+    const key = `${k}:${t}`.toLowerCase();
+    if (details.some(d => d.key === key)) return;
+    details.push({ key, label: k, value: t });
   };
 
-  addSection('Summary', getText(item?.summary) || getText(item?.phase1?.summary));
-  addSection('Final Summary', getText(item?.finalSummary));
-  addSection('Conclusion', getText(item?.conclusion));
+  if (vesselType) addDetail('Vessel Type', vesselType);
+  if (sunkDate) addDetail('Sunk Date', sunkDate);
+  if (sinkingCause) addDetail('Sinking Cause', sinkingCause);
+  if (coords) addDetail('Coordinates', coords);
 
-  const details = extractAxisDetails(item);
+  const extraPairs = [
+    ['Nation', readTextByPaths(item, ['nation','flag','country','metadata.nation'])],
+    ['Class', readTextByPaths(item, ['class','shipClass'])],
+    ['Displacement', readTextByPaths(item, ['displacement','tonnage'])]
+  ];
+  for (const [label, val] of extraPairs) if (val) addDetail(label, val);
+
+  if (details.length) {
+    blocks.push('<h3>Key Facts</h3>');
+    blocks.push('<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>');
+    for (const d of details) {
+      blocks.push(`<tr><th style="white-space:nowrap">${escapeHtml(d.label)}</th><td>${escapeHtml(d.value)}</td></tr>`);
+    }
+    blocks.push('</tbody></table>');
+  }
+
+  // Factors and rationale
+  const detailsAxes = extractAxisDetails(item);
   const row = (label, d) => {
     const scoreTxt = isFiniteNum(d.score) ? d.score.toFixed(2) : '—';
-    const rat = d.rationale ? escapeHtml(d.rationale).replace(/\n/g,'<br>') : '';
-    return `<tr><th style="white-space:nowrap">${label}</th><td style="width:80px">${scoreTxt}</td><td>${rat}</td></tr>`;
+    const ratHtml = extractHtml(d.rationale) || (d.rationale ? sanitizeReportHtml(`<p>${escapeHtml(String(d.rationale))}</p>`) : '');
+    return `<tr><th style="white-space:nowrap">${label}</th><td style="width:80px">${scoreTxt}</td><td>${ratHtml || ''}</td></tr>`;
   };
   blocks.push(`
     <h3>Factor Scores and Rationale</h3>
     <table>
       <thead><tr><th>Factor</th><th>Score</th><th>Rationale</th></tr></thead>
       <tbody>
-        ${row('WCS', details.WCS)}
-        ${row('PHS', details.PHS)}
-        ${row('ESI', details.ESI)}
-        ${row('RPM', details.RPM)}
+        ${row('WCS', detailsAxes.WCS)}
+        ${row('PHS', detailsAxes.PHS)}
+        ${row('ESI', detailsAxes.ESI)}
+        ${row('RPM', detailsAxes.RPM)}
       </tbody>
     </table>
   `);
 
+  // Screening narratives
   const screeningHtml = renderScreeningSections(item);
   if (screeningHtml) blocks.push(screeningHtml);
 
@@ -526,29 +679,56 @@ function buildReportHtml(item) {
   return blocks.join('\n');
 }
 
+// Markdown version (object-aware)
 function buildReportMarkdown(item) {
   const lines = [];
   const vessel = getVesselName(item);
   lines.push(`# ${vessel}`);
-  const s = getText(item?.summary) || getText(item?.phase1?.summary);
+
+  const s = extractPlain(item?.summary) || extractPlain(item?.phase1?.summary);
   if (s) { lines.push('\n## Summary'); lines.push(s); }
-  const fs = getText(item?.finalSummary);
+
+  const fs = extractPlain(item?.finalSummary);
   if (fs) { lines.push('\n## Final Summary'); lines.push(fs); }
-  const c = getText(item?.conclusion);
+
+  const c = extractPlain(item?.conclusion);
   if (c) { lines.push('\n## Conclusion'); lines.push(c); }
+
+  const vesselType = readTextByPaths(item, ['vesselType','vessel_type','type','shipType','class','metadata.vesselType','meta.vesselType']);
+  const sunkDate = readTextByPaths(item, ['sunkDate','sunk_date','dateSunk','sunkdate','phase1.screening.sunkDate']);
+  const sinkingCause = readTextByPaths(item, ['sinkingCause','causeOfSinking','sinking_cause','cause','phase1.screening.sinkingCause']);
+  const coords = (() => {
+    const c = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
+    const lat = c?.latitude ?? c?.lat ?? c?.y;
+    const lng = c?.longitude ?? c?.lng ?? c?.x;
+    if (lat == null || lng == null) return null;
+    return `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`;
+  })();
+
+  const facts = [];
+  const pushFact = (k, v) => { const t = extractPlain(v); if (t && !facts.some(f => f.k === k && f.v === t)) facts.push({k, v: t}); };
+  if (vesselType) pushFact('Vessel Type', vesselType);
+  if (sunkDate) pushFact('Sunk Date', sunkDate);
+  if (sinkingCause) pushFact('Sinking Cause', sinkingCause);
+  if (coords) pushFact('Coordinates', coords);
+
+  if (facts.length) {
+    lines.push('\n## Key Facts');
+    for (const f of facts) lines.push(`- ${f.k}: ${f.v}`);
+  }
 
   const d = extractAxisDetails(item);
   lines.push('\n## Factor Scores and Rationale');
   lines.push('| Factor | Score | Rationale |');
   lines.push('|---|---:|---|');
-  const row = (k, o) => `| ${k} | ${isFiniteNum(o.score)?o.score.toFixed(2):'—'} | ${o.rationale?.replace(/\n/g,'<br>') || ''} |`;
+  const row = (k, o) => `| ${k} | ${isFiniteNum(o.score)?o.score.toFixed(2):'—'} | ${(extractPlain(o.rationale) || '').replace(/\n/g,'<br>')} |`;
   lines.push(row('WCS', d.WCS));
   lines.push(row('PHS', d.PHS));
   lines.push(row('ESI', d.ESI));
   lines.push(row('RPM', d.RPM));
 
   const carriers = [ item?.screening, item?.phase1?.screening ];
-  const addIf = (title, v) => { const t = getText(v); if (t) { lines.push(`\n## ${title}`); lines.push(t); } };
+  const addIf = (title, v) => { const t = extractPlain(v); if (t) { lines.push(`\n## ${title}`); lines.push(t); } };
   for (const sc of carriers) {
     if (!sc) continue;
     addIf('Screening Summary', sc.summary);
@@ -717,7 +897,7 @@ document.getElementById('resetPasswordBtn').addEventListener('click', async () =
 });
 signOutBtn.addEventListener('click', async () => { try { await signOut(auth); } catch {} });
 
-// Role helper (allowlist then legacy)
+// Role helper
 async function fetchRoleFor(uid) {
   try {
     const allowDocRef = doc(db, 'system', 'allowlist', 'users', uid);
@@ -736,6 +916,7 @@ async function fetchRoleFor(uid) {
       if (d.allowed === true) return 'user';
     }
   } catch {}
+
   try {
     const legacyRef = doc(db, `artifacts/${appId}/private/users/${uid}`);
     const legacyDoc = await getDoc(legacyRef);
@@ -752,6 +933,7 @@ async function fetchRoleFor(uid) {
       if (d.contributor === true) return 'contributor';
     }
   } catch {}
+
   return 'user';
 }
 
@@ -854,9 +1036,7 @@ function exportPdf() {
     w.document.open();
     w.document.write(html);
     w.document.close();
-    // Trigger print when the new window finishes loading
     w.addEventListener('load', () => { try { w.focus(); w.print(); } catch {} });
-    // Fallback in case load doesn’t fire reliably
     setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 500);
   }
 }
@@ -865,20 +1045,14 @@ exportHtmlBtn.addEventListener('click', exportHtml);
 exportMdBtn.addEventListener('click', exportMarkdown);
 exportJsonBtn.addEventListener('click', exportJson);
 
-// Severity helpers (after other functions)
-function getSeverityValue(item) {
-  const direct = readNumberByPaths(item, ['severity.value','severityValue','severity_score','severityScore','score','risk.severity','risk.score']);
-  if (direct !== null) return direct;
-  const formula = computeFormulaSeverity(item);
-  if (formula !== null) return formula;
-  const sevBandText = deepGet(item, 'severity.band') ?? deepGet(item, 'severity.level') ?? item.severity;
-  const s = getText(sevBandText);
-  if (s) {
-    if (/^low$/i.test(s)) return 3;
-    if (/^med(iu)?m$/i.test(s)) return 6;
-    if (/^high$/i.test(s)) return 9;
-    const m = s.match(/-?\d+(\.\d+)?/);
-    if (m) return Number(m[0]);
-  }
-  return null;
+// Normalization
+function normalizeDoc(d) {
+  const out = { ...d };
+  if (d && typeof d.data === 'object' && d.data) Object.assign(out, d.data);
+  if (d && typeof d.payload === 'object' && d.payload) Object.assign(out, d.payload);
+  if (d && typeof d.attributes === 'object' && d.attributes) Object.assign(out, d.attributes);
+  if (d && typeof d.details === 'object' && d.details) Object.assign(out, d.details);
+  if (d && typeof d.meta === 'object' && d.meta) out.meta = { ...d.meta };
+  if (d && typeof d.metadata === 'object' && d.metadata) out.metadata = { ...d.metadata };
+  return out;
 }
