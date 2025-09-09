@@ -2,7 +2,8 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <!-- FIX: The previous CSP meta tag was removed as it was causing conflicts with browser extensions and preventing scripts from loading correctly, which broke the login functionality. -->
+  <!-- FIX: A Content Security Policy (CSP) has been reinstated. The previous version was too restrictive and was removed, but running without one causes conflicts with browser extensions. This updated policy is designed to allow the application and extensions to run without blocking critical scripts, which should resolve the login failure. -->
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https: blob:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; img-src 'self' https: data:;">
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Project Guardian: AI Wreck Assessment Agent</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
