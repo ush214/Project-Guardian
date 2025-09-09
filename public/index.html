@@ -2,12 +2,15 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
+  <!-- FIX: Added Content-Security-Policy to allow blob scripts, preventing a runtime error. -->
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net https://www.gstatic.com blob:;">
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Project Guardian: AI Wreck Assessment Agent</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
+  <!-- Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -20,6 +23,7 @@
     crossorigin=""
   ></script>
 
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <link rel="stylesheet" href="styles.css" />
@@ -28,20 +32,28 @@
 </head>
 <body class="text-gray-800" style="font-family:'Inter',sans-serif;">
 <header class="bg-white shadow-md">
-  <div class="container mx-auto px-4 md:px-8 py-4 flex justify-between items-center">
-    <div class="flex items-center space-x-4">
-      <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-16" />
-      <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Deeptrek Logo" class="h-16" />
+  <!-- UPDATE: Restructured header for stable layout and larger logos -->
+  <div class="container mx-auto px-4 md:px-8 py-3 flex justify-between items-center gap-4">
+    <!-- Left: Logos -->
+    <div class="flex items-center space-x-4 flex-shrink-0">
+      <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-20" />
+      <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Deeptrek Logo" class="h-20" />
     </div>
-    <div class="flex items-center gap-3">
-      <h1 class="hidden md:block text-2xl font-bold text-gray-700">Project Guardian AI Wreck Assessment Agent</h1>
+
+    <!-- Center: Title (Grows and shrinks, hidden on smaller screens) -->
+    <div class="flex-grow text-center hidden lg:block">
+      <h1 class="text-2xl xl:text-3xl font-bold text-gray-700 truncate">Project Guardian AI Wreck Assessment Agent</h1>
+    </div>
+
+    <!-- Right: Controls -->
+    <div class="flex items-center gap-3 flex-shrink-0">
       <button
         id="themeToggle"
-        class="ml-4 rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
+        class="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
         aria-label="Toggle theme"
         title="Toggle theme"
       >🌙</button>
-      <div id="userInfo" class="hidden items-center gap-3 ml-4">
+      <div id="userInfo" class="hidden items-center gap-3">
         <span id="roleBadge" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">Role: —</span>
         <a id="adminToolsBtn" href="/admin-tools.html"
            class="hidden text-xs px-3 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
@@ -59,6 +71,7 @@
 </header>
 
 <main class="container mx-auto p-4 md:p-8">
+  <!-- Signed-out auth -->
   <section id="signedOutContainer" class="mt-10 bg-white rounded-lg shadow p-8 max-w-md mx-auto">
     <h2 class="text-2xl font-semibold text-gray-800 mb-2 text-center">Welcome</h2>
     <p class="text-gray-600 mb-6 text-center">Sign in with your email and password to continue.</p>
@@ -84,7 +97,9 @@
     </p>
   </section>
 
+  <!-- App container -->
   <div id="appContainer" class="hidden">
+    <!-- Analyze New Vessel -->
     <div class="bg-white rounded-lg shadow-lg p-6 mb-8 max-w-2xl mx-auto">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-3">
@@ -118,12 +133,14 @@
       <p id="statusMessage" class="text-sm text-gray-500 mt-4 text-center h-4" aria-live="polite"></p>
     </div>
 
+    <!-- Map -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
       <div id="mapContainer" class="lg:col-span-3 bg-white rounded-lg shadow-lg p-4">
         <div id="map"></div>
       </div>
     </div>
 
+    <!-- Lists -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
       <div class="bg-white rounded-lg shadow-lg p-6">
         <h2 class="text-xl font-semibold mb-4 text-gray-700">Initial Assessments</h2>
@@ -151,6 +168,7 @@
       </div>
     </div>
 
+    <!-- Report -->
     <div id="reportContainer" class="mt-8 bg-white rounded-lg shadow-lg p-6 md:p-8 max-w-6xl mx-auto hidden">
       <h2 id="reportTitle" class="text-4xl font-bold mb-6 text-center text-gray-800"></h2>
       <div id="alert-display-section" class="hidden mb-6"></div>
@@ -726,369 +744,5 @@ async function callGemini(prompt) {
   const result = await callGeminiFunction({ prompt });
   const raw = result?.data;
   if (typeof raw !== "string") throw new Error("Model response not a string.");
-  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch (e) {
-    throw new Error("Model returned invalid JSON.");
-  }
-}
+  const cleaned = raw.trim().replace(/^
 
-// ---------------------------------------------------------------------------
-// UI & Report Rendering
-// ---------------------------------------------------------------------------
-function setLoading(isLoading, text = 'Analyzing...') {
-  ui.analyzeBtn.disabled = isLoading || !(currentRole === 'contributor' || currentRole === 'admin');
-  ui.spinner.classList.toggle('hidden', !isLoading);
-  ui.analyzeText.textContent = isLoading ? text : 'Analyze Wreck';
-}
-
-function updateStatus(message, isError = false) {
-  ui.statusMessage.textContent = message;
-  ui.statusMessage.style.color = isError ? '#ef4444' : '#6b7280';
-}
-
-function setRateLimit() {
-  isRateLimited = true;
-  setTimeout(() => {
-    isRateLimited = false;
-    updateStatus("");
-  }, 30000);
-}
-
-function renderReport(data, docId) {
-  if (!data || !data.phase1) {
-    updateStatus("Report missing Phase 1 data.", true);
-    return;
-  }
-  ui.reportTitle.textContent = `WERP Assessment: ${data.vesselName}`;
-
-  if (Array.isArray(data.alerts) && data.alerts.some(a => !a.acknowledged)) {
-    ui.alertDisplaySection.classList.remove('hidden');
-    ui.alertDisplaySection.innerHTML = `
-      <div class="p-4 mb-6 bg-yellow-50 border-l-4 border-yellow-400">
-        <h3 class="font-bold text-yellow-800">Recent Environmental Incident</h3>
-        <p class="text-sm text-yellow-700 mt-1">
-          A recent event was detected near this wreck. Re-assessment recommended.
-        </p>
-      </div>`;
-  } else {
-    ui.alertDisplaySection.classList.add('hidden');
-  }
-
-  const canContribute = (currentRole === 'contributor' || currentRole === 'admin');
-
-  const phase2HTML = data.status === 'completed'
-    ? `<section><h3>Phase 2: In-Situ Assessment (Completed)</h3><p>${data?.phase2?.summary ?? ''}</p></section>`
-    : (canContribute
-        ? `<section>
-            <h3>Phase 2: In-Situ Assessment (Recommended)</h3>
-            <p>Provide on-site survey details (UT readings, ROV imagery, diver logs) for final classification.</p>
-            <div class="mt-4 space-y-2">
-              <textarea id="phase2-text-input" class="w-full h-32 p-2 border border-gray-300 rounded-md"
-                        placeholder="Paste Phase 2 field observations here..."></textarea>
-              <div class="flex gap-2">
-                <button id="enhance-report-btn"
-                        class="bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition">
-                  Enhance Report
-                </button>
-                <button id="repair-sections-btn"
-                        class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 transition" title="Re-run missing sections">
-                  Re-run Sections
-                </button>
-              </div>
-            </div>
-          </section>`
-        : `<section>
-            <h3>Phase 2: In-Situ Assessment (Recommended)</h3>
-            <p class="text-gray-600">Contributor access required to add Phase 2 data.</p>
-          </section>`);
-
-  function createTable(rows, headers, keys, cellFormat = {}) {
-    let table = '<table><thead><tr>';
-    headers.forEach(h => table += `<th>${h}</th>`);
-    table += '</tr></thead><tbody>';
-    rows.forEach(row => {
-      table += '<tr>';
-      keys.forEach(k => {
-        const val = row?.[k];
-        const f = cellFormat[k];
-        const out = f ? f(val, row) : (val ?? '');
-        table += `<td>${out}</td>`;
-      });
-      table += '</tr>';
-    });
-    table += '</tbody></table>';
-    return table;
-  }
-
-  const wcsTotal = Number(data?.wcs?.totalScore ?? 0);
-  const phsTotal = Number(data?.phs?.totalWeightedScore ?? 0);
-  const esiTotal = Number(data?.esi?.totalScore ?? 0);
-  const esiMax  = Number(data?.esi?.maxScore ?? (esiTotal <= 30 ? 30 : 40));
-  const rpmMult = Number(data?.rpm?.finalMultiplier ?? 1.0);
-
-  ui.reportContent.innerHTML = `
-    <section>
-      <h3>Case Study Background</h3>
-      <p>${data?.phase1?.summary?.background ?? '—'}</p>
-      <p><strong>Location:</strong> ${data?.phase1?.summary?.location ?? '—'}</p>
-      <p><strong>Discovery:</strong> ${data?.phase1?.summary?.discovery ?? '—'}</p>
-    </section>
-
-    <section>
-      <h3>Phase 1: Scoping & Screening</h3>
-      <ul class="list-disc ml-5 space-y-1">
-        <li><strong>Vessel Type:</strong> ${data?.phase1?.screening?.vesselType ?? '—'}</li>
-        <li><strong>Tonnage:</strong> ${data?.phase1?.screening?.tonnage ?? '—'}</li>
-        <li><strong>Year Built:</strong> ${data?.phase1?.screening?.yearBuilt ?? '—'}</li>
-        <li><strong>Last Owner:</strong> ${data?.phase1?.screening?.lastOwner ?? '—'}</li>
-        <li><strong>Coordinates:</strong> ${data?.phase1?.screening?.coordinates?.latitude ?? '—'}, ${data?.phase1?.screening?.coordinates?.longitude ?? '—'}</li>
-      </ul>
-    </section>
-
-    ${phase2HTML}
-
-    <section>
-      <h3>Phase 3: WCS (Hull & Structure)</h3>
-      ${createTable(
-        data?.wcs?.parameters ?? [],
-        ['Parameter', 'Rationale', 'Score (0–5)'],
-        ['name', 'rationale', 'score'],
-        { score: (v) => (v ?? '') }
-      )}
-      <p class="mt-2"><strong>Total:</strong> ${Number.isFinite(wcsTotal) ? wcsTotal : '—'} / 20</p>
-    </section>
-
-    <section>
-      <h3>Phase 3: PHS (Pollution Hazard)</h3>
-      <p class="note mb-2">Weights: Fuel 0.40, Ordnance 0.25, Vessel Integrity 0.20, Hazardous Materials 0.15.</p>
-      ${createTable(
-        (data?.phs?.parameters ?? []).map(p => ({ ...p })),
-        ['Parameter', 'Weight', 'Rationale', 'Score (0–10)'],
-        ['name', 'weight', 'rationale', 'score'],
-        {
-          weight: v => (v === undefined ? '—' : v),
-          score: v => (v ?? '')
-        }
-      )}
-      <p class="mt-2"><strong>Total Weighted Score:</strong> ${Number.isFinite(phsTotal) ? phsTotal.toFixed(2) : '—'} / 10</p>
-    </section>
-
-    <section>
-      <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
-      ${createTable(
-        data?.esi?.parameters ?? [],
-        ['Parameter', 'Rationale', 'Score (0–10)'],
-        ['name', 'rationale', 'score']
-      )}
-      <p class="mt-2"><strong>Total:</strong> ${Number.isFinite(esiTotal) ? esiTotal : '—'} / ${esiMax}</p>
-    </section>
-
-    <section>
-      <h3>Phase 3: RPM (Risk Pressure Modifiers)</h3>
-      ${createTable(
-        (data?.rpm?.factors ?? []).map(f => ({
-          ...f,
-          rationale: (typeof f?.rationale === 'string' && f.rationale.trim()) ? f.rationale : 'Not specified.'
-        })),
-        ['Factor', 'Rationale', 'Value (0.5–2.5)'],
-        ['name', 'rationale', 'value']
-      )}
-      <p class="mt-2"><strong>Final Multiplier:</strong> ${Number.isFinite(rpmMult) ? rpmMult.toFixed(2) : '—'}× <span class="note">(1.00 baseline)</span></p>
-    </section>
-
-    <section>
-      <h3>${data?.status === 'completed' ? 'Final' : 'Preliminary'} Risk Synthesis & Classification</h3>
-      ${data?.status === 'completed'
-        ? ''
-        : `<p class="italic text-gray-600">
-             Preliminary scores; Phase 2 field verification may adjust risk classification.
-           </p>`}
-    </section>
-
-    <section>
-      <h3>Summative Assessment</h3>
-      <p>${data?.finalSummary?.summativeAssessment ?? '—'}</p>
-    </section>
-
-    <section>
-      <h3>Remediation Suggestions</h3>
-      ${(data?.finalSummary?.remediationSuggestions ?? []).map(s => `
-        <div class="mt-4">
-          <h4>Priority ${s?.priority ?? ''}: ${s?.title ?? ''}</h4>
-          <p>${s?.description ?? ''}</p>
-        </div>
-      `).join('')}
-    </section>
-  `;
-
-  if (data?.status !== 'completed' && canContribute) {
-    const enhanceBtn = document.getElementById('enhance-report-btn');
-    if (enhanceBtn) {
-      enhanceBtn.addEventListener('click', () => {
-        const phase2Text = document.getElementById('phase2-text-input').value;
-        if (phase2Text.trim()) {
-          enhanceAnalysis(docId, data, phase2Text.trim());
-        } else {
-          alert("Enter Phase 2 observations first.");
-        }
-      });
-    }
-    const repairBtn = document.getElementById('repair-sections-btn');
-    if (repairBtn) {
-      repairBtn.addEventListener('click', async () => {
-        try {
-          setLoading(true, "Re-running sections...");
-          const res = await repairWerpsFn({ docId, dryRun: false });
-          console.log("repairWerps result:", res.data || res);
-          updateStatus("Sections updated. Refreshing report...");
-          await handleWreckSelection(docId);
-        } catch (e) {
-          updateStatus("Section repair failed.", true);
-        } finally {
-          setLoading(false);
-        }
-      });
-    }
-  }
-
-  createOrUpdateSpiderChart({
-    wcs: wcsTotal,
-    phs: phsTotal,
-    esi: esiTotal,
-    esiMax,
-    rpm: rpmMult
-  });
-  ui.reportContainer.classList.remove('hidden');
-}
-
-// Radar chart logic
-function createOrUpdateSpiderChart({ wcs, phs, esi, esiMax, rpm }) {
-  const ctx = document.getElementById('werSpiderChart').getContext('2d');
-
-  const wcs20 = (wcs / 20) * 20;
-  const phs20 = (phs / 10) * 20;
-  const esi20 = (esi / (esiMax || 30)) * 20;
-  // RPM 0.5..2.5 => 0..20
-  const rpm20 = ((Math.min(Math.max(rpm, 0.5), 2.5) - 0.5) / 2.0) * 20;
-
-  const profile = [wcs20, phs20, esi20, rpm20].map(v => Math.max(0, Math.min(20, v)));
-
-  const lowCap = [6, 6, 6, 6];
-  const medCap = [12, 12, 12, 12];
-  const highCap = [20, 20, 20, 20];
-
-  if (window.spiderChart) {
-    window.spiderChart.data.datasets[0].data = lowCap;
-    window.spiderChart.data.datasets[1].data = medCap;
-    window.spiderChart.data.datasets[2].data = highCap;
-    window.spiderChart.data.datasets[3].data = profile;
-    window.spiderChart.update();
-    return;
-  }
-
-  window.spiderChart = new Chart(ctx, {
-    type: 'radar',
-    data: {
-      labels: ['WCS', 'PHS', 'ESI', 'RPM'],
-      datasets: [
-        {
-          label: 'Low benchmark',
-            data: lowCap,
-          backgroundColor: 'rgba(16,185,129,0.18)',
-          borderColor: 'rgba(16,185,129,0.45)',
-          pointRadius: 0,
-          order: 1
-        },
-        {
-          label: 'Medium benchmark',
-          data: medCap,
-          backgroundColor: 'rgba(245,158,11,0.14)',
-          borderColor: 'rgba(245,158,11,0.45)',
-          pointRadius: 0,
-          fill: '-1',
-          order: 2
-        },
-        {
-          label: 'High benchmark',
-          data: highCap,
-          backgroundColor: 'rgba(239,68,68,0.12)',
-          borderColor: 'rgba(239,68,68,0.45)',
-          pointRadius: 0,
-          fill: '-1',
-          order: 3
-        },
-        {
-          label: 'Risk Profile',
-          data: profile,
-          backgroundColor: 'rgba(30,64,175,0.22)',
-          borderColor: 'rgba(30,64,175,1)',
-          pointBackgroundColor: 'rgba(30,64,175,1)',
-          order: 4
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: 'top' } },
-      scales: {
-        r: { suggestedMin: 0, suggestedMax: 20, ticks: { stepSize: 4 } }
-      }
-    }
-  });
-}
-
-function getRiskProfile(data) {
-  try {
-    const wcs20 = (Number(data?.wcs?.totalScore || 0) / 20) * 20;
-    const phs20 = (Number(data?.phs?.totalWeightedScore || 0) / 10) * 20;
-    const esiTotal = Number(data?.esi?.totalScore || 0);
-    const esiMax = Number(data?.esi?.maxScore || (esiTotal <= 30 ? 30 : 40));
-    const esi20 = (esiTotal / esiMax) * 20;
-    const rpmVal = Number(data?.rpm?.finalMultiplier || 1);
-    const rpm20 = ((Math.min(Math.max(rpmVal, 0.5), 2.5) - 0.5) / 2.0) * 20;
-
-    const avg = (wcs20 + phs20 + esi20 + rpm20) / (4 * 20);
-    const color = avg >= 0.66 ? 'red' : avg >= 0.33 ? 'orange' : 'green';
-    const label = avg >= 0.66 ? 'High' : avg >= 0.33 ? 'Medium' : 'Low';
-    return { avg, color, label };
-  } catch {
-    return { avg: 0, color: 'green', label: 'Low' };
-  }
-}
-
-function createPopupContent(data, risk) {
-  const name = data?.vesselName ?? 'Unknown';
-  return `<div><strong>${name}</strong><br/>Risk: ${risk.label}</div>`;
-}
-
-// ---------------------------------------------------------------------------
-// Enhancement (Phase 2) – simplified skeleton
-// ---------------------------------------------------------------------------
-async function enhanceAnalysis(docId, existingData, phase2Text) {
-  if (!(currentRole === 'contributor' || currentRole === 'admin')) return;
-  setLoading(true, "Enhancing...");
-  try {
-    // Minimal placeholder: treat enhancement as updating phase2 summary only (extend if needed).
-    const docRef = doc(db, `artifacts/${appId}/public/data/werpassessments`, docId);
-    await updateDoc(docRef, {
-      phase2: {
-        summary: phase2Text,
-        sourceData: phase2Text
-      },
-      status: "completed",
-      updatedAt: serverTimestamp()
-    });
-    updateStatus("Enhancement stored (Phase 2). Reloading...");
-    handleWreckSelection(docId);
-  } catch (error) {
-    updateStatus(`Enhancement failed: ${error.message}`, true);
-  } finally {
-    setLoading(false);
-  }
-}
-
-</script>
-</body>
-</html>
