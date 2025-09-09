@@ -54,22 +54,15 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
-// Optional/available callable functions (names must exist in your functions/)
 let reassessWerpsFn = null;
 try { reassessWerpsFn = httpsCallable(functions, "reassessWerps"); } catch {}
 const repairWerpsFn = httpsCallable(functions, "repairWerps");
 
 // Paths
 const assessmentsPath = `artifacts/${appId}/public/data/werpassessments`;
-const appConfigPathCandidates = [
-  `artifacts/${appId}/public/config/werpChart`,
-  `artifacts/${appId}/public/config/werpRadarBenchmarks`,
-  `artifacts/${appId}/public/config/werp`
+const altAssessmentPaths = [
+  `artifacts/${appId}/public/data/WERPAssessments` // common case-variant path
 ];
-
-// Logo URLs for PDF header
-const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
-const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
 // DOM refs
 const signedOutContainer = document.getElementById("signedOutContainer");
@@ -144,11 +137,11 @@ let currentDocId = null;
 let map;
 let markers = new Map();
 let radarChart = null;
-let dataUnsub = null;
+let dataUnsubs = [];
 let allItems = [];
 let lastRenderedHtml = "";
 
-// Chart config (overridable from Firestore config docs)
+// Chart config (overridable)
 let chartConfig = {
   scaleMax: 10,
   benchmarks: { high: 9, medium: 6, low: 3 },
@@ -164,7 +157,7 @@ let chartConfig = {
   }
 };
 
-// Utilities
+// Utils
 const escapeHtml = (s) => String(s || "").replace(/[&<>\"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
 const isFiniteNum = (n) => typeof n === "number" && Number.isFinite(n);
 const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
@@ -239,7 +232,7 @@ function hasUnifiedV2(item) {
       && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
 }
 
-// Strict RPM multiplier resolver (0.5..2.5)
+// Strict RPM multiplier (0.5..2.5)
 function resolveRPMMultiplier(item) {
   const explicit = toNum(deepGet(item, "rpm.finalMultiplier")) ?? toNum(deepGet(item, "RPM.finalMultiplier"));
   if (isFiniteNum(explicit)) return clamp(explicit, 0.5, 2.5);
@@ -264,7 +257,7 @@ function resolveRPMMultiplier(item) {
   return 1.0;
 }
 
-// WCS normalizer (canonical 4 categories, normalizes 0–10 to 0–5)
+// WCS normalizer (canonical 4 categories, 0–10 => 0–5)
 function normalizeWcsParameters(rawParams = []) {
   const params = (Array.isArray(rawParams) ? rawParams : [])
     .map(p => ({
@@ -285,13 +278,13 @@ function normalizeWcsParameters(rawParams = []) {
     trauma: /(sinking|trauma|attack|torpedo|explosion|breach|scuttl)/i,
     integrity: /(structur|integrit|intact|collapse|fragment|condition|hull)/i
   };
-  const flatFind = (arrRx) => params.find(p => (Array.isArray(arrRx) ? arrRx : [arrRx]).some(r => r.test(p.name)));
+  const findBy = (a) => params.find(p => (Array.isArray(a) ? a : [a]).some(r => r.test(p.name)));
 
   const picks = {
-    age: flatFind(rx.age),
-    vessel: flatFind(rx.vessel),
-    trauma: flatFind(rx.trauma),
-    integrity: flatFind(rx.integrity)
+    age: findBy(rx.age),
+    vessel: findBy(rx.vessel),
+    trauma: findBy(rx.trauma),
+    integrity: findBy(rx.integrity)
   };
 
   const norm = (v) => {
@@ -311,8 +304,7 @@ function normalizeWcsParameters(rawParams = []) {
   return { rows, total: Number(total.toFixed(2)), scaleNote };
 }
 
-// Normalize PHS weights: accept fractions (0–1) or percents (0–100), normalize to sum=1.0
-// Also exclude WCS-like parameters (e.g., Vessel Integrity & Sinking) from PHS.
+// Normalize PHS weights (0–1 or 0–100 => sum to 1), exclude WCS-like terms from PHS
 function normalizePhsWeights(params = []) {
   const wcsNameRx = /(structur|integrit|intact|collapse|fragment|hull|sinking|trauma|age|year|built|commission|vessel\s*(type|size)|tonnage|displacement|class)/i;
   const allowedPhsRx = /(fuel|bunker|oil|volume|type|munitions|ordnance|uxo|pop|pcb|hazard|asbestos|chem|chemical cargo|heavy metal|paint|anti[- ]?foul|leach|leaching|hfo|diesel)/i;
@@ -324,7 +316,6 @@ function normalizePhsWeights(params = []) {
       scoreRaw: Number(p?.score),
       weightRaw: Number(p?.weight)
     }))
-    // Exclude WCS-like terms from PHS and include only pollution-relevant categories
     .filter(i => i.name && (allowedPhsRx.test(i.name) || !wcsNameRx.test(i.name)));
 
   const weights = items.map(i => Number.isFinite(i.weightRaw) ? i.weightRaw : 0);
@@ -373,7 +364,7 @@ function normalizePhsWeights(params = []) {
   };
 }
 
-// v2 totals using WCS normalizer and normalized PHS weights
+// v2 totals
 function v2Totals(item) {
   const wNorm = normalizeWcsParameters(item?.wcs?.parameters || []);
   const wcs = wNorm.total;
@@ -400,7 +391,7 @@ function v2Totals(item) {
   };
 }
 
-// Severity calculation
+// Severity
 function computeFormulaSeverity(item) {
   if (hasUnifiedV2(item)) {
     const v = v2Totals(item);
@@ -419,9 +410,14 @@ function getSeverityValue(item) {
   return computeFormulaSeverity(item);
 }
 
-// Load chart config
+// Config
 async function loadChartConfig() {
-  for (const p of appConfigPathCandidates) {
+  const paths = [
+    `artifacts/${appId}/public/config/werpChart`,
+    `artifacts/${appId}/public/config/werpRadarBenchmarks`,
+    `artifacts/${appId}/public/config/werp`
+  ];
+  for (const p of paths) {
     try {
       const snap = await getDoc(doc(db, p));
       if (snap.exists()) {
@@ -463,7 +459,7 @@ function markerIconFor(band) {
   });
 }
 
-// Choose a thumbnail image for the marker popup (prefer web-friendly images)
+// Pick an image for map popup
 function getMarkerImageUrl(item) {
   const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
@@ -475,10 +471,7 @@ function getMarkerImageUrl(item) {
     item?.image, item?.photo, item?.thumbnail, item?.bannerImage
   ].filter(Boolean);
   for (const u of candidates) {
-    try {
-      const s = String(u);
-      if (webExt.test(s)) return s;
-    } catch {}
+    try { const s = String(u); if (webExt.test(s)) return s; } catch {}
   }
   return null;
 }
@@ -519,7 +512,7 @@ function upsertMarker(item) {
 }
 function clearMarkers() { for (const m of markers.values()) { try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-// Radar chart helpers
+// Radar
 function getAxisScores(item) {
   let w, p, e;
   if (hasUnifiedV2(item)) {
@@ -538,8 +531,9 @@ function getAxisScores(item) {
 }
 function renderBenchLegend() {
   const b = chartConfig.benchmarks;
-  if (!benchLegend) return;
-  benchLegend.innerHTML = `
+  const el = benchLegend;
+  if (!el) return;
+  el.innerHTML = `
     <span style="color:${chartConfig.colors.highBorder}">High</span>: ${b.high} &nbsp;|&nbsp;
     <span style="color:${chartConfig.colors.mediumBorder}">Medium</span>: ${b.medium} &nbsp;|&nbsp;
     <span style="color:${chartConfig.colors.lowBorder}">Low</span>: ${b.low}
@@ -593,7 +587,7 @@ function renderRadarV2(item) {
   renderBenchLegend();
 }
 
-// Vessel naming
+// Vessel name
 function getVesselName(it) {
   const direct = [
     it.vesselName, it.name, it.title, it.displayName, it.label,
@@ -604,7 +598,7 @@ function getVesselName(it) {
   return getText(it.id) || "Unknown";
 }
 
-// Summaries/recommendations
+// Section summaries
 function factorSummaryTable(item) {
   const rows = [];
   if (hasUnifiedV2(item)) {
@@ -660,16 +654,14 @@ function getRecommendations(item) {
   return null;
 }
 
-// Generic report renderer
+// Report renderers
 function buildReportHtml(item) {
   const blocks = [];
-
   const summaryHtml = getSummativeText(item);
   if (summaryHtml) { blocks.push("<h3>Summary</h3>", summaryHtml); }
 
   blocks.push(factorSummaryTable(item));
 
-  // Compact factor table
   const W = readNumberByPaths(item, ["wcs","scores.WCS","WCS"]) ?? 0;
   const P = readNumberByPaths(item, ["phs","scores.PHS","PHS"]) ?? 0;
   const E = readNumberByPaths(item, ["esi","scores.ESI","ESI"]) ?? 0;
@@ -692,8 +684,6 @@ function buildReportHtml(item) {
 
   return blocks.join("\n");
 }
-
-// v2 detailed report renderer (with normalized 4-row WCS, and PHS weights in %)
 function renderReportV2HTML(item) {
   const v = v2Totals(item);
 
@@ -834,23 +824,41 @@ function buildReportMarkdown(item) {
   return lines.join("\n");
 }
 
-// Data load
+// Data
 async function startData() {
-  if (dataUnsub) return;
+  // Clean previous listeners
+  for (const u of dataUnsubs) { try { u(); } catch {} }
+  dataUnsubs = [];
+
   await loadChartConfig();
 
-  const colRef = collection(db, assessmentsPath);
-  dataUnsub = onSnapshot(colRef, (snap) => {
-    allItems = [];
+  // Merge maps by doc id across multiple collections
+  const byId = new Map();
+  const applySnap = (snap) => {
     snap.forEach(docSnap => {
       const raw = docSnap.data() || {};
       const d = { ...normalizeDoc(raw), id: raw?.id || docSnap.id };
       const sv = getSeverityValue(d);
       d.severity = { ...(d.severity || {}), value: sv, band: d.severity?.band || bandFromValue(sv) };
-      allItems.push(d);
+      byId.set(d.id, d);
     });
+    allItems = Array.from(byId.values());
     render();
-  }, (err) => console.error("Snapshot error", err));
+  };
+
+  // Primary collection
+  try {
+    const un = onSnapshot(collection(db, assessmentsPath), applySnap, (err) => console.error("Snapshot error (primary)", err));
+    dataUnsubs.push(un);
+  } catch (e) { console.error("Listener error (primary)", e); }
+
+  // Alternate case/path variants
+  for (const p of altAssessmentPaths) {
+    try {
+      const un = onSnapshot(collection(db, p), applySnap, (err) => console.error(`Snapshot error (${p})`, err));
+      dataUnsubs.push(un);
+    } catch (e) { console.error("Listener error (alt)", p, e); }
+  }
 }
 
 // Filters
@@ -863,10 +871,10 @@ function getVisibleItems() {
   if (sevHigh?.checked) activeBands.add("high");
   if (sevMedium?.checked) activeBands.add("medium");
   if (sevLow?.checked) activeBands.add("low");
-  const term = searchBox?.value?.trim().toLowerCase() || "";
+  const term = searchBox?.value?.trim().toLowerCase() || '';
   return allItems.filter(it => {
-    const band = it?.severity?.band || "unknown";
-    if (!activeBands.has(band) && band !== "unknown") return false;
+    const band = it?.severity?.band || 'unknown';
+    if (!activeBands.has(band) && band !== 'unknown') return false; // include unknown by default
     if (term && !getVesselName(it).toLowerCase().includes(term)) return false;
     return true;
   });
@@ -877,20 +885,21 @@ function render() {
 
   const initial = [], completed = [], reassessArr = [];
   for (const it of filtered) {
-    // Completion: consider phase2 presence, explicit completed, phase3 or finalizedAt
-    const hasPhase2 = Boolean(it?.phase2);
-    const isCompleted = Boolean(it?.completed || it?.status === "completed" || it?.phase3 || it?.finalizedAt || hasPhase2);
+    // Completed: explicit completion signals OR Phase 2 notes/status, but NOT just assets
+    const phase2HasNotes = !!getText(it?.phase2?.summary);
+    const phase2CompletedFlag = (it?.phase2?.status === 'completed') || (it?.phase2?.completed === true);
+    const completedExplicit = (it?.completed === true) || (it?.status === "completed") || !!it?.phase3 || !!it?.finalizedAt;
+    const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes;
 
-    // Reassessment: explicit flag, unacknowledged alerts, or seismic events
+    // Reassessment: unack alerts OR explicit/seismic events flags
     const alerts = Array.isArray(it?.alerts) ? it.alerts : [];
     const hasUnackedAlert = alerts.some(a => a && a.acknowledged === false);
-    const seismicFlag = Boolean(it?.seismicEvent === true);
+    const seismicFlag = it?.seismicEvent === true;
     const events = it?.events;
-    const seismicUnacked = Boolean(
-      (events?.seismic && events.seismic.acknowledged === false) ||
-      (Array.isArray(events) && events.some(e => /seismic/i.test(e?.type || "") && e.acknowledged === false))
-    );
-    const reqReassess = Boolean(it?.needsReassessment || hasUnackedAlert || seismicFlag || seismicUnacked);
+    const hasSeismicEvent =
+      (events?.seismic != null) ||
+      (Array.isArray(events) && events.some(e => /seismic/i.test(e?.type || "")));
+    const reqReassess = Boolean(it?.needsReassessment || hasUnackedAlert || seismicFlag || hasSeismicEvent);
 
     if (reqReassess) reassessArr.push(it);
     else if (isCompleted) completed.push(it);
@@ -898,11 +907,11 @@ function render() {
   }
 
   const valOf = (o) => isFiniteNum(o?.severity?.value) ? o.severity.value : -Infinity;
-  const bySeverity = (a, b) => valOf(b) - valOf(a);
+  const bySeverityDesc = (a, b) => valOf(b) - valOf(a);
 
-  initial.sort(bySeverity);
-  completed.sort(bySeverity);
-  reassessArr.sort(bySeverity);
+  initial.sort(bySeverityDesc);
+  completed.sort(bySeverityDesc);
+  reassessArr.sort(bySeverityDesc);
 
   drawList(initialList, initial);
   drawList(completedList, completed);
@@ -913,6 +922,7 @@ function render() {
   if (reassessCount) reassessCount.textContent = String(reassessArr.length);
 
   document.getElementById("noDataBanner")?.classList.toggle("hidden", allItems.length !== 0);
+
   noInitial?.classList.toggle("hidden", initial.length !== 0);
   noCompleted?.classList.toggle("hidden", completed.length !== 0);
   noReassess?.classList.toggle("hidden", reassessArr.length !== 0);
@@ -973,7 +983,7 @@ function openReport(item) {
   reportContainer.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Gallery (doc-driven: uses saved asset URLs)
+// Gallery (doc-driven)
 function renderGalleryFromDoc() {
   if (!galleryGrid) return;
   galleryGrid.innerHTML = "";
@@ -1077,7 +1087,7 @@ reassessBtn?.addEventListener("click", async () => {
   }
 });
 
-// Feedback (per-report)
+// Feedback
 function renderFeedbackList(item) {
   if (!feedbackList) return;
   feedbackList.innerHTML = "";
@@ -1095,11 +1105,13 @@ function renderFeedbackList(item) {
   for (const e of entries.slice(0, 12)) {
     const who = escapeHtml(e?.user || "Unknown");
     const when = fmt(e) || "";
-    const msg = escapeHtml(e?.message || "");
-    const li = document.createElement("li");
-    li.className = "p-2 bg-gray-50 border border-gray-200 rounded";
-    li.innerHTML = `<div class="text-xs text-gray-600 mb-1">${who}${when ? " • " + when : ""}</div><div class="text-sm">${msg}</div>`;
-    feedbackList.appendChild(li);
+    theMsg: {
+      const msg = escapeHtml(e?.message || "");
+      const li = document.createElement("li");
+      li.className = "p-2 bg-gray-50 border border-gray-200 rounded";
+      li.innerHTML = `<div class="text-xs text-gray-600 mb-1">${who}${when ? " • " + when : ""}</div><div class="text-sm">${msg}</div>`;
+      feedbackList.appendChild(li);
+    }
   }
 }
 saveFeedbackBtn?.addEventListener("click", async () => {
@@ -1124,7 +1136,7 @@ saveFeedbackBtn?.addEventListener("click", async () => {
   }
 });
 
-// Auth UI handlers
+// Auth UI
 document.getElementById("signInEmailBtn")?.addEventListener("click", async () => {
   const email = document.getElementById("emailInput").value.trim();
   const password = document.getElementById("passwordInput").value;
@@ -1156,7 +1168,7 @@ document.getElementById("resetPasswordBtn")?.addEventListener("click", async () 
 });
 signOutBtn?.addEventListener("click", async () => { try { await signOut(auth); } catch {} });
 
-// Role fetch
+// Roles
 async function fetchRoleFor(uid) {
   try {
     const allowDocRef = doc(db, "system", "allowlist", "users", uid);
@@ -1196,7 +1208,9 @@ async function fetchRoleFor(uid) {
 
 // Auth state
 onAuthStateChanged(auth, async (user) => {
-  if (dataUnsub) { try { dataUnsub(); } catch {} dataUnsub = null; }
+  // Unsubscribe previous
+  for (const u of dataUnsubs) { try { u(); } catch {} }
+  dataUnsubs = [];
 
   if (!user) {
     signedOutContainer.classList.remove("hidden");
@@ -1254,24 +1268,18 @@ function exportMarkdown() {
   const md = buildReportMarkdown(currentItem);
   downloadFile(`${vessel.replace(/\s+/g,"_")}.md`, new Blob([md], { type: "text/markdown;charset=utf-8" }));
 }
-function exportJson() {
-  if (!currentItem) return;
-  const vessel = getVesselName(currentItem) || "assessment";
-  const json = JSON.stringify(currentItem, null, 2);
-  downloadFile(`${vessel.replace(/\s+/g,"_")}.json`, new Blob([json], { type: "application/json;charset=utf-8" }));
-}
+const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
+const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 function exportPdf() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || "assessment";
 
-  // Chart image
   let chartImg = "";
   try {
     const cnv = document.getElementById("werSpiderChart");
     chartImg = cnv?.toDataURL("image/png") || "";
   } catch {}
 
-  // Include up to 6 web-friendly gallery images in PDF
   const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const galleryUrls = assets.filter(a => webExt.test(a?.name || a?.path || "") && a?.url).slice(0, 6).map(a => a.url);
@@ -1288,9 +1296,7 @@ function exportPdf() {
       th { background:#f5f5f5; }
       .gallery { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 10px 0; }
       .gallery img { width:100%; height:120px; object-fit:cover; border:1px solid #e5e7eb; border-radius:6px; }
-      @media print {
-        body { -webkit-print-color-adjust: exact; }
-      }
+      @media print { body { -webkit-print-color-adjust: exact; } }
     </style></head><body>
       <div class="pdf-header">
         <img src="${LOGO_LEFT}" alt="Logo left">
@@ -1317,7 +1323,7 @@ exportHtmlBtn?.addEventListener("click", exportHtml);
 exportMdBtn?.addEventListener("click", exportMarkdown);
 exportJsonBtn?.addEventListener("click", exportJson);
 
-// Flatten helper
+// Normalize doc
 function normalizeDoc(d) {
   const out = { ...d };
   if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
