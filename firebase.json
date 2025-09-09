@@ -30,7 +30,7 @@
       }
     ],
     "rewrites": [
-      { "source": "!(/admin-tools.html|/reports.html|/login.html)", "destination": "/index.html" }
+      { "source": "**", "destination": "/index.html" }
     ]
   }
 }

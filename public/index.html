@@ -225,7 +225,9 @@
       measurementId: "G-NRLH3WSCQ9"
     };
 
-    const appId = 'guardian-agent-default';
+    // Use your artifacts root ID (matches your projectId)
+    const appId = 'project-guardian-agent';
+
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
@@ -235,14 +237,42 @@
     const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
     const repairWerpsFn    = httpsCallable(functions, 'repairWerps');
 
+    // Collections
     const assessmentsCollection = collection(db, `artifacts/${appId}/public/data/werpassessments`);
 
     // Mapbox
     const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
 
+    // Role helper: prefer system/allowlist/users/{uid}, fall back to legacy private path
+    async function fetchRoleFor(uid) {
+      try {
+        const allowDocRef = doc(db, 'system', 'allowlist', 'users', uid);
+        const allowDoc = await getDoc(allowDocRef);
+        if (allowDoc.exists()) {
+          const d = allowDoc.data() || {};
+          if (typeof d.role === 'string' && d.role) return d.role;
+          if (d.admin === true) return 'admin';
+          if (d.contributor === true) return 'contributor';
+          if (d.allowed === true) return 'user';
+        }
+      } catch (e) { /* ignore */ }
+
+      try {
+        const legacyRef = doc(db, `artifacts/${appId}/private/users/${uid}`);
+        const legacyDoc = await getDoc(legacyRef);
+        if (legacyDoc.exists()) {
+          const d = legacyDoc.data() || {};
+          if (typeof d.role === 'string' && d.role) return d.role;
+          if (d.admin === true) return 'admin';
+          if (d.contributor === true) return 'contributor';
+        }
+      } catch (e) { /* ignore */ }
+
+      return 'user';
+    }
+
     // Role/permissions
     let currentRole = 'user';
-    let roleUnsub = null;
 
     // Map and markers
     let map;
@@ -250,6 +280,10 @@
 
     // Chart instance
     let radarChart = null;
+
+    // Data subscription
+    let dataUnsub = null;
+    let allItems = [];
 
     // DOM refs
     const signedOutContainer = document.getElementById('signedOutContainer');
@@ -304,12 +338,14 @@
       authMessage.textContent = '';
       try {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
-        // Create a basic user profile doc (optional)
-        await setDoc(doc(db, `artifacts/${appId}/private/users/${cred.user.uid}`), {
-          email,
-          role: 'user',
-          createdAt: serverTimestamp()
-        }, { merge: true });
+        // Create a basic user profile doc (optional, legacy path)
+        try {
+          await setDoc(doc(db, `artifacts/${appId}/private/users/${cred.user.uid}`), {
+            email,
+            role: 'user',
+            createdAt: serverTimestamp()
+          }, { merge: true });
+        } catch {}
         authMessage.textContent = 'Account created. You are signed in as User.';
       } catch (e) {
         authMessage.textContent = e.message || 'Account creation failed.';
@@ -332,6 +368,9 @@
     });
 
     onAuthStateChanged(auth, async (user) => {
+      // Tear down any previous data listener
+      if (dataUnsub) { try { dataUnsub(); } catch {} dataUnsub = null; }
+
       if (!user) {
         // Signed out
         signedOutContainer.classList.remove('hidden');
@@ -353,18 +392,18 @@
       userNameSpan.classList.remove('hidden');
       signOutBtn.classList.remove('hidden');
 
-      // Fetch role from Firestore (graceful fallback to 'user')
-      try {
-        const roleDoc = await getDoc(doc(db, `artifacts/${appId}/private/users/${user.uid}`));
-        currentRole = (roleDoc.exists() && roleDoc.data().role) ? String(roleDoc.data().role) : 'user';
-      } catch { currentRole = 'user'; }
-
+      // Resolve role
+      currentRole = await fetchRoleFor(user.uid);
       roleBadge.textContent = `Role: ${currentRole}`;
       const isAdmin = currentRole === 'admin';
       const isContributor = isAdmin || currentRole === 'contributor';
       if (isAdmin) adminToolsBtn.classList.remove('hidden'); else adminToolsBtn.classList.add('hidden');
       analyzeBtn.disabled = !isContributor;
       if (!isContributor) contribHint.classList.remove('hidden'); else contribHint.classList.add('hidden');
+
+      // Init map and start data stream after login (avoids rules errors)
+      initMap();
+      startData();
     });
 
     // Analyze action
@@ -377,7 +416,6 @@
       analyzeBtn.disabled = true;
       analyzeText.textContent = 'Analyzing...';
       try {
-        // Trigger backend pipeline; backend should handle FA, phase1..n, etc.
         await callGeminiFunction({ vesselName: name, appId });
         statusMessage.textContent = 'Analysis requested. It may take a moment to appear.';
         vesselNameInput.value = '';
@@ -481,11 +519,7 @@
       radarChart = new Chart(ctx, { type: 'radar', data, options });
     }
 
-    // Data subscription
-    let dataUnsub = null;
-    let allItems = [];
-    initMap();
-
+    // Data stream
     function startData() {
       if (dataUnsub) return;
       const q = query(assessmentsCollection, orderBy('severity.value', 'desc'));
@@ -493,9 +527,7 @@
         allItems = [];
         snap.forEach(docSnap => {
           const d = docSnap.data() || {};
-          // Ensure id present
           d.id = d.id || docSnap.id;
-          // Normalize severity band if missing
           if (!d.severity) d.severity = {};
           if (d.severity.value == null) d.severity.value = 0;
           d.severity.band = d.severity.band || bandFromValue(d.severity.value);
@@ -506,7 +538,6 @@
         console.error('Snapshot error', err);
       });
     }
-    startData();
 
     // Filtering + rendering
     [sevHigh, sevMedium, sevLow].forEach(cb => cb.addEventListener('change', render));
@@ -530,7 +561,7 @@
         return true;
       });
 
-      // Partition
+      // Partition by status; reassessment if needsReassessment OR any unacknowledged alert
       const initial = [];
       const completed = [];
       const reassess = [];
@@ -596,12 +627,10 @@
 
     function openReport(item) {
       reportTitle.textContent = item?.vesselName || item?.name || item?.id || 'Assessment';
-      // Prefer HTML report if present
       const html = item?.report?.html || item?.html;
       if (html) {
         reportContent.innerHTML = html;
       } else {
-        // Fallback: synthesize a summary table
         reportContent.innerHTML = `
           <h3>Summary</h3>
           <table>
