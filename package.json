@@ -1,0 +1,14 @@
+{
+  "name": "project-guardian",
+  "private": true,
+  "scripts": {
+    "login": "firebase login --reauth || firebase login --no-localhost",
+    "use": "firebase use project-guardian-agent",
+    "deploy": "firebase deploy --only hosting:project-guardian-agent --project project-guardian-agent",
+    "deploy:hosting": "firebase deploy --only hosting:project-guardian-agent --project project-guardian-agent",
+    "serve": "firebase emulators:start --only hosting"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
