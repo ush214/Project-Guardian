@@ -26,18 +26,46 @@
   <!-- Chart.js (for radar) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+  <!-- DOMPurify for safe HTML rendering in the report pane -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
   <style>
     body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     #map { width: 100%; height: 460px; border-radius: 10px; }
+
     .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
     .pill.low { color:#065f46; background:#ecfdf5; border-color:#10b981; }
     .pill.medium { color:#92400e; background:#fffbeb; border-color:#f59e0b; }
     .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
     .pill.unknown { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
-    .prose h3 { font-weight: 700; margin-top: 1rem; }
-    .prose table { width: 100%; border-collapse: collapse; margin-top: .25rem; }
-    .prose th, .prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
-    .prose th { background: #f9fafb; font-weight: 600; }
+
+    /* Report content: keep it readable and contained */
+    .report-prose { max-width: none; }
+    .report-prose * { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+    .report-prose p,
+    .report-prose ul,
+    .report-prose ol,
+    .report-prose table,
+    .report-prose pre,
+    .report-prose blockquote,
+    .report-prose h1,
+    .report-prose h2,
+    .report-prose h3,
+    .report-prose h4,
+    .report-prose h5,
+    .report-prose h6 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+
+    .report-prose img,
+    .report-prose video,
+    .report-prose iframe { max-width: 100%; height: auto; }
+
+    .report-prose table { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
+    .report-prose th, .report-prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
+    .report-prose th { background: #f9fafb; font-weight: 600; }
+
+    .report-prose pre { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb; }
+    .report-prose blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid #e5e7eb; color:#374151; }
+
     .list-item { cursor: pointer; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; }
     .list-item:hover { background: #f9fafb; }
   </style>
@@ -139,12 +167,12 @@
       <!-- Save your screenshot at: public/assets/evidence-assessments.png -->
       <section id="evidenceSection" class="bg-white border border-amber-200 rounded-xl shadow p-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-amber-800">Evidence: Initial Assessments visible, severity shown as LOW 0.00</h3>
+          <h3 class="text-sm font-semibold text-amber-800">Evidence: Initial Assessments visible, severity values now present; full report previously overflowed</h3>
           <button id="toggleEvidenceBtn" class="text-xs text-amber-700 hover:underline">Hide</button>
         </div>
         <p class="text-xs text-amber-700 mt-1">If the image doesn't load, ensure the file exists at /assets/evidence-assessments.png.</p>
         <div id="evidenceWrapper" class="mt-3">
-          <img id="evidenceImg" src="/assets/evidence-assessments.png" alt="Screenshot showing Initial Assessments list with names and severity LOW 0.00" class="w-full rounded border border-amber-200">
+          <img id="evidenceImg" src="/assets/evidence-assessments.png" alt="Screenshot showing Initial Assessments list and severity values" class="w-full rounded border border-amber-200">
         </div>
       </section>
 
@@ -197,7 +225,12 @@
         <h2 id="reportTitle" class="text-2xl font-bold mb-4 text-center text-gray-900"></h2>
         <div id="alert-display-section" class="hidden mb-4"></div>
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <div id="reportContent" class="prose lg:col-span-3 max-w-none"></div>
+          <!-- Make the left column scroll within the panel to prevent page growing indefinitely -->
+          <div class="lg:col-span-3">
+            <div id="reportScroll" class="max-h-[70vh] overflow-y-auto pr-2">
+              <div id="reportContent" class="report-prose"></div>
+            </div>
+          </div>
           <div class="lg:col-span-2">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
             <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
@@ -323,24 +356,18 @@
 
     // Try to coerce various shapes into a numeric value
     function coerceToNumber(val) {
-      // direct number
       if (typeof val === 'number') return Number.isFinite(val) ? val : null;
 
-      // numeric string or string containing a number
       if (typeof val === 'string') {
         const s = val.trim();
-        // textual bands
-        const lowRx = /^low$/i, medRx = /^med(iu)?m$/i, highRx = /^high$/i;
-        if (lowRx.test(s)) return 3;       // heuristic mapping on 0-10 scale
-        if (medRx.test(s)) return 6;
-        if (highRx.test(s)) return 9;
-        // extract first number
+        if (/^low$/i.test(s)) return 3;
+        if (/^med(iu)?m$/i.test(s)) return 6;
+        if (/^high$/i.test(s)) return 9;
         const m = s.match(/-?\d+(\.\d+)?/);
         if (m) return Number(m[0]);
         return null;
       }
 
-      // arrays: first numeric
       if (Array.isArray(val)) {
         for (const x of val) {
           const n = coerceToNumber(x);
@@ -349,7 +376,6 @@
         return null;
       }
 
-      // objects: check common numeric fields or band text
       if (val && typeof val === 'object') {
         const candKeys = ['value','score','val','num','amount','rating','points','v','s'];
         for (const k of candKeys) {
@@ -358,7 +384,6 @@
             if (n != null) return n;
           }
         }
-        // band/level
         const bandStr = val.band ?? val.level ?? val.name ?? val.label;
         const t = getText(bandStr);
         if (t) {
@@ -368,7 +393,6 @@
           const m = t.match(/-?\d+(\.\d+)?/);
           if (m) return Number(m[0]);
         }
-        // shallow scan for any numeric leaf
         for (const v of Object.values(val)) {
           const n = coerceToNumber(v);
           if (n != null) return n;
@@ -400,7 +424,7 @@
       return out;
     }
 
-    // Flatten a bit to heuristically find vessel names
+    // Flatten to heuristically find vessel names
     function flattenObject(obj, maxDepth = 3) {
       const out = [];
       function rec(cur, depth) {
@@ -436,7 +460,6 @@
 
     // Compute severity value from multiple possible fields or from formula
     function computeFormulaSeverity(item) {
-      // Try lots of common shapes/paths
       const W = readNumberByPaths(item, [
         'severity.components.WCS','scores.WCS','wcs','WCS','risk.WCS',
         'phase2.scores.WCS','phase1.screening.WCS','metrics.WCS','values.WCS','phase1.WCS','screening.WCS','phase1.wcs'
@@ -459,18 +482,15 @@
     }
 
     function getSeverityValue(item) {
-      // Direct severity fields
       const direct = readNumberByPaths(item, [
         'severity.value','severityValue','severity_score','severityScore','score',
         'risk.severity','risk.score','metrics.severity','values.severity'
       ]);
       if (direct !== null) return direct;
 
-      // Try to compute
       const formula = computeFormulaSeverity(item);
       if (formula !== null) return formula;
 
-      // As a last resort, if there is a severity band or text anywhere, map it
       const sevBandText = deepGet(item, 'severity.band') ?? deepGet(item, 'severity.level') ?? item.severity;
       const s = getText(sevBandText);
       if (s) {
@@ -678,7 +698,6 @@
       const id = item?.id;
       if (!id) return;
 
-      // Support {latitude, longitude} or {lat, lng} or {y, x}
       const lat = coords?.latitude ?? coords?.lat ?? coords?.y;
       const lng = coords?.longitude ?? coords?.lng ?? coords?.x;
       if (lat == null || lng == null) return;
@@ -807,7 +826,6 @@
 
       const filtered = allItems.filter(it => {
         const band = it?.severity?.band || 'unknown';
-        // Show "unknown" by default so nothing disappears silently
         if (!activeBands.has(band) && band !== 'unknown') return false;
         if (term) {
           const name = getVesselName(it).toLowerCase();
@@ -880,27 +898,70 @@
       }
     }
 
-    function openReport(item) {
-      const vessel = getVesselName(item);
+    // Clean and constrain incoming HTML so it doesn't blow up layout
+    function sanitizeReportHtml(html) {
+      // Basic sanitize
+      let safe = DOMPurify.sanitize(html || '', {
+        RETURN_TRUSTED_TYPE: false,
+        WHOLE_DOCUMENT: false,
+        USE_PROFILES: { html: true },
+        FORBID_TAGS: ['script', 'style', 'link'],
+        FORBID_ATTR: ['style', 'onerror', 'onload']
+      });
+      // Condense excessive <br> runs
+      safe = safe.replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>');
+      return safe;
+    }
+
+    function renderFallbackSummary(item) {
+      // Use summary/finalSummary if present, otherwise a table with basics
+      const texts = [
+        item?.finalSummary, item?.summary, item?.phase1?.summary, item?.conclusion
+      ].filter(t => typeof t === 'string' && t.trim().length);
+
+      if (texts.length) {
+        const blocks = texts.map(t => `<p>${escapeHtml(t).replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`).join('');
+        return `<div>${blocks}</div>`;
+      }
+
+      // Last resort summary table
+      const vessel = escapeHtml(getVesselName(item));
       const sv = item?.severity?.value;
       const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : 'N/A';
+      return `
+        <h3>Summary</h3>
+        <table>
+          <tr><th>Vessel</th><td>${vessel}</td></tr>
+          <tr><th>Severity</th><td>${(item?.severity?.band || 'unknown').toUpperCase()} ${svTxt}</td></tr>
+          <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
+          <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
+        </table>
+      `;
+    }
+
+    function openReport(item) {
+      const vessel = getVesselName(item);
       reportTitle.textContent = vessel || 'Assessment';
-      const html = item?.report?.html || item?.html || item?.reportHtml || item?.report_markdown;
-      if (html) {
-        reportContent.innerHTML = html;
+
+      // Prefer explicit HTML fields
+      const rawHtml =
+        item?.report?.html ||
+        item?.html ||
+        item?.reportHtml ||
+        item?.report_markdown || // some sources store md/html here
+        null;
+
+      if (rawHtml && typeof rawHtml === 'string') {
+        const safe = sanitizeReportHtml(rawHtml);
+        document.getElementById('reportContent').innerHTML = safe;
       } else {
-        reportContent.innerHTML = `
-          <h3>Summary</h3>
-          <table>
-            <tr><th>Vessel</th><td>${escapeHtml(vessel)}</td></tr>
-            <tr><th>Severity</th><td>${(item?.severity?.band || 'unknown').toUpperCase()} ${svTxt}</td></tr>
-            <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
-            <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
-          </table>
-        `;
+        // Fallback: render summaries cleanly
+        document.getElementById('reportContent').innerHTML = renderFallbackSummary(item);
       }
+
       renderRadar(item);
       reportContainer.classList.remove('hidden');
+      // Scroll the report panel into view but keep it from pushing the page height
       reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   </script>
