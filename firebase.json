@@ -1,4 +1,8 @@
 {
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs22"
+  },
   "hosting": {
     "public": "public",
     "ignore": [
@@ -8,46 +12,25 @@
     ],
     "headers": [
       {
-        "source": "/**",
+        "source": "**/*.@(js|mjs|css|woff|woff2|ttf|eot|svg|png|jpg|jpeg|gif|webp|ico)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        ]
+      },
+      {
+        "source": "**",
         "headers": [
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules' blob: https://www.gstatic.com https://unpkg.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; script-src-elem 'self' 'unsafe-inline' blob: https://www.gstatic.com https://unpkg.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://raw.githubusercontent.com https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://firestore.googleapis.com https://firebasestorage.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://us-central1-project-guardian-agent.cloudfunctions.net https://www.gstatic.com https://*.googleapis.com; worker-src 'self' blob:; frame-src 'self'"
+            "value": "default-src 'self'; connect-src 'self' https://firestore.googleapis.com https://firebasestorage.googleapis.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://*.googleapis.com https://*.firebaseio.com; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com https://www.googleapis.com https://accounts.google.com https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; img-src 'self' data: https://raw.githubusercontent.com https://*.basemaps.cartocdn.com https://api.mapbox.com https://*.tiles.mapbox.com; font-src 'self' https://fonts.gstatic.com; frame-src 'self'; worker-src 'self' blob:; object-src 'none'"
           },
-          {
-            "key": "Referrer-Policy",
-            "value": "strict-origin-when-cross-origin"
-          },
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          },
-          {
-            "key": "X-Frame-Options",
-            "value": "SAMEORIGIN"
-          },
-          {
-            "key": "Permissions-Policy",
-            "value": "geolocation=(), microphone=(), camera=()"
-          }
+          { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+          { "key": "X-Content-Type-Options", "value": "nosniff" }
         ]
       }
+    ],
+    "rewrites": [
+      { "source": "!(/admin-tools.html|/reports.html|/login.html)", "destination": "/index.html" }
     ]
-  },
-  "functions": [
-    {
-      "source": "functions",
-      "codebase": "default",
-      "ignore": [
-        "node_modules",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "*.local"
-      ]
-    }
-  ],
-  "firestore": {
-    "rules": "firestore.rules"
   }
 }
