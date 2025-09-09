@@ -1,27 +1,33 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function isSelf(userId) { return isSignedIn() && request.auth.uid == userId; }
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
+    // Artifacts namespace
+    match /artifacts/{appId} {
+      // Public data: readable by signed-in users (change to 'true' if you want fully public)
+      match /public/{document=**} {
+        allow read: if isSignedIn();
+        // Writes to public data should go through trusted backends (Cloud Functions) or admins only.
+        allow write: if false;
+      }
 
-    function isContributor() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.Role in ['contributor', 'admin'];
-    }
+      // Private space
+      match /private {
+        // Each user can read/create their own profile/role doc.
+        match /users/{userId} {
+          allow read: if isSelf(userId);
+          allow create: if isSelf(userId);
+          // Role elevation/changes must be done by an admin backend, not by clients.
+          allow update, delete: if false;
+        }
 
-    // Users can read only their own allowlist/role doc; no client-side writes
-    match /system/allowlist/users/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
-      allow write: if false; // manage via Console/Admin SDK only
-    }
-
-    // WERP assessment data
-    match /artifacts/{appId}/public/data/werpassessments/{docId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isContributor();
+        // Everything else private: deny by default
+        match /{document=**} {
+          allow read, write: if false;
+        }
+      }
     }
   }
 }
