@@ -132,7 +132,6 @@
           <div class="text-xs text-gray-600">Showing: <span id="visibleCounts">0</span></div>
         </div>
         <p class="text-xs text-gray-500 mt-2">Severity = (WCS + PHS + (ESI ÷ 3)) × RPM.</p>
-        <div id="authError" class="text-red-700 text-xs mt-3 hidden"></div>
       </section>
 
       <!-- No data banner -->
@@ -240,6 +239,9 @@
     // Assessments path (no capitalization)
     const assessmentsPath = `artifacts/${appId}/public/data/werpassessments`;
 
+    // Debug flag (set to false to silence console logs)
+    const DEBUG = true;
+
     // Role helper: reads Role/role (case-insensitive) from allowlist, fallback to legacy private path
     async function fetchRoleFor(uid) {
       try {
@@ -280,14 +282,50 @@
       return 'user';
     }
 
-    // Compute severity value from multiple possible fields or from formula
+    // Helpers
+    function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
     function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
     function pickNum(...vals) { for (const v of vals) { const n = toNum(v); if (n !== null) return n; } return null; }
+
+    // Normalize possible nested payloads by shallow-merging common holders into top-level
+    function normalizeDoc(d) {
+      const out = { ...d };
+      if (d && typeof d.data === 'object' && d.data) Object.assign(out, d.data);
+      if (d && typeof d.payload === 'object' && d.payload) Object.assign(out, d.payload);
+      if (d && typeof d.meta === 'object' && d.meta) out.meta = { ...d.meta }; // keep meta too
+      if (d && typeof d.metadata === 'object' && d.metadata) out.metadata = { ...d.metadata };
+      return out;
+    }
+
+    // Vessel name resolver (robust)
+    function getText(v) {
+      if (v == null) return null;
+      const s = String(v).trim();
+      return s.length ? s : null;
+    }
+    function getVesselName(it) {
+      const cands = [
+        it.vesselName, it.name, it.title, it.displayName, it.label,
+        it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName,
+        it.meta?.vesselName, it.meta?.name, it.meta?.title,
+        it.metadata?.vesselName, it.metadata?.name, it.metadata?.title,
+        it.phase1?.screening?.vesselName,
+        it['vessel_name'], it['Vessel Name'],
+        it.id
+      ];
+      for (const c of cands) {
+        const t = getText(c);
+        if (t) return t;
+      }
+      return 'Unknown';
+    }
+
+    // Compute severity value from multiple possible fields or from formula
     function computeFormulaSeverity(item) {
-      const W = pickNum(item?.scores?.WCS, item?.wcs, item?.WCS);
-      const P = pickNum(item?.scores?.PHS, item?.phs, item?.PHS);
-      const E = pickNum(item?.scores?.ESI, item?.esi, item?.ESI);
-      const R = pickNum(item?.scores?.RPM, item?.rpm, item?.RPM);
+      const W = pickNum(item?.scores?.WCS, item?.wcs, item?.WCS, item?.risk?.WCS, item?.phase2?.scores?.WCS);
+      const P = pickNum(item?.scores?.PHS, item?.phs, item?.PHS, item?.risk?.PHS, item?.phase2?.scores?.PHS);
+      const E = pickNum(item?.scores?.ESI, item?.esi, item?.ESI, item?.risk?.ESI, item?.phase2?.scores?.ESI);
+      const R = pickNum(item?.scores?.RPM, item?.rpm, item?.RPM, item?.risk?.RPM, item?.phase2?.scores?.RPM);
       if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
       return null;
     }
@@ -297,7 +335,9 @@
         item?.severityValue,
         item?.severity_score,
         item?.severityScore,
-        item?.score
+        item?.score,
+        item?.risk?.severity,
+        item?.risk?.score
       );
       const formula = computeFormulaSeverity(item);
       return direct ?? formula ?? 0;
@@ -445,7 +485,7 @@
       await startData();
     });
 
-    // Analyze action (listener only; DOM refs are defined above)
+    // Analyze action
     analyzeBtn.addEventListener('click', async () => {
       const name = vesselNameInput.value.trim();
       statusMessage.textContent = '';
@@ -491,14 +531,19 @@
     }
 
     function upsertMarker(item){
-      const coords = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location;
+      const coords = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
       const id = item?.id;
-      if (!id || !coords?.latitude || !coords?.longitude) return;
+      if (!id) return;
+
+      // Support {latitude, longitude} or {lat, lng}
+      const lat = coords?.latitude ?? coords?.lat ?? coords?.y;
+      const lng = coords?.longitude ?? coords?.lng ?? coords?.x;
+      if (lat == null || lng == null) return;
 
       const sv = getSeverityValue(item);
       const band = item?.severity?.band || bandFromValue(sv);
-      const pos = [coords.latitude, coords.longitude];
-      const title = escapeHtml(item?.vesselName || item?.name || item?.id || "Unknown");
+      const pos = [Number(lat), Number(lng)];
+      const title = escapeHtml(getVesselName(item));
       const popupHtml = `<div><strong>${title}</strong><br/>Severity: ${(band||"").toUpperCase()} ${sv.toFixed(2)}</div>`;
 
       if (markers.has(id)) {
@@ -564,10 +609,14 @@
       if (dataUnsub) return;
       const colRef = collection(db, assessmentsPath);
 
+      let logCount = 0;
       dataUnsub = onSnapshot(colRef, (snap) => {
         allItems = [];
         snap.forEach(docSnap => {
-          const d = docSnap.data() || {};
+          // Raw data, then normalized for robust field access
+          const raw = docSnap.data() || {};
+          const d0 = normalizeDoc(raw);
+          const d = { ...d0 }; // work on a copy
           d.id = d.id || docSnap.id;
 
           // Compute severity value and band without relying on a specific field name
@@ -576,10 +625,21 @@
           d.severity.value = sv;
           d.severity.band = d.severity.band || bandFromValue(sv);
 
+          // Keep a debug sample of the first few docs
+          if (DEBUG && logCount < 3) {
+            console.log('[WERP] Sample doc', docSnap.id, {
+              keys: Object.keys(raw || {}),
+              normalizedKeys: Object.keys(d0 || {}),
+              vesselNameResolved: getVesselName(d),
+              severityValue: sv
+            });
+            logCount++;
+          }
+
           allItems.push(d);
         });
 
-        console.log('[WERP] Loaded docs:', allItems.length, 'from', assessmentsPath);
+        if (DEBUG) console.log('[WERP] Loaded docs:', allItems.length, 'from', assessmentsPath);
         render();
       }, (err) => {
         console.error('Snapshot error', err);
@@ -604,7 +664,7 @@
         const band = it?.severity?.band || 'low';
         if (!activeBands.has(band)) return false;
         if (term) {
-          const name = (it?.vesselName || it?.name || it?.id || '').toLowerCase();
+          const name = getVesselName(it).toLowerCase();
           if (!name.includes(term)) return false;
         }
         return true;
@@ -657,11 +717,11 @@
         const li = document.createElement('div');
         li.className = 'list-item flex items-center justify-between gap-3';
         const band = it?.severity?.band || 'low';
-        const vessel = escapeHtml(it?.vesselName || it?.name || it?.id || 'Unknown');
+        const vessel = escapeHtml(getVesselName(it));
         const sv = (it?.severity?.value ?? 0).toFixed(2);
         li.innerHTML = `
           <div class="min-w-0">
-            <div class="text-sm font-semibold text-gray-900 truncate">${vessel}</div>
+            <div class="text-sm font-semibold text-gray-900 truncate">${vessel || 'Unknown'}</div>
             <div class="text-xs text-gray-500">Severity: ${band.toUpperCase()} ${sv}</div>
           </div>
           <span class="pill ${band}">${band.toUpperCase()}</span>
@@ -672,15 +732,16 @@
     }
 
     function openReport(item) {
-      reportTitle.textContent = item?.vesselName || item?.name || item?.id || 'Assessment';
-      const html = item?.report?.html || item?.html;
+      const vessel = getVesselName(item);
+      reportTitle.textContent = vessel || 'Assessment';
+      const html = item?.report?.html || item?.html || item?.reportHtml || item?.report_markdown;
       if (html) {
         reportContent.innerHTML = html;
       } else {
         reportContent.innerHTML = `
           <h3>Summary</h3>
           <table>
-            <tr><th>Vessel</th><td>${escapeHtml(item?.vesselName || item?.name || item?.id || '')}</td></tr>
+            <tr><th>Vessel</th><td>${escapeHtml(vessel)}</td></tr>
             <tr><th>Severity</th><td>${(item?.severity?.band || 'low').toUpperCase()} ${(item?.severity?.value ?? 0).toFixed(2)}</td></tr>
             <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
             <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
@@ -691,9 +752,6 @@
       reportContainer.classList.remove('hidden');
       reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-
-    // Utilities
-    function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   </script>
 </body>
 </html>
