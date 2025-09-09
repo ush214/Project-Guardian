@@ -445,12 +445,7 @@
       await startData();
     });
 
-    // Analyze action
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const analyzeText = document.getElementById('analyzeText');
-    const vesselNameInput = document.getElementById('vesselName');
-    const statusMessage = document.getElementById('statusMessage');
-
+    // Analyze action (listener only; DOM refs are defined above)
     analyzeBtn.addEventListener('click', async () => {
       const name = vesselNameInput.value.trim();
       statusMessage.textContent = '';
