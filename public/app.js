@@ -67,6 +67,10 @@ const appConfigPathCandidates = [
   `artifacts/${appId}/public/config/werp`
 ];
 
+// Logo URLs for PDF header
+const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
+const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
+
 // DOM refs
 const signedOutContainer = document.getElementById("signedOutContainer");
 const appContainer = document.getElementById("appContainer");
@@ -308,13 +312,20 @@ function normalizeWcsParameters(rawParams = []) {
 }
 
 // Normalize PHS weights: accept fractions (0–1) or percents (0–100), normalize to sum=1.0
+// Also exclude WCS-like parameters (e.g., Vessel Integrity & Sinking) from PHS.
 function normalizePhsWeights(params = []) {
-  const items = (Array.isArray(params) ? params : []).map((p) => ({
-    name: String(p?.name ?? p?.parameter ?? '').trim(),
-    rationale: String(p?.rationale ?? '').trim(),
-    scoreRaw: Number(p?.score),
-    weightRaw: Number(p?.weight)
-  }));
+  const wcsNameRx = /(structur|integrit|intact|collapse|fragment|hull|sinking|trauma|age|year|built|commission|vessel\s*(type|size)|tonnage|displacement|class)/i;
+  const allowedPhsRx = /(fuel|bunker|oil|volume|type|munitions|ordnance|uxo|pop|pcb|hazard|asbestos|chem|chemical cargo|heavy metal|paint|anti[- ]?foul|leach|leaching|hfo|diesel)/i;
+
+  const items = (Array.isArray(params) ? params : [])
+    .map((p) => ({
+      name: String(p?.name ?? p?.parameter ?? '').trim(),
+      rationale: String(p?.rationale ?? '').trim(),
+      scoreRaw: Number(p?.score),
+      weightRaw: Number(p?.weight)
+    }))
+    // Exclude WCS-like terms from PHS and include only pollution-relevant categories
+    .filter(i => i.name && (allowedPhsRx.test(i.name) || !wcsNameRx.test(i.name)));
 
   const weights = items.map(i => Number.isFinite(i.weightRaw) ? i.weightRaw : 0);
   const maxW = weights.length ? Math.max(...weights) : 0;
@@ -454,13 +465,11 @@ function markerIconFor(band) {
 
 // Choose a thumbnail image for the marker popup (prefer web-friendly images)
 function getMarkerImageUrl(item) {
-  // Prefer Phase 2 assets first
   const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const imgAsset = assets.find(a => webExt.test(a?.name || a?.path || ""));
   if (imgAsset?.url) return imgAsset.url;
 
-  // Fall back to any known image fields
   const candidates = [
     item?.thumbnailUrl, item?.imageUrl, item?.coverImage, item?.coverPhoto,
     item?.image, item?.photo, item?.thumbnail, item?.bannerImage
@@ -868,10 +877,21 @@ function render() {
 
   const initial = [], completed = [], reassessArr = [];
   for (const it of filtered) {
-    const needsRe = Boolean(it?.needsReassessment);
-    const hasAlerts = Array.isArray(it?.alerts) && it.alerts.some(a => a && a.acknowledged === false);
-    const reqReassess = needsRe || hasAlerts;
-    const isCompleted = Boolean(it?.completed || it?.status === "completed" || it?.phase3 || it?.finalizedAt);
+    // Completion: consider phase2 presence, explicit completed, phase3 or finalizedAt
+    const hasPhase2 = Boolean(it?.phase2);
+    const isCompleted = Boolean(it?.completed || it?.status === "completed" || it?.phase3 || it?.finalizedAt || hasPhase2);
+
+    // Reassessment: explicit flag, unacknowledged alerts, or seismic events
+    const alerts = Array.isArray(it?.alerts) ? it.alerts : [];
+    const hasUnackedAlert = alerts.some(a => a && a.acknowledged === false);
+    const seismicFlag = Boolean(it?.seismicEvent === true);
+    const events = it?.events;
+    const seismicUnacked = Boolean(
+      (events?.seismic && events.seismic.acknowledged === false) ||
+      (Array.isArray(events) && events.some(e => /seismic/i.test(e?.type || "") && e.acknowledged === false))
+    );
+    const reqReassess = Boolean(it?.needsReassessment || hasUnackedAlert || seismicFlag || seismicUnacked);
+
     if (reqReassess) reassessArr.push(it);
     else if (isCompleted) completed.push(it);
     else initial.push(it);
@@ -1011,8 +1031,6 @@ uploadFilesBtn?.addEventListener("click", async () => {
       await uploadBytes(ref, f, { contentType: f.type || undefined });
       const url = await getDownloadURL(ref);
 
-      // Note: Do NOT use serverTimestamp() inside arrayUnion payload (causes error).
-      // Use client ms for the entry and set a doc-level server timestamp separately.
       await updateDoc(refDoc, {
         "phase2.assets": arrayUnion({
           name: f.name,
@@ -1028,10 +1046,8 @@ uploadFilesBtn?.addEventListener("click", async () => {
       uploadStatus.textContent = `Uploaded ${done}/${files.length}`;
     }
 
-    // Update a doc-level server timestamp to signal change
     await updateDoc(refDoc, { "phase2.assetsUpdatedAt": serverTimestamp() });
 
-    // Refresh local copy and gallery
     const snap = await getDoc(refDoc);
     if (snap.exists()) currentItem = { ...currentItem, ...snap.data() };
     renderGalleryFromDoc();
@@ -1066,7 +1082,6 @@ function renderFeedbackList(item) {
   if (!feedbackList) return;
   feedbackList.innerHTML = "";
   const entries = Array.isArray(item?.feedback) ? [...item.feedback] : [];
-  // newest first; support both createdAtMs and Firestore timestamp
   entries.sort((a,b) => {
     const aMs = a?.createdAtMs ?? (a?.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
     const bMs = b?.createdAtMs ?? (b?.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
@@ -1094,7 +1109,6 @@ saveFeedbackBtn?.addEventListener("click", async () => {
   const who = auth.currentUser?.email || auth.currentUser?.uid || "anonymous";
   feedbackStatus.textContent = "Saving...";
   try {
-    // Avoid serverTimestamp inside arrayUnion; use client ms and set a doc-level timestamp separately
     await updateDoc(doc(db, assessmentsPath, currentDocId), {
       feedback: arrayUnion({ message: msg, user: who, createdAtMs: Date.now() }),
       feedbackUpdatedAt: serverTimestamp()
@@ -1249,23 +1263,48 @@ function exportJson() {
 function exportPdf() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || "assessment";
+
+  // Chart image
   let chartImg = "";
   try {
     const cnv = document.getElementById("werSpiderChart");
     chartImg = cnv?.toDataURL("image/png") || "";
   } catch {}
+
+  // Include up to 6 web-friendly gallery images in PDF
+  const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
+  const webExt = /\.(png|jpe?g|webp|gif)$/i;
+  const galleryUrls = assets.filter(a => webExt.test(a?.name || a?.path || "") && a?.url).slice(0, 6).map(a => a.url);
+
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title>
     <style>
       body { font-family: Inter, Arial, sans-serif; color:#111; line-height:1.5; padding:24px; }
-      h1,h2,h3,h4 { margin: 0 0 8px; }
+      .pdf-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+      .pdf-header img { height: 42px; }
+      h1 { font-size: 20px; margin: 6px 0 12px; text-align:center; }
+      h2,h3,h4 { margin: 10px 0 6px; }
       table { width:100%; border-collapse: collapse; margin: 8px 0; }
       th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
       th { background:#f5f5f5; }
+      .gallery { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 10px 0; }
+      .gallery img { width:100%; height:120px; object-fit:cover; border:1px solid #e5e7eb; border-radius:6px; }
+      @media print {
+        body { -webkit-print-color-adjust: exact; }
+      }
     </style></head><body>
+      <div class="pdf-header">
+        <img src="${LOGO_LEFT}" alt="Logo left">
+        <div style="font-weight:600; font-size:14px;">Project Guardian – WERP Reports</div>
+        <img src="${LOGO_RIGHT}" alt="Logo right">
+      </div>
       <h1>${escapeHtml(vessel)}</h1>
+
       ${getCurrentHtml()}
-      ${chartImg ? `<h3>WERP Risk Profile</h3><img src="${chartImg}" alt="Radar chart">` : ""}
+      ${chartImg ? `<h3>WERP Risk Profile</h3><img src="${chartImg}" alt="Radar chart" style="max-width:100%;border:1px solid #e5e7eb;border-radius:6px">` : ""}
+
+      ${galleryUrls.length ? `<h3>Image Gallery</h3><div class="gallery">${galleryUrls.map(u => `<img src="${u}" alt="Gallery image">`).join("")}</div>` : ""}
     </body></html>`;
+
   const w = window.open("", "_blank");
   if (w) {
     w.document.open(); w.document.write(html); w.document.close();
