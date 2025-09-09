@@ -9,7 +9,7 @@ import {
   collection, onSnapshot, arrayUnion
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
-  getStorage, ref as storageRef, uploadBytes, getDownloadURL, listAll
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
@@ -30,7 +30,7 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, 'us-central1');
 
-// Optional callable names (use what's available in your functions/)
+// Optional callable names (use what's present in your functions/)
 const repairWerpsFn = httpsCallable(functions, 'repairWerps');
 let reassessWerpsFn = null; try { reassessWerpsFn = httpsCallable(functions, 'reassessWerps'); } catch {}
 
@@ -41,6 +41,7 @@ const appConfigPathCandidates = [
   `artifacts/${appId}/public/config/werp`
 ];
 
+// DOM
 const signedOutContainer = document.getElementById('signedOutContainer');
 const appContainer = document.getElementById('appContainer');
 const adminToolsBtn = document.getElementById('adminToolsBtn');
@@ -101,6 +102,7 @@ const appIdSpan = document.getElementById('appIdSpan');
 if (appIdSpan) appIdSpan.textContent = appId;
 if (assessPathSpan) assessPathSpan.textContent = assessmentsPath;
 
+// State
 let currentRole = 'user';
 let currentItem = null;
 let currentDocId = null;
@@ -111,6 +113,7 @@ let dataUnsub = null;
 let allItems = [];
 let lastRenderedHtml = '';
 
+// Chart config
 let chartConfig = {
   scaleMax: 10,
   benchmarks: { high: 9, medium: 6, low: 3 },
@@ -128,20 +131,7 @@ const isFiniteNum = n => typeof n === 'number' && Number.isFinite(n);
 const toNum = v => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 const getText = v => { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; };
 const deepGet = (obj, path) => path.split('.').reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj);
-const flattenEntries = (obj, maxDepth = 4) => {
-  const out = [];
-  (function rec(cur, path, depth){
-    if (cur === null || cur === undefined) return;
-    if (typeof cur !== 'object' || depth > maxDepth) { out.push([path, cur]); return; }
-    const keys = Object.keys(cur); if (!keys.length) out.push([path, cur]);
-    for (const k of keys) {
-      const p = path ? `${path}.${k}` : k;
-      if (typeof cur[k] === 'object' && cur[k] !== null) rec(cur[k], p, depth + 1);
-      else out.push([p, cur[k]]);
-    }
-  })(obj, '', 0);
-  return out;
-};
+const clamp = (v, min, max) => { const n = Number(v); if (!Number.isFinite(n)) return min; return Math.max(min, Math.min(max, n)); };
 
 function sanitizeReportHtml(html) {
   let safe = DOMPurify.sanitize(html || '', {
@@ -154,17 +144,12 @@ function sanitizeReportHtml(html) {
 }
 function renderMarkdown(md) { try { return sanitizeReportHtml(marked.parse(md || '')); } catch { return `<p>${escapeHtml(md||'')}</p>`; } }
 function extractHtml(val) {
-  if (typeof val === 'string') { const s = val.trim(); if (s) return sanitizeReportHtml(`<p>${escapeHtml(s).replace(/\n/g,'<br>')}</p>`); return null; }
+  if (typeof val === 'string') { const s = val.trim(); if (s) return sanitizeReportHtml(`<p>${escapeHtml(s).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`); return null; }
   if (val == null) return null;
   if (typeof val === 'object') {
     const html = getText(val.html); if (html) return sanitizeReportHtml(html);
     const md = getText(val.markdown ?? val.md); if (md) return renderMarkdown(md);
-    const text = getText(val.text ?? val.content ?? val.value ?? val.body ?? val.summary);
-    if (text) return sanitizeReportHtml(`<p>${escapeHtml(text).replace(/\n/g,'<br>')}</p>`);
-    const parts = Array.isArray(val.parts) ? val.parts : Array.isArray(val.content) ? val.content : null;
-    if (parts) { const chunk = parts.map(p => typeof p === 'string' ? p : (p?.text ?? p?.content ?? p?.markdown ?? p?.html ?? ''))
-                                    .filter(Boolean).join('\n\n').trim();
-                 if (chunk) return extractHtml(chunk); }
+    const text = getText(val.text ?? val.content ?? val.value ?? val.body ?? val.summary); if (text) return sanitizeReportHtml(`<p>${escapeHtml(text).replace(/\n/g,'<br>')}</p>`);
   }
   if (Array.isArray(val)) { const chunks = val.map(extractHtml).filter(Boolean); if (chunks.length) return chunks.join('\n'); }
   return null;
@@ -184,16 +169,15 @@ function readNumberByPaths(obj, paths) {
   for (const p of paths) {
     const v = deepGet(obj, p);
     if (v == null) continue;
-    if (typeof v === 'number') { if (Number.isFinite(v)) return v; }
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
     if (typeof v === 'string') {
       const m = v.match(/-?\d+(\.\d+)?/); if (m) { const n = Number(m[0]); if (Number.isFinite(n)) return n; }
     }
   }
   return null;
 }
-function clamp(v, min, max) { const n = Number(v); if (!Number.isFinite(n)) return min; return Math.max(min, Math.min(max, n)); }
 
-// v2 detection and totals
+// v2 detection + totals
 function hasUnifiedV2(item) {
   return Array.isArray(item?.wcs?.parameters)
       && Array.isArray(item?.phs?.parameters)
@@ -201,32 +185,21 @@ function hasUnifiedV2(item) {
       && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
 }
 function v2Totals(item) {
-  // WCS total
   const wParams = Array.isArray(item?.wcs?.parameters) ? item.wcs.parameters : [];
-  const wcs = isFiniteNum(item?.wcs?.totalScore)
-                ? Number(item.wcs.totalScore)
-                : wParams.reduce((s, p) => s + clamp(Number(p?.score)||0, 0, 5), 0);
-
-  // PHS weighted sum
   const pParams = Array.isArray(item?.phs?.parameters) ? item.phs.parameters : [];
-  const phs = isFiniteNum(item?.phs?.totalWeightedScore)
-                ? Number(item.phs.totalWeightedScore)
-                : pParams.reduce((s, p) => s + (clamp(Number(p?.score)||0, 0, 10) * (Number(p?.weight)||0)), 0);
-
-  // ESI
   const eParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
-  const esi = isFiniteNum(item?.esi?.totalScore)
-                ? Number(item.esi.totalScore)
-                : eParams.reduce((s, p) => s + clamp(Number(p?.score)||0, 0, 10), 0);
-  const esiMax = isFiniteNum(item?.esi?.maxScore) ? Number(item.esi.maxScore) : (eParams.length ? eParams.length * 10 : 30);
 
-  // RPM
+  const wcs = isFiniteNum(item?.wcs?.totalScore) ? Number(item.wcs.totalScore)
+              : wParams.reduce((s, p) => s + clamp(Number(p?.score)||0, 0, 5), 0);
+  const phs = isFiniteNum(item?.phs?.totalWeightedScore) ? Number(item.phs.totalWeightedScore)
+              : pParams.reduce((s, p) => s + (clamp(Number(p?.score)||0, 0, 10) * (Number(p?.weight)||0)), 0);
+  const esi = isFiniteNum(item?.esi?.totalScore) ? Number(item.esi.totalScore)
+              : eParams.reduce((s, p) => s + clamp(Number(p?.score)||0, 0, 10), 0);
+  const esiMax = isFiniteNum(item?.esi?.maxScore) ? Number(item.esi.maxScore) : (eParams.length ? eParams.length * 10 : 30);
   const rpm = resolveRPMMultiplier(item);
 
-  return { wcs, phs: clamp(phs,0,10), esi, esiMax, rpm };
+  return { wcs, phs: clamp(phs, 0, 10), esi, esiMax, rpm };
 }
-
-// RPM strictly as multiplier
 function resolveRPMMultiplier(item) {
   const explicit = toNum(deepGet(item, 'rpm.finalMultiplier')) ?? toNum(deepGet(item, 'RPM.finalMultiplier'));
   if (isFiniteNum(explicit)) return clamp(explicit, 0.5, 2.5);
@@ -245,14 +218,12 @@ function resolveRPMMultiplier(item) {
     }
     return clamp(base, 0.5, 2.5);
   }
-
   const generic = toNum(deepGet(item, 'rpm')) ?? toNum(deepGet(item, 'RPM')) ?? toNum(deepGet(item, 'scores.RPM'));
   if (isFiniteNum(generic)) return clamp(generic, 0.5, 2.5);
-
   return 1.0;
 }
 
-// Severity prefers v2 totals when available
+// Severity (prefer v2)
 function computeFormulaSeverity(item) {
   if (hasUnifiedV2(item)) {
     const v = v2Totals(item);
@@ -336,13 +307,11 @@ function upsertMarker(item){
 }
 function clearMarkers(){ for (const m of markers.values()){ try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-// Radar (generic; RPM scaled visually)
+// Radar (generic; scale RPM visually)
 function getAxisScores(item) {
   let w, p, e;
-  if (hasUnifiedV2(item)) {
-    const v = v2Totals(item);
-    w = v.wcs; p = v.phs; e = v.esi;
-  } else {
+  if (hasUnifiedV2(item)) { const v = v2Totals(item); w = v.wcs; p = v.phs; e = v.esi; }
+  else {
     w = readNumberByPaths(item, ['wcs','scores.WCS','WCS','phase1.screening.WCS','phase2.scores.WCS']) ?? 0;
     p = readNumberByPaths(item, ['phs','scores.PHS','PHS','phase1.screening.PHS','phase2.scores.PHS']) ?? 0;
     e = readNumberByPaths(item, ['esi','scores.ESI','ESI','phase1.screening.ESI','phase2.scores.ESI']) ?? 0;
@@ -355,6 +324,7 @@ function getAxisScores(item) {
 }
 function renderBenchLegend() {
   const b = chartConfig.benchmarks;
+  if (!benchLegend) return;
   benchLegend.innerHTML = `
     <span style="color:${chartConfig.colors.highBorder}">High</span>: ${b.high} &nbsp;|&nbsp;
     <span style="color:${chartConfig.colors.mediumBorder}">Medium</span>: ${b.medium} &nbsp;|&nbsp;
@@ -385,8 +355,6 @@ function renderRadarGeneric(item) {
   radarChart = new Chart(ctx, { type: 'radar', data, options });
   renderBenchLegend();
 }
-
-// Radar for v2 (0–20 scaling like your earlier version)
 function renderRadarV2(item) {
   const ctx = document.getElementById('werSpiderChart')?.getContext('2d'); if (!ctx) return;
   const v = v2Totals(item);
@@ -412,114 +380,111 @@ function renderRadarV2(item) {
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { r: { suggestedMin: 0, suggestedMax: 20, ticks: { stepSize: 4 } } } }
   });
-  if (benchLegend) benchLegend.textContent = 'Low/Medium/High rings shown for orientation (0–20 scale)';
+  renderBenchLegend();
 }
 
 // Vessel name
 function getVesselName(it) {
   const direct = [it.vesselName, it.name, it.title, it.displayName, it.label, it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName, it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName];
   for (const c of direct) { const t = getText(c); if (t) return t; }
-  const pairs = flattenEntries(it, 2);
-  const keyRx = /(vessel|wreck|ship|name|title)/i;
-  for (const [k, v] of pairs) { if (!keyRx.test(k)) continue; const t = getText(v); if (t) return t; }
   return getText(it.id) || 'Unknown';
 }
 
-// Overview data (table)
-function extractAxisDetails(item) {
-  const details = { WCS:{score:null,rationale:null}, PHS:{score:null,rationale:null}, ESI:{score:null,rationale:null}, RPM:{score:null,rationale:null} };
-
+// Report builders
+function factorSummaryTable(item) {
+  const rows = [];
   if (hasUnifiedV2(item)) {
     const v = v2Totals(item);
-    details.WCS.score = v.wcs;
-    details.PHS.score = v.phs;
-    details.ESI.score = v.esi;
-    details.RPM.score = v.rpm;
+    rows.push(`<tr><th>WCS</th><td>${v.wcs.toFixed(2)}</td><td>0–20</td></tr>`);
+    rows.push(`<tr><th>PHS</th><td>${v.phs.toFixed(2)}</td><td>0–10</td></tr>`);
+    rows.push(`<tr><th>ESI</th><td>${v.esi.toFixed(2)}</td><td>0–${v.esiMax}</td></tr>`);
+    rows.push(`<tr><th>RPM</th><td>${v.rpm.toFixed(2)}×</td><td>multiplier</td></tr>`);
   } else {
-    details.WCS.score = readNumberByPaths(item, ['scores.WCS','wcs','WCS','phase1.screening.WCS']);
-    details.PHS.score = readNumberByPaths(item, ['scores.PHS','phs','PHS','phase1.screening.PHS']);
-    details.ESI.score = readNumberByPaths(item, ['scores.ESI','esi','ESI','phase1.screening.ESI']);
-    details.RPM.score = resolveRPMMultiplier(item);
+    const W = readNumberByPaths(item, ['wcs','scores.WCS','WCS']) ?? 0;
+    const P = readNumberByPaths(item, ['phs','scores.PHS','PHS']) ?? 0;
+    const E = readNumberByPaths(item, ['esi','scores.ESI','ESI']) ?? 0;
+    const R = resolveRPMMultiplier(item);
+    rows.push(`<tr><th>WCS</th><td>${W.toFixed(2)}</td><td>0–20</td></tr>`);
+    rows.push(`<tr><th>PHS</th><td>${P.toFixed(2)}</td><td>0–10</td></tr>`);
+    rows.push(`<tr><th>ESI</th><td>${E.toFixed(2)}</td><td>0–30/40</td></tr>`);
+    rows.push(`<tr><th>RPM</th><td>${R.toFixed(2)}×</td><td>multiplier</td></tr>`);
   }
-
-  const flat = flattenEntries(item, 4);
-  const ratRx = /(rationale|justification|reason|explanation|basis|notes|comment|detail|narrative)/i;
-  for (const ax of ['WCS','PHS','ESI','RPM']) {
-    for (const [path, value] of flat) {
-      if (!path?.toUpperCase().includes(ax)) continue;
-      if (!ratRx.test(path)) continue;
-      const t = extractPlain(value);
-      if (t) { details[ax].rationale = t; break; }
+  return `<h3>Factor Scores Summary</h3>
+    <table><thead><tr><th>Factor</th><th>Score</th><th>Scale</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+}
+function getSummativeText(item) {
+  return extractHtml(
+    deepGet(item,'finalSummary.summativeAssessment')
+    ?? deepGet(item,'summary')
+    ?? deepGet(item,'phase3.summary')
+    ?? deepGet(item,'phase1.summary?.background')
+  );
+}
+function getRecommendations(item) {
+  // Try multiple shapes: array of {title,description}, array of strings, or object with text
+  const sources = [
+    deepGet(item,'finalSummary.remediationSuggestions'),
+    deepGet(item,'recommendations'),
+    deepGet(item,'phase3.recommendations'),
+    deepGet(item,'actions')
+  ];
+  for (const src of sources) {
+    if (!src) continue;
+    if (Array.isArray(src)) {
+      const html = src.map(s => {
+        if (typeof s === 'string') return `<li>${escapeHtml(s)}</li>`;
+        const title = getText(s?.title) || '';
+        const desc = getText(s?.description) || getText(s?.text) || '';
+        const prio = s?.priority != null ? `Priority ${String(s.priority)}: ` : '';
+        return `<li>${prio}${escapeHtml(title)}${title && desc ? ': ' : ''}${escapeHtml(desc)}</li>`;
+      }).join('');
+      if (html) return `<ul class="list-disc ml-5">${html}</ul>`;
+    } else if (typeof src === 'object') {
+      const txt = extractPlain(src);
+      if (txt) return `<p>${escapeHtml(txt)}</p>`;
     }
   }
-  return details;
+  return null;
 }
-
-// Screening narratives
-function renderScreeningSections(item) {
-  const sections = [];
-  const carriers = [ item?.screening, item?.phase1?.screening ];
-  const seen = new Set();
-  const pushSection = (title, htmlOrText) => { const html = extractHtml(htmlOrText); if (!html) return; const key = `${title}|${html}`; if (seen.has(key)) return; sections.push(`<h3>${escapeHtml(title)}</h3>`); sections.push(html); seen.add(key); };
-  for (const sc of carriers) {
-    if (!sc || typeof sc !== 'object') continue;
-    const candidates = { 'Screening Summary': sc.summary, 'Rationale': sc.rationale, 'Methodology': sc.methodology, 'Assumptions': sc.assumptions, 'Limitations': sc.limitations, 'Data Sources': sc.sources ?? sc.dataSources };
-    for (const [title, val] of Object.entries(candidates)) pushSection(title, val);
-  }
-  return sections.join('\n');
-}
-
-// Report builders
 function buildReportHtml(item) {
   const blocks = [];
-  const summaryHtml = extractHtml(item?.summary) || extractHtml(item?.phase1?.summary);
+  const summaryHtml = getSummativeText(item);
   if (summaryHtml) { blocks.push('<h3>Summary</h3>', summaryHtml); }
-
-  // Factor summary table
-  const d = extractAxisDetails(item);
-  const row = (k, o) => `<tr><th style="white-space:nowrap">${k}${k==='RPM'?' (multiplier)':''}</th><td style="width:100px">${isFiniteNum(o.score)?o.score.toFixed(2):'—'}</td><td>${extractHtml(o.rationale) || ''}</td></tr>`;
+  blocks.push(factorSummaryTable(item));
+  // Simple rationale table (compact)
+  const W = readNumberByPaths(item, ['wcs','scores.WCS','WCS']) ?? 0;
+  const P = readNumberByPaths(item, ['phs','scores.PHS','PHS']) ?? 0;
+  const E = readNumberByPaths(item, ['esi','scores.ESI','ESI']) ?? 0;
+  const R = resolveRPMMultiplier(item);
   blocks.push(`
     <h3>Factor Scores and Rationale</h3>
     <table>
-      <thead><tr><th>Factor</th><th>Score</th><th>Rationale</th></tr></thead>
+      <thead><tr><th>Factor</th><th>Score</th><th>Notes</th></tr></thead>
       <tbody>
-        ${row('WCS', d.WCS)}
-        ${row('PHS', d.PHS)}
-        ${row('ESI', d.ESI)}
-        ${row('RPM', d.RPM)}
+        <tr><th>WCS</th><td>${W.toFixed(2)}</td><td></td></tr>
+        <tr><th>PHS</th><td>${P.toFixed(2)}</td><td></td></tr>
+        <tr><th>ESI</th><td>${E.toFixed(2)}</td><td></td></tr>
+        <tr><th>RPM</th><td>${R.toFixed(2)}×</td><td></td></tr>
       </tbody>
     </table>
   `);
-
-  const screeningHtml = renderScreeningSections(item);
-  if (screeningHtml) blocks.push(screeningHtml);
+  const recHtml = getRecommendations(item);
+  blocks.push('<h3>Recommendations</h3>', recHtml || '<p>—</p>');
   return blocks.join('\n');
 }
-
 function renderReportV2HTML(item) {
   const v = v2Totals(item);
-  // Add a compact v2 summary table up front
-  const summaryTable = `
-    <h3>Factor Scores Summary (v2)</h3>
-    <table>
-      <thead><tr><th>Factor</th><th>Score</th><th>Scale</th></tr></thead>
-      <tbody>
-        <tr><th>WCS</th><td>${v.wcs.toFixed(2)}</td><td>0–20</td></tr>
-        <tr><th>PHS</th><td>${v.phs.toFixed(2)}</td><td>0–10</td></tr>
-        <tr><th>ESI</th><td>${v.esi.toFixed(2)}</td><td>0–${v.esiMax}</td></tr>
-        <tr><th>RPM</th><td>${v.rpm.toFixed(2)}×</td><td>multiplier</td></tr>
-      </tbody>
-    </table>
-  `;
 
-  // Then the detailed breakdown sections like before
   const wcsRows = (item?.wcs?.parameters ?? []).map(p => `<tr><td>${escapeHtml(p?.name ?? p?.parameter ?? '')}</td><td>${escapeHtml(p?.rationale ?? '')}</td><td>${escapeHtml(String(p?.score ?? ''))}</td></tr>`).join('');
   const phsRows = (item?.phs?.parameters ?? []).map(p => `<tr><td>${escapeHtml(p?.name ?? p?.parameter ?? '')}</td><td>${escapeHtml(String(p?.weight ?? ''))}</td><td>${escapeHtml(p?.rationale ?? '')}</td><td>${escapeHtml(String(p?.score ?? ''))}</td></tr>`).join('');
   const esiRows = (item?.esi?.parameters ?? []).map(p => `<tr><td>${escapeHtml(p?.name ?? p?.parameter ?? '')}</td><td>${escapeHtml(p?.rationale ?? '')}</td><td>${escapeHtml(String(p?.score ?? ''))}</td></tr>`).join('');
   const rpmRows = (item?.rpm?.factors ?? item?.rpm?.parameters ?? []).map(f => `<tr><td>${escapeHtml(f?.name ?? f?.factor ?? '')}</td><td>${escapeHtml(f?.rationale ?? 'Not specified.')}</td><td>${escapeHtml(String(f?.value ?? ''))}</td></tr>`).join('');
 
+  const summaryHtml = getSummativeText(item);
+  const recHtml = getRecommendations(item);
+
   return `
-    ${summaryTable}
+    ${factorSummaryTable(item)}
 
     <section>
       <h3>Phase 3: WCS (Hull & Structure)</h3>
@@ -545,23 +510,36 @@ function renderReportV2HTML(item) {
       ${rpmRows ? `<table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRows}</tbody></table>` : '<p class="text-gray-600">No factor breakdown provided.</p>'}
       <p class="mt-2"><strong>Final Multiplier:</strong> ${v.rpm.toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
     </section>
+
+    <section>
+      <h3>Summary</h3>
+      ${summaryHtml || '<p>—</p>'}
+    </section>
+
+    <section>
+      <h3>Recommendations</h3>
+      ${recHtml || '<p>—</p>'}
+    </section>
   `;
 }
 
-// Markdown (used for export)
+// Markdown for export
 function buildReportMarkdown(item) {
   const lines = [];
   const vessel = getVesselName(item);
   lines.push(`# ${vessel}`);
-  const d = extractAxisDetails(item);
-  lines.push('\n## Factor Scores and Rationale');
-  lines.push('| Factor | Score | Rationale |');
-  lines.push('|---|---:|---|');
-  const row = (k, o) => `| ${k}${k==='RPM'?' (multiplier)':''} | ${isFiniteNum(o.score)?o.score.toFixed(2):'—'} | ${(extractPlain(o.rationale) || '').replace(/\n/g,'<br>')} |`;
-  lines.push(row('WCS', d.WCS));
-  lines.push(row('PHS', d.PHS));
-  lines.push(row('ESI', d.ESI));
-  lines.push(row('RPM', d.RPM));
+  const v = hasUnifiedV2(item) ? v2Totals(item) : null;
+  lines.push('\n## Factor Scores Summary');
+  if (v) {
+    lines.push(`- WCS: ${v.wcs.toFixed(2)} / 20`);
+    lines.push(`- PHS: ${v.phs.toFixed(2)} / 10`);
+    lines.push(`- ESI: ${v.esi.toFixed(2)} / ${v.esiMax}`);
+    lines.push(`- RPM: ${v.rpm.toFixed(2)}×`);
+  }
+  const summary = extractPlain(getSummativeText(item));
+  if (summary) { lines.push('\n## Summary'); lines.push(summary); }
+  const recHtml = getRecommendations(item);
+  if (recHtml) { lines.push('\n## Recommendations'); lines.push(extractPlain(recHtml)); }
   return lines.join('\n');
 }
 
@@ -657,7 +635,7 @@ function drawList(container, items) {
   }
 }
 
-// Report open
+// Open report
 function openReport(item) {
   currentItem = item;
   currentDocId = item?.id || null;
@@ -675,33 +653,35 @@ function openReport(item) {
   }
 
   if (phase2Input) phase2Input.value = getText(deepGet(item, 'phase2.summary')) || '';
-  refreshGallery();
+
+  renderGalleryFromDoc();
   renderFeedbackList(item);
 
   reportContainer.classList.remove('hidden');
   reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// Gallery
-function galleryPathFor(docId) { return `artifacts/${appId}/public/uploads/${docId}/phase2`; }
-async function refreshGallery() {
-  if (!galleryGrid || !currentDocId) return;
-  galleryGrid.innerHTML = ''; galleryEmpty?.classList.add('hidden');
-  try {
-    const res = await listAll(storageRef(storage, galleryPathFor(currentDocId)));
-    if (!res.items.length) { galleryEmpty?.classList.remove('hidden'); return; }
-    for (const itemRef of res.items) {
-      const url = await getDownloadURL(itemRef);
-      const name = itemRef.name || 'file';
-      const isImg = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name);
-      const tile = document.createElement('div'); tile.className = 'gallery-tile';
-      tile.innerHTML = isImg
-        ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(name)}" loading="lazy"></a>`
-        : `<a class="file-tile" href="${url}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`;
-      galleryGrid.appendChild(tile);
+// Gallery (doc-driven; avoids Storage list 403)
+function renderGalleryFromDoc() {
+  if (!galleryGrid) return;
+  galleryGrid.innerHTML = '';
+  galleryEmpty?.classList.add('hidden');
+
+  const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
+  if (!assets.length) { galleryEmpty?.classList.remove('hidden'); return; }
+
+  for (const a of assets) {
+    const url = a?.url || '';
+    const name = a?.name || a?.path || 'file';
+    const isImg = /\.(png|jpe?g|gif|webp|bmp|svg|tif|tiff)$/i.test(name);
+    const tile = document.createElement('div');
+    tile.className = 'gallery-tile';
+    if (isImg && url) {
+      tile.innerHTML = `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(name)}" loading="lazy"></a>`;
+    } else {
+      tile.innerHTML = `<a class="file-tile" href="${url}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`;
     }
-  } catch {
-    galleryEmpty && (galleryEmpty.textContent = 'No images uploaded or unable to load gallery.', galleryEmpty.classList.remove('hidden'));
+    galleryGrid.appendChild(tile);
   }
 }
 
@@ -713,29 +693,51 @@ savePhase2Btn?.addEventListener('click', async () => {
   try {
     await updateDoc(doc(db, assessmentsPath, currentDocId), { 'phase2.summary': txt, 'phase2.updatedAt': serverTimestamp() });
     phase2Status.textContent = 'Saved.'; setTimeout(() => phase2Status.textContent = '', 1500);
-  } catch { phase2Status.textContent = 'Save failed.'; }
+  } catch (e) {
+    phase2Status.textContent = `Save failed: ${e?.message || 'error'}`;
+  }
 });
+
 uploadFilesBtn?.addEventListener('click', async () => {
   if (!currentDocId) { uploadStatus.textContent = 'Open a report first.'; return; }
   const files = Array.from(phase2Files?.files || []); if (!files.length) { uploadStatus.textContent = 'Choose files first.'; return; }
   uploadStatus.textContent = `Uploading ${files.length} file(s)...`;
   try {
-    const base = galleryPathFor(currentDocId);
+    const basePath = `artifacts/${appId}/public/uploads/${currentDocId}/phase2`;
     const refDoc = doc(db, assessmentsPath, currentDocId);
+
     let done = 0;
     for (const f of files) {
       const safe = `${Date.now()}_${f.name.replace(/[^\w.\-]+/g,'_')}`;
-      const ref = storageRef(storage, `${base}/${safe}`);
+      const ref = storageRef(storage, `${basePath}/${safe}`);
       await uploadBytes(ref, f, { contentType: f.type || undefined });
       const url = await getDownloadURL(ref);
-      await updateDoc(refDoc, { 'phase2.assets': arrayUnion({ name: f.name, path: `${base}/${safe}`, url, contentType: f.type || '', bytes: f.size || 0, uploadedAt: serverTimestamp() }) });
-      done++; uploadStatus.textContent = `Uploaded ${done}/${files.length}`;
+      await updateDoc(refDoc, {
+        'phase2.assets': arrayUnion({
+          name: f.name,
+          path: `${basePath}/${safe}`,
+          url,
+          contentType: f.type || '',
+          bytes: f.size || 0,
+          uploadedAt: serverTimestamp()
+        })
+      });
+      done++;
+      uploadStatus.textContent = `Uploaded ${done}/${files.length}`;
     }
-    phase2Files.value = ''; await refreshGallery();
-    setTimeout(() => uploadStatus.textContent = 'Upload complete.', 500);
+    phase2Files.value = '';
+    // Re-read doc to get freshly appended assets (with server timestamps)
+    const snap = await getDoc(refDoc);
+    if (snap.exists()) currentItem = { ...currentItem, ...snap.data() };
+    renderGalleryFromDoc();
+
+    setTimeout(() => uploadStatus.textContent = 'Upload complete.', 300);
     setTimeout(() => uploadStatus.textContent = '', 1500);
-  } catch { uploadStatus.textContent = 'Upload failed.'; }
+  } catch (e) {
+    uploadStatus.textContent = `Upload failed: ${e?.message || '403/permission? Check Storage rules.'}`;
+  }
 });
+
 reassessBtn?.addEventListener('click', async () => {
   if (!currentDocId) { phase2Status.textContent = 'Open a report first.'; return; }
   phase2Status.textContent = 'Submitting reassessment...';
@@ -744,13 +746,15 @@ reassessBtn?.addEventListener('click', async () => {
     if (reassessWerpsFn) await reassessWerpsFn(payload); else await repairWerpsFn(payload);
     setTimeout(async () => {
       const snap = await getDoc(doc(db, assessmentsPath, currentDocId));
-      if (snap.exists()) { currentItem = { ...snap.data(), id: currentDocId }; openReport(currentItem); }
+      if (snap.exists()) { currentItem = { ...currentItem, ...snap.data(), id: currentDocId }; openReport(currentItem); }
       phase2Status.textContent = 'Reassessment complete.'; setTimeout(() => phase2Status.textContent = '', 2000);
     }, 1500);
-  } catch { phase2Status.textContent = 'Reassessment failed.'; }
+  } catch (e) {
+    phase2Status.textContent = `Reassessment failed: ${e?.message || 'error'}`;
+  }
 });
 
-// Feedback
+// Feedback (per-report)
 function renderFeedbackList(item) {
   if (!feedbackList) return;
   feedbackList.innerHTML = '';
@@ -774,7 +778,7 @@ saveFeedbackBtn?.addEventListener('click', async () => {
     if (!Array.isArray(currentItem.feedback)) currentItem.feedback = [];
     currentItem.feedback.unshift({ message: msg, user: who, createdAt: { seconds: Math.floor(Date.now()/1000) } });
     renderFeedbackList(currentItem); feedbackInput.value = ''; feedbackStatus.textContent = 'Saved.'; setTimeout(()=>feedbackStatus.textContent='',1500);
-  } catch { feedbackStatus.textContent = 'Save failed.'; }
+  } catch (e) { feedbackStatus.textContent = `Save failed: ${e?.message || 'error'}`; }
 });
 
 // Auth
@@ -800,6 +804,7 @@ document.getElementById('resetPasswordBtn')?.addEventListener('click', async () 
 });
 signOutBtn?.addEventListener('click', async () => { try { await signOut(auth); } catch {} });
 
+// Roles
 async function fetchRoleFor(uid) {
   try {
     const allowDocRef = doc(db, 'system', 'allowlist', 'users', uid);
@@ -857,7 +862,7 @@ onAuthStateChanged(auth, async (user) => {
   await startData();
 });
 
-// Export helpers
+// Export
 function downloadFile(filename, blob) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 function getCurrentHtml() { if (!currentItem) return ''; if (hasUnifiedV2(currentItem)) return lastRenderedHtml || renderReportV2HTML(currentItem); return lastRenderedHtml || buildReportHtml(currentItem); }
 function exportHtml() { if (!currentItem) return; const vessel = getVesselName(currentItem) || 'assessment'; const html = getCurrentHtml(); const docHtml = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${html}</body></html>`; downloadFile(`${vessel.replace(/\s+/g,'_')}.html`, new Blob([docHtml], { type: 'text/html;charset=utf-8' })); }
@@ -875,7 +880,7 @@ exportHtmlBtn?.addEventListener('click', exportHtml);
 exportMdBtn?.addEventListener('click', exportMarkdown);
 exportJsonBtn?.addEventListener('click', exportJson);
 
-// Normalize doc helper
+// Normalize doc
 function normalizeDoc(d) {
   const out = { ...d };
   if (d && typeof d.data === 'object' && d.data) Object.assign(out, d.data);

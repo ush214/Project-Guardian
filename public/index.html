@@ -40,15 +40,34 @@
     .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
     .pill.unknown { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
 
-    .report-prose { max-width: none; }
-    .report-prose * { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
-    .report-prose th, .report-prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
-    .report-prose th { background: #f9fafb; font-weight: 600; }
+    /* Report content — smaller, tighter for tables */
+    .report-prose { max-width: none; font-size: 0.92rem; line-height: 1.45; color: #111827; }
+    .report-prose h1 { font-size: 1.25rem; }
+    .report-prose h2 { font-size: 1.1rem; }
+    .report-prose h3 { font-size: 1rem; }
+    .report-prose h4 { font-size: 0.95rem; }
+    .report-prose p,
+    .report-prose ul,
+    .report-prose ol,
+    .report-prose table,
+    .report-prose pre,
+    .report-prose blockquote { margin-top: 0.4rem; margin-bottom: 0.4rem; }
+
+    .report-prose table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: 0.86rem; }
+    .report-prose th, .report-prose td {
+      border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top;
+      word-break: break-word;
+    }
+    .report-prose th { background: #f9fafb; font-weight: 600; white-space: nowrap; }
+
+    .report-prose pre { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb; }
+    .report-prose blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid #e5e7eb; color:#374151; }
 
     #reportScroll { max-height: 75vh; overflow-y: auto; padding-right: 4px; }
     #reportScroll::-webkit-scrollbar { width: 8px; }
     #reportScroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
 
+    /* Gallery tiles */
     .gallery-tile img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; }
     .gallery-tile .file-tile { height: 120px; display:flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#f8fafc; font-size:12px; color:#475569; padding:6px; text-align:center; }
   </style>
@@ -192,7 +211,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
           <div class="lg:col-span-3">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
-            <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white h-[360px]">
+            <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white h-[340px]">
               <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
             </div>
             <div id="benchLegend" class="mt-2 text-xs text-gray-600 text-center"></div>
@@ -231,7 +250,7 @@
                 <button id="uploadFilesBtn" class="text-xs px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-600">Upload files</button>
                 <span id="uploadStatus" class="text-xs text-gray-500"></span>
               </div>
-              <p class="text-[11px] text-gray-500 mt-1">Images will appear in the gallery; other files are attached to this report.</p>
+              <p class="text-[11px] text-gray-500 mt-1">Images appear in the gallery; other files are attached to this report.</p>
             </div>
           </div>
         </div>
