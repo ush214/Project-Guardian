@@ -39,7 +39,7 @@
     .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
     .pill.unknown { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
 
-    /* Report content: keep it readable and contained */
+    /* Report content containment and hygiene */
     .report-prose { max-width: none; }
     .report-prose * { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .report-prose p,
@@ -66,8 +66,9 @@
     .report-prose pre { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb; }
     .report-prose blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid #e5e7eb; color:#374151; }
 
-    .list-item { cursor: pointer; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; }
-    .list-item:hover { background: #f9fafb; }
+    /* Make the chart canvas follow its container height */
+    #werSpiderWrapper { height: 360px; } /* fixed height prevents layout growth */
+    #werSpiderChart { width: 100% !important; height: 100% !important; display: block; }
   </style>
 </head>
 <body class="bg-slate-50 text-gray-900">
@@ -163,16 +164,15 @@
         <p class="text-xs text-gray-500 mt-2">Severity = (WCS + PHS + (ESI ÷ 3)) × RPM.</p>
       </section>
 
-      <!-- Evidence: embedded screenshot to show current issue -->
-      <!-- Save your screenshot at: public/assets/evidence-assessments.png -->
+      <!-- Evidence: embedded screenshot (optional) -->
       <section id="evidenceSection" class="bg-white border border-amber-200 rounded-xl shadow p-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-amber-800">Evidence: Initial Assessments visible, severity values now present; full report previously overflowed</h3>
+          <h3 class="text-sm font-semibold text-amber-800">Evidence: Report panel previously grew beyond the viewport</h3>
           <button id="toggleEvidenceBtn" class="text-xs text-amber-700 hover:underline">Hide</button>
         </div>
         <p class="text-xs text-amber-700 mt-1">If the image doesn't load, ensure the file exists at /assets/evidence-assessments.png.</p>
         <div id="evidenceWrapper" class="mt-3">
-          <img id="evidenceImg" src="/assets/evidence-assessments.png" alt="Screenshot showing Initial Assessments list and severity values" class="w-full rounded border border-amber-200">
+          <img id="evidenceImg" src="/assets/evidence-assessments.png" alt="Screenshot showing report panel overflow" class="w-full rounded border border-amber-200">
         </div>
       </section>
 
@@ -221,18 +221,20 @@
       </section>
 
       <!-- Full report panel -->
-      <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden">
+      <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden max-h-[80vh] overflow-hidden">
         <h2 id="reportTitle" class="text-2xl font-bold mb-4 text-center text-gray-900"></h2>
         <div id="alert-display-section" class="hidden mb-4"></div>
-        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <!-- Make the left column scroll within the panel to prevent page growing indefinitely -->
+        <div id="reportGrid" class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <!-- Left: scrollable report content -->
           <div class="lg:col-span-3">
-            <div id="reportScroll" class="max-h-[70vh] overflow-y-auto pr-2">
+            <div id="reportScroll" class="max-h-[75vh] overflow-y-auto pr-2">
               <div id="reportContent" class="report-prose"></div>
             </div>
           </div>
-          <div class="lg:col-span-2">
+          <!-- Right: fixed-height chart area -->
+          <div class="lg:col-span-2 flex flex-col max-h-[75vh]">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
+            <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white"></div>
             <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
           </div>
         </div>
@@ -286,7 +288,6 @@
     // Assessments path (no capitalization)
     const assessmentsPath = `artifacts/${appId}/public/data/werpassessments`;
 
-    // Debug flag (set to false to silence console logs)
     const DEBUG = true;
 
     // Evidence toggle
@@ -297,7 +298,7 @@
       toggleEvidenceBtn.textContent = hidden ? 'Show' : 'Hide';
     });
 
-    // Role helper: reads Role/role (case-insensitive) from allowlist, fallback to legacy private path
+    // Role helper
     async function fetchRoleFor(uid) {
       try {
         const allowDocRef = doc(db, 'system', 'allowlist', 'users', uid);
@@ -315,8 +316,7 @@
           if (d.contributor === true) return 'contributor';
           if (d.allowed === true) return 'user';
         }
-      } catch (e) { /* ignore */ }
-
+      } catch {}
       try {
         const legacyRef = doc(db, `artifacts/${appId}/private/users/${uid}`);
         const legacyDoc = await getDoc(legacyRef);
@@ -332,8 +332,7 @@
           if (d.admin === true) return 'admin';
           if (d.contributor === true) return 'contributor';
         }
-      } catch (e) { /* ignore */ }
-
+      } catch {}
       return 'user';
     }
 
@@ -342,22 +341,10 @@
     function isFiniteNum(n){ return typeof n === 'number' && Number.isFinite(n); }
     function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
     function getText(v) { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; }
+    function deepGet(obj, path) { return path.split('.').reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj); }
 
-    // Deep getter by path like "phase1.screening.WCS"
-    function deepGet(obj, path) {
-      const parts = path.split('.');
-      let cur = obj;
-      for (const p of parts) {
-        if (cur == null) return undefined;
-        cur = cur[p];
-      }
-      return cur;
-    }
-
-    // Try to coerce various shapes into a numeric value
     function coerceToNumber(val) {
       if (typeof val === 'number') return Number.isFinite(val) ? val : null;
-
       if (typeof val === 'string') {
         const s = val.trim();
         if (/^low$/i.test(s)) return 3;
@@ -367,23 +354,13 @@
         if (m) return Number(m[0]);
         return null;
       }
-
       if (Array.isArray(val)) {
-        for (const x of val) {
-          const n = coerceToNumber(x);
-          if (n != null) return n;
-        }
+        for (const x of val) { const n = coerceToNumber(x); if (n != null) return n; }
         return null;
       }
-
       if (val && typeof val === 'object') {
         const candKeys = ['value','score','val','num','amount','rating','points','v','s'];
-        for (const k of candKeys) {
-          if (k in val) {
-            const n = coerceToNumber(val[k]);
-            if (n != null) return n;
-          }
-        }
+        for (const k of candKeys) if (k in val) { const n = coerceToNumber(val[k]); if (n != null) return n; }
         const bandStr = val.band ?? val.level ?? val.name ?? val.label;
         const t = getText(bandStr);
         if (t) {
@@ -393,26 +370,17 @@
           const m = t.match(/-?\d+(\.\d+)?/);
           if (m) return Number(m[0]);
         }
-        for (const v of Object.values(val)) {
-          const n = coerceToNumber(v);
-          if (n != null) return n;
-        }
+        for (const v of Object.values(val)) { const n = coerceToNumber(v); if (n != null) return n; }
       }
-
       return null;
     }
-
-    // Read a number from nested paths, applying coercion for strings/objects
     function readNumberByPaths(obj, paths) {
       for (const p of paths) {
-        const v = deepGet(obj, p);
-        const n = coerceToNumber(v);
+        const n = coerceToNumber(deepGet(obj, p));
         if (n !== null) return n;
       }
       return null;
     }
-
-    // Shallow merge common nested holders into top-level
     function normalizeDoc(d) {
       const out = { ...d };
       if (d && typeof d.data === 'object' && d.data) Object.assign(out, d.data);
@@ -423,22 +391,17 @@
       if (d && typeof d.metadata === 'object' && d.metadata) out.metadata = { ...d.metadata };
       return out;
     }
-
-    // Flatten to heuristically find vessel names
     function flattenObject(obj, maxDepth = 3) {
       const out = [];
-      function rec(cur, depth) {
+      (function rec(cur, depth){
         if (!cur || typeof cur !== 'object' || depth > maxDepth) return;
         for (const [k, v] of Object.entries(cur)) {
           out.push([k, v]);
           if (v && typeof v === 'object') rec(v, depth + 1);
         }
-      }
-      rec(obj, 0);
+      })(obj,0);
       return out;
     }
-
-    // Heuristic vessel name resolver
     function getVesselName(it) {
       const direct = [
         it.vesselName, it.name, it.title, it.displayName, it.label,
@@ -450,47 +413,25 @@
         it['wreck_title'], it['ship_name'], it['Ship Name'], it['Name']
       ];
       for (const c of direct) { const t = getText(c); if (t) return t; }
-
       const pairs = flattenObject(it, 3);
       const keyRx = /(vessel|wreck|ship|name|title)/i;
       for (const [k, v] of pairs) { if (!keyRx.test(k)) continue; const t = getText(v); if (t) return t; }
-
       return getText(it.id) || 'Unknown';
     }
 
-    // Compute severity value from multiple possible fields or from formula
     function computeFormulaSeverity(item) {
-      const W = readNumberByPaths(item, [
-        'severity.components.WCS','scores.WCS','wcs','WCS','risk.WCS',
-        'phase2.scores.WCS','phase1.screening.WCS','metrics.WCS','values.WCS','phase1.WCS','screening.WCS','phase1.wcs'
-      ]);
-      const P = readNumberByPaths(item, [
-        'severity.components.PHS','scores.PHS','phs','PHS','risk.PHS',
-        'phase2.scores.PHS','phase1.screening.PHS','metrics.PHS','values.PHS','phase1.PHS','screening.PHS','phase1.phs'
-      ]);
-      const E = readNumberByPaths(item, [
-        'severity.components.ESI','scores.ESI','esi','ESI','risk.ESI',
-        'phase2.scores.ESI','phase1.screening.ESI','metrics.ESI','values.ESI','phase1.ESI','screening.ESI','phase1.esi'
-      ]);
-      const R = readNumberByPaths(item, [
-        'severity.components.RPM','scores.RPM','rpm','RPM','risk.RPM',
-        'phase2.scores.RPM','phase1.screening.RPM','metrics.RPM','values.RPM','phase1.RPM','screening.RPM','phase1.rpm'
-      ]);
-
+      const W = readNumberByPaths(item, ['severity.components.WCS','scores.WCS','wcs','WCS','risk.WCS','phase2.scores.WCS','phase1.screening.WCS','metrics.WCS','values.WCS','phase1.WCS','screening.WCS','phase1.wcs']);
+      const P = readNumberByPaths(item, ['severity.components.PHS','scores.PHS','phs','PHS','risk.PHS','phase2.scores.PHS','phase1.screening.PHS','metrics.PHS','values.PHS','phase1.PHS','screening.PHS','phase1.phs']);
+      const E = readNumberByPaths(item, ['severity.components.ESI','scores.ESI','esi','ESI','risk.ESI','phase2.scores.ESI','phase1.screening.ESI','metrics.ESI','values.ESI','phase1.ESI','screening.ESI','phase1.esi']);
+      const R = readNumberByPaths(item, ['severity.components.RPM','scores.RPM','rpm','RPM','risk.RPM','phase2.scores.RPM','phase1.screening.RPM','metrics.RPM','values.RPM','phase1.RPM','screening.RPM','phase1.rpm']);
       if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
       return null;
     }
-
     function getSeverityValue(item) {
-      const direct = readNumberByPaths(item, [
-        'severity.value','severityValue','severity_score','severityScore','score',
-        'risk.severity','risk.score','metrics.severity','values.severity'
-      ]);
+      const direct = readNumberByPaths(item, ['severity.value','severityValue','severity_score','severityScore','score','risk.severity','risk.score','metrics.severity','values.severity']);
       if (direct !== null) return direct;
-
       const formula = computeFormulaSeverity(item);
       if (formula !== null) return formula;
-
       const sevBandText = deepGet(item, 'severity.band') ?? deepGet(item, 'severity.level') ?? item.severity;
       const s = getText(sevBandText);
       if (s) {
@@ -500,10 +441,8 @@
         const m = s.match(/-?\d+(\.\d+)?/);
         if (m) return Number(m[0]);
       }
-
       return null;
     }
-
     function bandFromValue(val){
       const v = Number(val);
       if (!Number.isFinite(v)) return 'unknown';
@@ -623,7 +562,6 @@
         adminToolsBtn.classList.add('hidden');
         userNameSpan.classList.add('hidden');
         signOutBtn.classList.add('hidden');
-        currentRole = 'user';
         roleBadge.textContent = 'Role: —';
         analyzeBtn.disabled = true;
         contribHint.classList.remove('hidden');
@@ -636,13 +574,13 @@
       userNameSpan.classList.remove('hidden');
       signOutBtn.classList.remove('hidden');
 
-      currentRole = await fetchRoleFor(user.uid);
-      roleBadge.textContent = `Role: ${currentRole}`;
-      const isAdmin = currentRole === 'admin';
-      const isContributor = isAdmin || currentRole === 'contributor';
-      if (isAdmin) adminToolsBtn.classList.remove('hidden'); else adminToolsBtn.classList.add('hidden');
+      const role = await fetchRoleFor(user.uid);
+      roleBadge.textContent = `Role: ${role}`;
+      const isAdmin = role === 'admin';
+      const isContributor = isAdmin || role === 'contributor';
+      if (isAdmin) document.getElementById('adminToolsBtn').classList.remove('hidden'); else document.getElementById('adminToolsBtn').classList.add('hidden');
       analyzeBtn.disabled = !isContributor;
-      if (!isContributor) contribHint.classList.remove('hidden'); else contribHint.classList.add('hidden');
+      if (!isContributor) document.getElementById('contribHint').classList.remove('hidden'); else document.getElementById('contribHint').classList.add('hidden');
 
       initMap();
       await startData();
@@ -671,7 +609,6 @@
 
     // Map
     const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
-
     function initMap(){
       if (map) return;
       map = L.map('map').setView([10, 150], 3);
@@ -683,7 +620,6 @@
         attribution: '&copy; OpenStreetMap &copy; Mapbox'
       }).addTo(map);
     }
-
     function markerIconFor(band){
       const color = band === "high" ? "red" : band === "medium" ? "orange" : band === "low" ? "green" : "blue";
       return L.icon({
@@ -692,12 +628,10 @@
         iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
       });
     }
-
     function upsertMarker(item){
       const coords = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
       const id = item?.id;
       if (!id) return;
-
       const lat = coords?.latitude ?? coords?.lat ?? coords?.y;
       const lng = coords?.longitude ?? coords?.lng ?? coords?.x;
       if (lat == null || lng == null) return;
@@ -719,13 +653,7 @@
         markers.set(id, m);
       }
     }
-
-    function clearMarkers(){
-      for (const m of markers.values()){
-        try { map.removeLayer(m); } catch {}
-      }
-      markers = new Map();
-    }
+    function clearMarkers(){ for (const m of markers.values()){ try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
     // Radar chart
     function renderRadar(item) {
@@ -751,7 +679,7 @@
       };
       const options = {
         responsive: true,
-        maintainAspectRatio: false,
+        maintainAspectRatio: false, /* canvas will follow CSS height */
         scales: {
           r: {
             beginAtZero: true,
@@ -766,6 +694,43 @@
 
       if (radarChart) { radarChart.destroy(); }
       radarChart = new Chart(ctx, { type: 'radar', data, options });
+    }
+
+    // Sanitize and compact report HTML
+    function sanitizeReportHtml(html) {
+      let safe = DOMPurify.sanitize(html || '', {
+        RETURN_TRUSTED_TYPE: false,
+        WHOLE_DOCUMENT: false,
+        USE_PROFILES: { html: true },
+        FORBID_TAGS: ['script', 'style', 'link'],
+        FORBID_ATTR: ['style', 'onerror', 'onload']
+      });
+      // Remove repeating empty paragraphs and collapse long <br> runs
+      safe = safe
+        .replace(/<(p|div)>\s*(?:&nbsp;|\u00A0|\s|<br\s*\/?>)*<\/\1>/gi, '')
+        .replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>');
+      return safe;
+    }
+
+    function renderFallbackSummary(item) {
+      const texts = [item?.finalSummary, item?.summary, item?.phase1?.summary, item?.conclusion]
+        .filter(t => typeof t === 'string' && t.trim().length);
+      if (texts.length) {
+        const blocks = texts.map(t => `<p>${escapeHtml(t).replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`).join('');
+        return `<div>${blocks}</div>`;
+      }
+      const vessel = escapeHtml(getVesselName(item));
+      const sv = item?.severity?.value;
+      const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : 'N/A';
+      return `
+        <h3>Summary</h3>
+        <table>
+          <tr><th>Vessel</th><td>${vessel}</td></tr>
+          <tr><th>Severity</th><td>${(item?.severity?.band || 'unknown').toUpperCase()} ${svTxt}</td></tr>
+          <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
+          <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
+        </table>
+      `;
     }
 
     async function startData() {
@@ -872,9 +837,7 @@
       clearMarkers();
       for (const it of filtered) upsertMarker(it);
 
-      const total = allItems.length;
-      const vis = filtered.length;
-      visibleCounts.textContent = `${vis} of ${total}`;
+      visibleCounts.textContent = `${filtered.length} of ${allItems.length}`;
     }
 
     function drawList(container, items) {
@@ -898,70 +861,22 @@
       }
     }
 
-    // Clean and constrain incoming HTML so it doesn't blow up layout
-    function sanitizeReportHtml(html) {
-      // Basic sanitize
-      let safe = DOMPurify.sanitize(html || '', {
-        RETURN_TRUSTED_TYPE: false,
-        WHOLE_DOCUMENT: false,
-        USE_PROFILES: { html: true },
-        FORBID_TAGS: ['script', 'style', 'link'],
-        FORBID_ATTR: ['style', 'onerror', 'onload']
-      });
-      // Condense excessive <br> runs
-      safe = safe.replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>');
-      return safe;
-    }
-
-    function renderFallbackSummary(item) {
-      // Use summary/finalSummary if present, otherwise a table with basics
-      const texts = [
-        item?.finalSummary, item?.summary, item?.phase1?.summary, item?.conclusion
-      ].filter(t => typeof t === 'string' && t.trim().length);
-
-      if (texts.length) {
-        const blocks = texts.map(t => `<p>${escapeHtml(t).replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`).join('');
-        return `<div>${blocks}</div>`;
-      }
-
-      // Last resort summary table
-      const vessel = escapeHtml(getVesselName(item));
-      const sv = item?.severity?.value;
-      const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : 'N/A';
-      return `
-        <h3>Summary</h3>
-        <table>
-          <tr><th>Vessel</th><td>${vessel}</td></tr>
-          <tr><th>Severity</th><td>${(item?.severity?.band || 'unknown').toUpperCase()} ${svTxt}</td></tr>
-          <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
-          <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
-        </table>
-      `;
-    }
-
     function openReport(item) {
       const vessel = getVesselName(item);
       reportTitle.textContent = vessel || 'Assessment';
 
-      // Prefer explicit HTML fields
-      const rawHtml =
-        item?.report?.html ||
-        item?.html ||
-        item?.reportHtml ||
-        item?.report_markdown || // some sources store md/html here
-        null;
+      const rawHtml = item?.report?.html || item?.html || item?.reportHtml || item?.report_markdown || null;
 
       if (rawHtml && typeof rawHtml === 'string') {
-        const safe = sanitizeReportHtml(rawHtml);
-        document.getElementById('reportContent').innerHTML = safe;
+        document.getElementById('reportContent').innerHTML = sanitizeReportHtml(rawHtml);
       } else {
-        // Fallback: render summaries cleanly
         document.getElementById('reportContent').innerHTML = renderFallbackSummary(item);
       }
 
       renderRadar(item);
+
+      // Reveal and ensure the panel is visible without changing page height
       reportContainer.classList.remove('hidden');
-      // Scroll the report panel into view but keep it from pushing the page height
       reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   </script>
