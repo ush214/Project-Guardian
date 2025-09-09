@@ -72,10 +72,14 @@ const reportTitle = document.getElementById('reportTitle');
 const reportContent = document.getElementById('reportContent');
 const benchLegend = document.getElementById('benchLegend');
 
+// Track last HTML we rendered for export
+let lastRenderedHtml = '';
+
+// Paths banner
 const assessPathSpan = document.getElementById('assessPathSpan');
 const appIdSpan = document.getElementById('appIdSpan');
-appIdSpan.textContent = appId;
-assessPathSpan.textContent = assessmentsPath;
+if (appIdSpan) appIdSpan.textContent = appId;
+if (assessPathSpan) assessPathSpan.textContent = assessmentsPath;
 
 // Export buttons
 const exportPdfBtn = document.getElementById('exportPdfBtn');
@@ -110,6 +114,7 @@ let chartConfig = {
 // Utilities
 function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function isFiniteNum(n){ return typeof n === 'number' && Number.isFinite(n); }
+function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function getText(v) { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; }
 function deepGet(obj, path) { return path.split('.').reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj); }
 function toTitleCase(s) {
@@ -123,10 +128,7 @@ function flattenEntries(obj, maxDepth = 4) {
   const out = [];
   (function rec(cur, path, depth){
     if (cur === null || cur === undefined) return;
-    if (typeof cur !== 'object' || depth > maxDepth) {
-      out.push([path, cur]);
-      return;
-    }
+    if (typeof cur !== 'object' || depth > maxDepth) { out.push([path, cur]); return; }
     const keys = Object.keys(cur);
     if (!keys.length) out.push([path, cur]);
     for (const k of keys) {
@@ -153,15 +155,11 @@ function sanitizeReportHtml(html) {
   return safe;
 }
 function renderMarkdown(md) {
-  try {
-    const html = marked.parse(md || '');
-    return sanitizeReportHtml(html);
-  } catch {
-    return `<p>${escapeHtml(md || '').replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`;
-  }
+  try { return sanitizeReportHtml(marked.parse(md || '')); }
+  catch { return `<p>${escapeHtml(md || '').replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`; }
 }
 
-// Robust text extraction to avoid [object Object]
+// Robust text extraction (avoid [object Object])
 function extractHtml(val) {
   if (typeof val === 'string') {
     const s = val.trim();
@@ -246,10 +244,7 @@ function extractPlain(val) {
   }
 
   if (Array.isArray(val)) {
-    for (const v of val) {
-      const t = extractPlain(v);
-      if (t) return t;
-    }
+    for (const v of val) { const t = extractPlain(v); if (t) return t; }
   }
   return null;
 }
@@ -262,45 +257,27 @@ function readTextByPaths(obj, paths) {
   return null;
 }
 
-// Severity computation helpers
+// Severity helpers
 function coerceToNumber(val) {
   if (typeof val === 'number') return Number.isFinite(val) ? val : null;
   if (typeof val === 'string') {
     const s = val.trim();
-    if (/^low$/i.test(s)) return 3;
-    if (/^med(iu)?m$/i.test(s)) return 6;
-    if (/^high$/i.test(s)) return 9;
+    // For generic numbers (WCS/PHS/ESI) allow parsing, but NOT for RPM (RPM uses resolveRPMMultiplier)
     const m = s.match(/-?\d+(\.\d+)?/);
     if (m) return Number(m[0]);
     return null;
   }
   if (Array.isArray(val)) {
-    for (const x of val) {
-      const n = coerceToNumber(x);
-      if (n != null) return n;
-    }
+    for (const x of val) { const n = coerceToNumber(x); if (n != null) return n; }
     return null;
   }
   if (val && typeof val === 'object') {
     const candKeys = ['value','score','val','num','amount','rating','points','v','s'];
-    for (const k of candKeys) {
-      if (k in val) {
-        const n = coerceToNumber(val[k]);
-        if (n != null) return n;
-      }
-    }
-    const bandStr = val.band ?? val.level ?? val.name ?? val.label;
-    const t = getText(bandStr);
-    if (t) {
-      if (/^low$/i.test(t)) return 3;
-      if (/^med(iu)?m$/i.test(t)) return 6;
-      if (/^high$/i.test(t)) return 9;
-      const m = t.match(/-?\d+(\.\d+)?/);
-      if (m) return Number(m[0]);
+    for (const k of candKeys) if (k in val) {
+      const n = coerceToNumber(val[k]); if (n != null) return n;
     }
     for (const v of Object.values(val)) {
-      const n = coerceToNumber(v);
-      if (n != null) return n;
+      const n = coerceToNumber(v); if (n != null) return n;
     }
   }
   return null;
@@ -312,13 +289,51 @@ function readNumberByPaths(obj, paths) {
   }
   return null;
 }
+
+// RPM multiplier resolution (STRICT 0.5..2.5; never read free numbers from text)
+function resolveRPMMultiplier(item) {
+  // 1) Explicit final multiplier
+  const explicit = toNum(deepGet(item, 'rpm.finalMultiplier')) ?? toNum(deepGet(item, 'RPM.finalMultiplier'));
+  if (isFiniteNum(explicit)) return clamp(explicit, 0.5, 2.5);
+
+  // 2) From factors: 1.0 + sum(max(val-1.0, 0)), with caps (Thermal/Physical <=1.4, Chemical <=1.2)
+  const factors = deepGet(item, 'rpm.factors') || deepGet(item, 'RPM.factors') || deepGet(item, 'rpm.parameters');
+  if (Array.isArray(factors) && factors.length) {
+    let base = 1.0;
+    for (const f of factors) {
+      const name = String(f?.name ?? f?.factor ?? '').toLowerCase();
+      let v = toNum(f?.value);
+      if (!isFiniteNum(v)) continue;
+
+      // Apply caps per factor type
+      if (name.includes('chemical')) v = Math.min(v, 1.2);
+      else if (name.includes('thermal') || name.includes('temperature') || name.includes('warming')) v = Math.min(v, 1.4);
+      else if (name.includes('physical') || name.includes('seismic') || name.includes('storm') || name.includes('current')) v = Math.min(v, 1.4);
+      else v = Math.min(v, 1.4); // generic cap
+
+      base += Math.max(v - 1.0, 0);
+    }
+    return clamp(base, 0.5, 2.5);
+  }
+
+  // 3) Generic numeric RPM fields (if someone stored raw multiplier)
+  const generic = toNum(deepGet(item, 'rpm')) ?? toNum(deepGet(item, 'RPM')) ?? toNum(deepGet(item, 'scores.RPM'));
+  if (isFiniteNum(generic)) {
+    // Ignore absurd values (like 240 from depth) by clamping to [0.5, 2.5]; if far outside, fallback to 1.0
+    const clamped = clamp(generic, 0.5, 2.5);
+    return isFiniteNum(clamped) ? clamped : 1.0;
+  }
+
+  return 1.0; // baseline
+}
+function clamp(v, min, max) { const n = Number(v); if (!Number.isFinite(n)) return min; return Math.max(min, Math.min(max, n)); }
+
 function computeFormulaSeverity(item) {
-  const W = readNumberByPaths(item, ['scores.WCS','wcs','WCS','risk.WCS','phase1.screening.WCS','phase2.scores.WCS']);
-  const P = readNumberByPaths(item, ['scores.PHS','phs','PHS','risk.PHS','phase1.screening.PHS','phase2.scores.PHS']);
-  const E = readNumberByPaths(item, ['scores.ESI','esi','ESI','risk.ESI','phase1.screening.ESI','phase2.scores.ESI']);
-  const R = readNumberByPaths(item, ['scores.RPM','rpm','RPM','risk.RPM','phase1.screening.RPM','phase2.scores.RPM']);
-  if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
-  return null;
+  const W = readNumberByPaths(item, ['scores.WCS','wcs','WCS','risk.WCS','phase1.screening.WCS','phase2.scores.WCS']) ?? 0;
+  const P = readNumberByPaths(item, ['scores.PHS','phs','PHS','risk.PHS','phase1.screening.PHS','phase2.scores.PHS']) ?? 0;
+  const E = readNumberByPaths(item, ['scores.ESI','esi','ESI','risk.ESI','phase1.screening.ESI','phase2.scores.ESI']) ?? 0;
+  const R = resolveRPMMultiplier(item); // Correct multiplier
+  return (W + P + (E / 3)) * R;
 }
 function bandFromValue(val){
   const v = Number(val);
@@ -328,23 +343,12 @@ function bandFromValue(val){
   return 'low';
 }
 function getSeverityValue(item) {
-  const direct = readNumberByPaths(item, ['severity.value','severityValue','severity_score','severityScore','score','risk.severity','risk.score']);
+  const direct = readNumberByPaths(item, ['severity.value','severityValue','severity_score','severityScore','risk.severity','risk.score']);
   if (direct !== null) return direct;
-  const formula = computeFormulaSeverity(item);
-  if (formula !== null) return formula;
-  const sevBandText = deepGet(item, 'severity.band') ?? deepGet(item, 'severity.level') ?? item.severity;
-  const s = getText(sevBandText);
-  if (s) {
-    if (/^low$/i.test(s)) return 3;
-    if (/^med(iu)?m$/i.test(s)) return 6;
-    if (/^high$/i.test(s)) return 9;
-    const m = s.match(/-?\d+(\.\d+)?/);
-    if (m) return Number(m[0]);
-  }
-  return null;
+  return computeFormulaSeverity(item);
 }
 
-// Config: load benchmark levels if present
+// Config load
 async function loadChartConfig() {
   for (const p of appConfigPathCandidates) {
     try {
@@ -413,15 +417,19 @@ function upsertMarker(item){
 }
 function clearMarkers(){ for (const m of markers.values()){ try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-// Scores for radar
+// Scores for radar (generic 0..scaleMax for all axes; RPM scaled from 0.5..2.5 to 0..scaleMax)
 function getAxisScores(item) {
   const w = readNumberByPaths(item, ['wcs','scores.WCS','WCS','phase1.screening.WCS','phase2.scores.WCS']) ?? 0;
   const p = readNumberByPaths(item, ['phs','scores.PHS','PHS','phase1.screening.PHS','phase2.scores.PHS']) ?? 0;
   const e = readNumberByPaths(item, ['esi','scores.ESI','ESI','phase1.screening.ESI','phase2.scores.ESI']) ?? 0;
-  const r = readNumberByPaths(item, ['rpm','scores.RPM','RPM','phase1.screening.RPM','phase2.scores.RPM']) ?? 0;
+
+  // Map RPM multiplier to the same 0..scaleMax range for visualization only
+  const rpm = resolveRPMMultiplier(item); // 0.5..2.5
   const max = chartConfig.scaleMax || 10;
-  const clamp = v => Math.max(0, Math.min(max, Number(v) || 0));
-  return [clamp(w), clamp(p), clamp(e), clamp(r)];
+  const rpmScaled = ((rpm - 0.5) / 2.0) * max; // 0.5->0, 2.5->max
+
+  const clampAxis = v => Math.max(0, Math.min(max, Number(v) || 0));
+  return [clampAxis(w), clampAxis(p), clampAxis(e), clampAxis(rpmScaled)];
 }
 function renderBenchLegend() {
   const b = chartConfig.benchmarks;
@@ -431,7 +439,7 @@ function renderBenchLegend() {
     <span style="color:${chartConfig.colors.lowBorder}">Low</span>: ${b.low}
   `;
 }
-function renderRadar(item) {
+function renderRadarGeneric(item) {
   const ctx = document.getElementById('werSpiderChart').getContext('2d');
   const labels = ['WCS', 'PHS', 'ESI', 'RPM'];
   const wreck = getAxisScores(item);
@@ -460,9 +468,7 @@ function renderRadar(item) {
         backgroundColor: chartConfig.colors.wreck,
         borderColor: chartConfig.colors.wreckBorder,
         pointBackgroundColor: chartConfig.colors.wreckBorder,
-        pointBorderColor: '#fff',
-        pointHoverBackgroundColor: '#fff',
-        pointHoverBorderColor: chartConfig.colors.wreckBorder
+        pointBorderColor: '#fff'
       }
     ]
   };
@@ -470,22 +476,8 @@ function renderRadar(item) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    scales: {
-      r: {
-        beginAtZero: true,
-        min: 0,
-        suggestedMax: max,
-        max,
-        ticks: { display: true, stepSize: Math.max(1, Math.round(max/5)) },
-        grid: { color: 'rgba(0,0,0,0.1)' },
-        angleLines: { color: 'rgba(0,0,0,0.1)' },
-        pointLabels: { color: '#111827', font: { size: 12 } }
-      }
-    },
-    plugins: {
-      legend: { display: true, position: 'bottom' },
-      tooltip: { enabled: true }
-    },
+    scales: { r: { beginAtZero: true, min: 0, max, ticks: { stepSize: Math.max(1, Math.round(max/5)) } } },
+    plugins: { legend: { display: true, position: 'bottom' } },
     animation: { duration: 250 }
   };
 
@@ -512,17 +504,19 @@ function getVesselName(it) {
   return getText(it.id) || 'Unknown';
 }
 
-// Axis basics (score + rationale)
+// Axis details for overview table (use resolved RPM)
 function extractAxisDetails(item) {
-  const axes = ['WCS','PHS','ESI','RPM'];
-  const flat = flattenEntries(item, 4);
-  const details = {};
-  for (const ax of axes) details[ax] = { score: readNumberByPaths(item, [
-    `scores.${ax}`, ax.toLowerCase(), ax, `phase1.screening.${ax}`, `screening.${ax}`, `phase2.scores.${ax}`
-  ]), rationale: null };
+  const details = {
+    WCS: { score: readNumberByPaths(item, ['scores.WCS','wcs','WCS','phase1.screening.WCS']), rationale: null },
+    PHS: { score: readNumberByPaths(item, ['scores.PHS','phs','PHS','phase1.screening.PHS']), rationale: null },
+    ESI: { score: readNumberByPaths(item, ['scores.ESI','esi','ESI','phase1.screening.ESI']), rationale: null },
+    RPM: { score: resolveRPMMultiplier(item), rationale: null } // multiplier
+  };
 
+  const flat = flattenEntries(item, 4);
   const ratRx = /(rationale|justification|reason|explanation|basis|notes|comment|detail|narrative)/i;
-  for (const ax of axes) {
+
+  for (const ax of ['WCS','PHS','ESI','RPM']) {
     for (const [path, value] of flat) {
       if (!path) continue;
       if (!path.toUpperCase().includes(ax)) continue;
@@ -531,7 +525,7 @@ function extractAxisDetails(item) {
       if (t) { details[ax].rationale = t; break; }
     }
     if (!details[ax].rationale) {
-      const obj = deepGet(item, ax.toLowerCase()) || deepGet(item, `scores.${ax}`) || deepGet(item, `phase1.screening.${ax}`) || deepGet(item, `screening.${ax}`) || deepGet(item, `phase2.scores.${ax}`);
+      const obj = deepGet(item, ax.toLowerCase()) || deepGet(item, `scores.${ax}`) || deepGet(item, `phase1.screening.${ax}`) || deepGet(item, `screening.${ax}`);
       if (obj && typeof obj === 'object') {
         const t = extractPlain(obj.rationale || obj.justification || obj.reason || obj.explanation || obj.notes || obj.detail || obj.comment);
         if (t) details[ax].rationale = t;
@@ -541,114 +535,7 @@ function extractAxisDetails(item) {
   return details;
 }
 
-// Find likely axis containers for a given axis key (WCS/PHS/ESI/RPM)
-function findAxisNodes(item, ax) {
-  const lower = ax.toLowerCase();
-  const candidates = [
-    deepGet(item, lower),
-    deepGet(item, `scores.${ax}`),
-    deepGet(item, `risk.${ax}`),
-    deepGet(item, `phase1.screening.${ax}`),
-    deepGet(item, `screening.${ax}`),
-    deepGet(item, `phase2.scores.${ax}`),
-    deepGet(item, `details.${ax}`),
-    deepGet(item, `analysis.${ax}`),
-    deepGet(item, `werp.${ax}`)
-  ];
-  return candidates.filter(x => x && typeof x === 'object');
-}
-
-// Extract detailed breakdown for an axis (components, subscores, evidence)
-function extractAxisBreakdown(item, ax) {
-  const nodes = findAxisNodes(item, ax);
-  const components = []; // {label, value, notes}
-  const evidence = [];   // array of strings
-  const seenComp = new Set();
-  const pushComp = (label, value, notes) => {
-    const lab = getText(label) || 'Component';
-    const val = value != null && value !== '' ? String(value) : '';
-    const nts = getText(notes) || '';
-    const key = `${lab}|${val}|${nts}`.toLowerCase();
-    if (seenComp.has(key)) return;
-    components.push({ label: lab, value: val, notes: nts });
-    seenComp.add(key);
-  };
-  const pushEv = (txt) => {
-    const t = extractPlain(txt);
-    if (!t) return;
-    if (evidence.includes(t)) return;
-    evidence.push(t);
-  };
-
-  const valueKeys = ['score','value','points','rating','val','v','s','weight','band','level'];
-  const nameKeys = ['label','name','title','key','id','component','criterion','factor','dimension','aspect','class'];
-  const noteKeys = ['rationale','justification','reason','explanation','notes','comment','detail','narrative','why','basis','evidence','driver'];
-
-  function scanNode(node) {
-    // Direct known aggregations
-    const collections = [
-      node.subscores, node.subScores, node.sub_scores,
-      node.components, node.criteria, node.factors, node.breakdown, node.details, node.items, node.parts, node.points, node.dimensions
-    ].filter(Boolean);
-
-    for (const coll of collections) {
-      if (Array.isArray(coll)) {
-        for (const el of coll) {
-          if (el == null) continue;
-          if (typeof el === 'string') { pushEv(el); continue; }
-          if (typeof el === 'object') {
-            const label = nameKeys.map(k => el[k]).find(getText) ?? '';
-            const value = valueKeys.map(k => el[k]).map(coerceToNumber).find(v => v != null);
-            const notes = noteKeys.map(k => el[k]).find(extractPlain);
-            if (label || value != null || notes) pushComp(label, value ?? '', notes ?? '');
-            // If element has nested evidence list
-            const ev = el.evidence || el.reasons || el.notes || el.comments || el.findings;
-            if (Array.isArray(ev)) ev.forEach(pushEv);
-          }
-        }
-      } else if (typeof coll === 'object') {
-        for (const [k, v] of Object.entries(coll)) {
-          if (v == null) continue;
-          if (typeof v === 'object') {
-            const value = valueKeys.map(x => v[x]).map(coerceToNumber).find(x => x != null);
-            const notes = noteKeys.map(x => v[x]).find(extractPlain);
-            const label = nameKeys.map(x => v[x]).find(getText) ?? k;
-            if (label || value != null || notes) pushComp(label, value ?? '', notes ?? '');
-            const ev = v.evidence || v.reasons || v.notes || v.comments || v.findings;
-            if (Array.isArray(ev)) ev.forEach(pushEv);
-          } else if (typeof v === 'string' || typeof v === 'number') {
-            // Keyed scalar could be a component
-            const maybeNum = coerceToNumber(v);
-            if (maybeNum != null) pushComp(k, maybeNum, '');
-            else pushEv(`${toTitleCase(k)}: ${String(v)}`);
-          }
-        }
-      }
-    }
-
-    // Generic pass over node's own keys
-    if (typeof node === 'object') {
-      for (const [k, v] of Object.entries(node)) {
-        const kl = String(k).toLowerCase();
-        if (['rationale','justification','reason','explanation'].includes(kl)) { pushEv(v); continue; }
-        if (['sources','evidence','reasons','notes','comments','findings'].includes(kl) && Array.isArray(v)) { v.forEach(pushEv); continue; }
-        if (/(component|criterion|factor|dimension|aspect)/i.test(k) && typeof v === 'object') {
-          // Try to lift component-like structures
-          const label = nameKeys.map(x => v[x]).find(getText) ?? toTitleCase(k);
-          const value = valueKeys.map(x => v[x]).map(coerceToNumber).find(x => x != null);
-          const notes = noteKeys.map(x => v[x]).find(extractPlain);
-          if (label || value != null || notes) pushComp(label, value ?? '', notes ?? '');
-        }
-      }
-    }
-  }
-
-  nodes.forEach(scanNode);
-
-  return { components, evidence };
-}
-
-// Render screening narratives (de-duplicated; exclude metadata and score fields)
+// Screening narratives (de-duplicated)
 function renderScreeningSections(item) {
   const sections = [];
   const carriers = [ item?.screening, item?.phase1?.screening ];
@@ -699,11 +586,10 @@ function renderScreeningSections(item) {
   return sections.join('\n');
 }
 
-// Key Facts + narrative composer
+// Generic report builders
 function buildReportHtml(item) {
   const blocks = [];
 
-  // Top narratives
   const summaryHtml = extractHtml(item?.summary) || extractHtml(item?.phase1?.summary);
   if (summaryHtml) { blocks.push('<h3>Summary</h3>', summaryHtml); }
 
@@ -713,7 +599,6 @@ function buildReportHtml(item) {
   const conclusionHtml = extractHtml(item?.conclusion);
   if (conclusionHtml) { blocks.push('<h3>Conclusion</h3>', conclusionHtml); }
 
-  // Key facts (de-duplicated)
   const vesselType = readTextByPaths(item, ['vesselType','vessel_type','type','shipType','class','metadata.vesselType','meta.vesselType']);
   const sunkDate = readTextByPaths(item, ['sunkDate','sunk_date','dateSunk','sunkdate','phase1.screening.sunkDate']);
   const sinkingCause = readTextByPaths(item, ['sinkingCause','causeOfSinking','sinking_cause','cause','phase1.screening.sinkingCause']);
@@ -749,23 +634,21 @@ function buildReportHtml(item) {
   if (details.length) {
     blocks.push('<h3>Key Facts</h3>');
     blocks.push('<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>');
-    for (const d of details) {
-      blocks.push(`<tr><th style="white-space:nowrap">${escapeHtml(d.label)}</th><td>${escapeHtml(d.value)}</td></tr>`);
-    }
+    for (const d of details) blocks.push(`<tr><th style="white-space:nowrap">${escapeHtml(d.label)}</th><td>${escapeHtml(d.value)}</td></tr>`);
     blocks.push('</tbody></table>');
   }
 
-  // Factor scores and rationale (overview)
   const detailsAxes = extractAxisDetails(item);
   const row = (label, d) => {
-    const scoreTxt = isFiniteNum(d.score) ? d.score.toFixed(2) : '—';
+    const isRPM = label === 'RPM';
+    const scoreTxt = isFiniteNum(d.score) ? (isRPM ? d.score.toFixed(2) : d.score.toFixed(2)) : '—';
     const ratHtml = extractHtml(d.rationale) || (d.rationale ? sanitizeReportHtml(`<p>${escapeHtml(String(d.rationale))}</p>`) : '');
-    return `<tr><th style="white-space:nowrap">${label}</th><td style="width:80px">${scoreTxt}</td><td>${ratHtml || ''}</td></tr>`;
+    return `<tr><th style="white-space:nowrap">${label}${isRPM ? ' (multiplier)' : ''}</th><td style="width:100px">${scoreTxt}</td><td>${ratHtml || ''}</td></tr>`;
   };
   blocks.push(`
     <h3>Factor Scores and Rationale</h3>
     <table>
-      <thead><tr><th>Factor</th><th>Score</th><th>Rationale</th></tr></thead>
+      <thead><tr><th>Factor</th><th>${'Score'}</th><th>Rationale</th></tr></thead>
       <tbody>
         ${row('WCS', detailsAxes.WCS)}
         ${row('PHS', detailsAxes.PHS)}
@@ -775,50 +658,12 @@ function buildReportHtml(item) {
     </table>
   `);
 
-  // Detailed WERP breakdown per axis (components + evidence)
-  const axes = ['WCS','PHS','ESI','RPM'];
-  const axisSections = [];
-  for (const ax of axes) {
-    const { components, evidence } = extractAxisBreakdown(item, ax);
-    const axDet = detailsAxes[ax] || {};
-    const parts = [];
-    // Header and rationale
-    parts.push(`<h4>${ax} – Breakdown</h4>`);
-    const ratHtml = extractHtml(axDet.rationale);
-    if (ratHtml) parts.push(ratHtml);
-
-    // Components table
-    if (components.length) {
-      parts.push('<table><thead><tr><th>Component</th><th>Value</th><th>Notes</th></tr></thead><tbody>');
-      for (const c of components) {
-        parts.push(`<tr><th style="white-space:nowrap">${escapeHtml(c.label)}</th><td style="width:80px">${escapeHtml(c.value)}</td><td>${escapeHtml(c.notes)}</td></tr>`);
-      }
-      parts.push('</tbody></table>');
-    }
-    // Evidence bullets
-    if (evidence.length) {
-      parts.push('<ul>');
-      for (const e of evidence) parts.push(`<li>${escapeHtml(e)}</li>`);
-      parts.push('</ul>');
-    }
-    const sec = parts.join('\n');
-    // Only include if anything beyond the header exists
-    if (components.length || evidence.length || ratHtml) axisSections.push(sec);
-  }
-  if (axisSections.length) {
-    blocks.push('<h3>WERP Score Breakdown</h3>');
-    blocks.push(axisSections.join('\n'));
-  }
-
-  // Screening narratives
   const screeningHtml = renderScreeningSections(item);
   if (screeningHtml) blocks.push(screeningHtml);
 
   if (!blocks.length) blocks.push('<p>No formatted report available.</p>');
   return blocks.join('\n');
 }
-
-// Markdown version (object-aware + detailed breakdown)
 function buildReportMarkdown(item) {
   const lines = [];
   const vessel = getVesselName(item);
@@ -833,7 +678,6 @@ function buildReportMarkdown(item) {
   const c = extractPlain(item?.conclusion);
   if (c) { lines.push('\n## Conclusion'); lines.push(c); }
 
-  // Key facts
   const vesselType = readTextByPaths(item, ['vesselType','vessel_type','type','shipType','class','metadata.vesselType','meta.vesselType']);
   const sunkDate = readTextByPaths(item, ['sunkDate','sunk_date','dateSunk','sunkdate','phase1.screening.sunkDate']);
   const sinkingCause = readTextByPaths(item, ['sinkingCause','causeOfSinking','sinking_cause','cause','phase1.screening.sinkingCause']);
@@ -855,40 +699,16 @@ function buildReportMarkdown(item) {
     for (const f of facts) lines.push(`- ${f.k}: ${f.v}`);
   }
 
-  // Overview table
   const d = extractAxisDetails(item);
   lines.push('\n## Factor Scores and Rationale');
   lines.push('| Factor | Score | Rationale |');
   lines.push('|---|---:|---|');
-  const row = (k, o) => `| ${k} | ${isFiniteNum(o.score)?o.score.toFixed(2):'—'} | ${(extractPlain(o.rationale) || '').replace(/\n/g,'<br>')} |`;
+  const row = (k, o) => `| ${k}${k==='RPM'?' (multiplier)':''} | ${isFiniteNum(o.score)?o.score.toFixed(2):'—'} | ${(extractPlain(o.rationale) || '').replace(/\n/g,'<br>')} |`;
   lines.push(row('WCS', d.WCS));
   lines.push(row('PHS', d.PHS));
   lines.push(row('ESI', d.ESI));
   lines.push(row('RPM', d.RPM));
 
-  // Detailed breakdown
-  const axes = ['WCS','PHS','ESI','RPM'];
-  lines.push('\n## WERP Score Breakdown');
-  for (const ax of axes) {
-    const { components, evidence } = extractAxisBreakdown(item, ax);
-    const rat = extractPlain(d[ax]?.rationale);
-    if (!components.length && !evidence.length && !rat) continue;
-    lines.push(`\n### ${ax} – Breakdown`);
-    if (rat) { lines.push('\nRationale'); lines.push(rat); }
-    if (components.length) {
-      lines.push('\n| Component | Value | Notes |');
-      lines.push('|---|---:|---|');
-      for (const c of components) {
-        lines.push(`| ${c.label || ''} | ${c.value || ''} | ${c.notes || ''} |`);
-      }
-    }
-    if (evidence.length) {
-      lines.push('\nEvidence');
-      for (const e of evidence) lines.push(`- ${e}`);
-    }
-  }
-
-  // Screening sections
   const carriers = [ item?.screening, item?.phase1?.screening ];
   const addIf = (title, v) => { const t = extractPlain(v); if (t) { lines.push(`\n## ${title}`); lines.push(t); } };
   for (const sc of carriers) {
@@ -902,6 +722,188 @@ function buildReportMarkdown(item) {
   }
 
   return lines.join('\n');
+}
+
+// Unified v2 detection + renderer (kept)
+function hasUnifiedV2(item) {
+  return Array.isArray(item?.wcs?.parameters)
+    && Array.isArray(item?.phs?.parameters)
+    && Array.isArray(item?.esi?.parameters)
+    && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
+}
+function renderReportV2HTML(item) {
+  const name = getVesselName(item);
+  const bg = item?.phase1?.summary?.background ?? '—';
+  const loc = item?.phase1?.summary?.location ?? '—';
+  const disc = item?.phase1?.summary?.discovery ?? '—';
+  const vtype = item?.phase1?.screening?.vesselType ?? '—';
+  const tonnage = item?.phase1?.screening?.tonnage ?? '—';
+  const yearBuilt = item?.phase1?.screening?.yearBuilt ?? '—';
+  const owner = item?.phase1?.screening?.lastOwner ?? '—';
+  const lat = item?.phase1?.screening?.coordinates?.latitude ?? '—';
+  const lng = item?.phase1?.screening?.coordinates?.longitude ?? '—';
+
+  const wcsTotal = Number(item?.wcs?.totalScore ?? 0);
+  const phsTotal = Number(item?.phs?.totalWeightedScore ?? 0);
+  const esiTotal = Number(item?.esi?.totalScore ?? 0);
+  const esiMax = Number(item?.esi?.maxScore ?? (esiTotal <= 30 ? 30 : 40));
+  const rpmMult = resolveRPMMultiplier(item);
+
+  const rows = {
+    wcs: (item?.wcs?.parameters ?? []).map(p => ({
+      name: p?.name ?? p?.parameter ?? '',
+      rationale: p?.rationale ?? '',
+      score: p?.score ?? ''
+    })),
+    phs: (item?.phs?.parameters ?? []).map(p => ({
+      name: p?.name ?? p?.parameter ?? '',
+      weight: p?.weight ?? '',
+      rationale: p?.rationale ?? '',
+      score: p?.score ?? ''
+    })),
+    esi: (item?.esi?.parameters ?? []).map(p => ({
+      name: p?.name ?? p?.parameter ?? '',
+      rationale: p?.rationale ?? '',
+      score: p?.score ?? ''
+    })),
+    rpm: (item?.rpm?.factors ?? item?.rpm?.parameters ?? []).map(f => ({
+      name: f?.name ?? f?.factor ?? '',
+      rationale: (typeof f?.rationale === 'string' && f.rationale.trim()) ? f.rationale : 'Not specified.',
+      value: f?.value ?? ''
+    }))
+  };
+
+  const table = (headers, keys, data, formats = {}) => {
+    let h = '<table><thead><tr>';
+    headers.forEach(x => h += `<th>${escapeHtml(x)}</th>`);
+    h += '</tr></thead><tbody>';
+    data.forEach(row => {
+      h += '<tr>';
+      keys.forEach(k => {
+        const v = row?.[k];
+        const fmt = formats[k];
+        const out = fmt ? fmt(v, row) : v ?? '';
+        h += `<td>${escapeHtml(String(out))}</td>`;
+      });
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+    return h;
+  };
+
+  const phase2Section = (item?.status === 'completed')
+    ? `<section><h3>Phase 2: In-Situ Assessment (Completed)</h3><p>${escapeHtml(item?.phase2?.summary ?? '')}</p></section>`
+    : `<section><h3>Phase 2: In-Situ Assessment (Recommended)</h3><p class="text-gray-600">Provide UT readings, ROV imagery, and diver logs to finalize classification.</p></section>`;
+
+  const remediation = (item?.finalSummary?.remediationSuggestions ?? []).map(s => `
+    <div class="mt-3">
+      <h4>Priority ${escapeHtml(String(s?.priority ?? ''))}: ${escapeHtml(s?.title ?? '')}</h4>
+      <p>${escapeHtml(s?.description ?? '')}</p>
+    </div>
+  `).join('');
+
+  return `
+    <section>
+      <h3>Case Study Background</h3>
+      <p>${escapeHtml(bg)}</p>
+      <p><strong>Location:</strong> ${escapeHtml(loc)}</p>
+      <p><strong>Discovery:</strong> ${escapeHtml(disc)}</p>
+    </section>
+
+    <section>
+      <h3>Phase 1: Scoping & Screening</h3>
+      <ul class="list-disc ml-5 space-y-1">
+        <li><strong>Vessel Type:</strong> ${escapeHtml(vtype)}</li>
+        <li><strong>Tonnage:</strong> ${escapeHtml(String(tonnage))}</li>
+        <li><strong>Year Built:</strong> ${escapeHtml(String(yearBuilt))}</li>
+        <li><strong>Last Owner:</strong> ${escapeHtml(owner)}</li>
+        <li><strong>Coordinates:</strong> ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}</li>
+      </ul>
+    </section>
+
+    ${phase2Section}
+
+    <section>
+      <h3>Phase 3: WCS (Hull & Structure)</h3>
+      ${table(['Parameter','Rationale','Score (0–5)'], ['name','rationale','score'], rows.wcs)}
+      <p class="mt-2"><strong>Total:</strong> ${isFiniteNum(wcsTotal) ? wcsTotal : '—'} / 20</p>
+    </section>
+
+    <section>
+      <h3>Phase 3: PHS (Pollution Hazard)</h3>
+      <p class="text-xs text-gray-600 mb-2">Weights: Fuel 0.40, Ordnance 0.25, Vessel Integrity 0.20, Hazardous Materials 0.15.</p>
+      ${table(['Parameter','Weight','Rationale','Score (0–10)'], ['name','weight','rationale','score'], rows.phs)}
+      <p class="mt-2"><strong>Total Weighted Score:</strong> ${isFiniteNum(phsTotal) ? phsTotal.toFixed(2) : '—'} / 10</p>
+    </section>
+
+    <section>
+      <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
+      ${table(['Parameter','Rationale','Score (0–10)'], ['name','rationale','score'], rows.esi)}
+      <p class="mt-2"><strong>Total:</strong> ${isFiniteNum(esiTotal) ? esiTotal : '—'} / ${esiMax}</p>
+    </section>
+
+    <section>
+      <h3>Phase 3: RPM (Release Probability Modifier)</h3>
+      ${rows.rpm.length ? table(['Factor','Rationale','Value (1.0–1.4 or 1.2 for chemical)'], ['name','rationale','value'], rows.rpm) : '<p class="text-gray-600">No factor breakdown provided.</p>'}
+      <p class="mt-2"><strong>Final Multiplier:</strong> ${isFiniteNum(rpmMult) ? rpmMult.toFixed(2) : '—'}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
+    </section>
+
+    <section>
+      <h3>${item?.status === 'completed' ? 'Final' : 'Preliminary'} Risk Synthesis & Classification</h3>
+      ${item?.status === 'completed' ? '' : '<p class="italic text-gray-600">Preliminary scores; Phase 2 verification may adjust risk classification.</p>'}
+    </section>
+
+    <section>
+      <h3>Summative Assessment</h3>
+      <p>${escapeHtml(item?.finalSummary?.summativeAssessment ?? '—')}</p>
+    </section>
+
+    <section>
+      <h3>Remediation Suggestions</h3>
+      ${remediation || '<p>—</p>'}
+    </section>
+  `;
+}
+function renderRadarV2(item) {
+  const ctx = document.getElementById('werSpiderChart').getContext('2d');
+
+  const wcs = Number(item?.wcs?.totalScore || 0);
+  const phs = Number(item?.phs?.totalWeightedScore || 0);
+  const esiTotal = Number(item?.esi?.totalScore || 0);
+  const esiMax = Number(item?.esi?.maxScore || (esiTotal <= 30 ? 30 : 40));
+  const rpmVal = resolveRPMMultiplier(item);
+
+  const wcs20 = Math.max(0, Math.min(20, wcs)); // already 0..20
+  const phs20 = Math.max(0, Math.min(20, (phs / 10) * 20));
+  const esi20 = Math.max(0, Math.min(20, (esiTotal / (esiMax || 30)) * 20));
+  const rpm20 = Math.max(0, Math.min(20, ((Math.min(Math.max(rpmVal, 0.5), 2.5) - 0.5) / 2.0) * 20));
+
+  const profile = [wcs20, phs20, esi20, rpm20];
+  const lowCap = [6,6,6,6];
+  const medCap = [12,12,12,12];
+  const highCap = [20,20,20,20];
+
+  if (radarChart) radarChart.destroy();
+  radarChart = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: ['WCS','PHS','ESI','RPM'],
+      datasets: [
+        { label: 'Low benchmark', data: lowCap, backgroundColor: 'rgba(16,185,129,0.18)', borderColor: 'rgba(16,185,129,0.45)', pointRadius: 0, order: 1 },
+        { label: 'Medium benchmark', data: medCap, backgroundColor: 'rgba(245,158,11,0.14)', borderColor: 'rgba(245,158,11,0.45)', pointRadius: 0, fill: '-1', order: 2 },
+        { label: 'High benchmark', data: highCap, backgroundColor: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.45)', pointRadius: 0, fill: '-1', order: 3 },
+        { label: 'Risk Profile', data: profile, backgroundColor: 'rgba(30,64,175,0.22)', borderColor: 'rgba(30,64,175,1)', pointBackgroundColor: 'rgba(30,64,175,1)', order: 4 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
+      scales: { r: { suggestedMin: 0, suggestedMax: 20, ticks: { stepSize: 4 } } }
+    }
+  });
+
+  if (benchLegend) benchLegend.textContent = 'Low/Medium/High rings shown for orientation (0–20 scale)';
 }
 
 // Data load + render
@@ -932,19 +934,19 @@ async function startData() {
   });
 }
 
-[sevHigh, sevMedium, sevLow].forEach(cb => cb.addEventListener('change', render));
-searchBox.addEventListener('input', render);
-clearSearch.addEventListener('click', () => { searchBox.value = ''; render(); });
+[sevHigh, sevMedium, sevLow].forEach(cb => cb && cb.addEventListener('change', render));
+if (searchBox) searchBox.addEventListener('input', render);
+if (clearSearch) clearSearch.addEventListener('click', () => { searchBox.value = ''; render(); });
 
 function render() {
   const noDataBanner = document.getElementById('noDataBanner');
-  noDataBanner.classList.toggle('hidden', allItems.length !== 0);
+  if (noDataBanner) noDataBanner.classList.toggle('hidden', allItems.length !== 0);
 
   const activeBands = new Set();
-  if (sevHigh.checked) activeBands.add('high');
-  if (sevMedium.checked) activeBands.add('medium');
-  if (sevLow.checked) activeBands.add('low');
-  const term = searchBox.value.trim().toLowerCase();
+  if (sevHigh?.checked) activeBands.add('high');
+  if (sevMedium?.checked) activeBands.add('medium');
+  if (sevLow?.checked) activeBands.add('low');
+  const term = searchBox?.value?.trim().toLowerCase() || '';
 
   const filtered = allItems.filter(it => {
     const band = it?.severity?.band || 'unknown';
@@ -979,21 +981,22 @@ function render() {
   drawList(completedList, completed);
   drawList(reassessList, reassess);
 
-  initialCount.textContent = String(initial.length);
-  completedCount.textContent = String(completed.length);
-  reassessCount.textContent = String(reassess.length);
+  if (initialCount) initialCount.textContent = String(initial.length);
+  if (completedCount) completedCount.textContent = String(completed.length);
+  if (reassessCount) reassessCount.textContent = String(reassess.length);
 
-  noInitial.classList.toggle('hidden', initial.length !== 0);
-  noCompleted.classList.toggle('hidden', completed.length !== 0);
-  noReassess.classList.toggle('hidden', reassess.length !== 0);
+  if (noInitial) noInitial.classList.toggle('hidden', initial.length !== 0);
+  if (noCompleted) noCompleted.classList.toggle('hidden', completed.length !== 0);
+  if (noReassess) noReassess.classList.toggle('hidden', reassess.length !== 0);
 
   clearMarkers();
   for (const it of filtered) upsertMarker(it);
 
-  visibleCounts.textContent = `${filtered.length} of ${allItems.length}`;
+  if (visibleCounts) visibleCounts.textContent = `${filtered.length} of ${allItems.length}`;
 }
 
 function drawList(container, items) {
+  if (!container) return;
   container.innerHTML = '';
   for (const it of items) {
     const li = document.createElement('div');
@@ -1017,25 +1020,33 @@ function drawList(container, items) {
 function openReport(item) {
   currentItem = item;
   const vessel = getVesselName(item);
-  reportTitle.textContent = vessel || 'Assessment';
+  if (reportTitle) reportTitle.textContent = vessel || 'Assessment';
 
-  const html = buildReportHtml(item);
-  reportContent.innerHTML = html;
+  if (hasUnifiedV2(item)) {
+    const html = renderReportV2HTML(item);
+    lastRenderedHtml = html;
+    reportContent.innerHTML = html;
+    renderRadarV2(item);
+  } else {
+    const html = buildReportHtml(item);
+    lastRenderedHtml = html;
+    reportContent.innerHTML = html;
+    renderRadarGeneric(item);
+  }
 
-  renderRadar(item);
   reportContainer.classList.remove('hidden');
   reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Auth UI
-document.getElementById('signInEmailBtn').addEventListener('click', async () => {
+document.getElementById('signInEmailBtn')?.addEventListener('click', async () => {
   const email = document.getElementById('emailInput').value.trim();
   const password = document.getElementById('passwordInput').value;
   authMessage.textContent = '';
   try { await signInWithEmailAndPassword(auth, email, password); }
   catch (e) { authMessage.textContent = e.message || 'Sign-in failed.'; }
 });
-document.getElementById('createAccountBtn').addEventListener('click', async () => {
+document.getElementById('createAccountBtn')?.addEventListener('click', async () => {
   const email = document.getElementById('emailInput').value.trim();
   const password = document.getElementById('passwordInput').value;
   authMessage.textContent = '';
@@ -1051,13 +1062,13 @@ document.getElementById('createAccountBtn').addEventListener('click', async () =
     authMessage.textContent = e.message || 'Account creation failed.';
   }
 });
-document.getElementById('resetPasswordBtn').addEventListener('click', async () => {
+document.getElementById('resetPasswordBtn')?.addEventListener('click', async () => {
   const email = document.getElementById('emailInput').value.trim();
   if (!email) { authMessage.textContent = 'Enter your email first.'; return; }
   try { await sendPasswordResetEmail(auth, email); authMessage.textContent = 'Password reset email sent.'; }
   catch (e) { authMessage.textContent = e.message || 'Password reset failed.'; }
 });
-signOutBtn.addEventListener('click', async () => { try { await signOut(auth); } catch {} });
+signOutBtn?.addEventListener('click', async () => { try { await signOut(auth); } catch {} });
 
 // Role helper
 async function fetchRoleFor(uid) {
@@ -1121,10 +1132,10 @@ onAuthStateChanged(auth, async (user) => {
   userNameSpan.classList.remove('hidden');
   signOutBtn.classList.remove('hidden');
 
-  currentRole = await fetchRoleFor(user.uid);
-  roleBadge.textContent = `Role: ${currentRole}`;
-  const isAdmin = currentRole === 'admin';
-  const isContributor = isAdmin || currentRole === 'contributor';
+  const role = await fetchRoleFor(user.uid);
+  const isAdmin = role === 'admin';
+  const isContributor = isAdmin || role === 'contributor';
+  roleBadge.textContent = `Role: ${role}`;
   if (isAdmin) adminToolsBtn.classList.remove('hidden'); else adminToolsBtn.classList.add('hidden');
   analyzeBtn.disabled = !isContributor;
   if (!isContributor) contribHint.classList.remove('hidden'); else contribHint.classList.add('hidden');
@@ -1133,7 +1144,7 @@ onAuthStateChanged(auth, async (user) => {
   await startData();
 });
 
-// Export helpers
+// Export helpers: use the last on-screen HTML
 function downloadFile(filename, blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1144,10 +1155,15 @@ function downloadFile(filename, blob) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+function getCurrentHtml() {
+  if (!currentItem) return '';
+  if (hasUnifiedV2(currentItem)) return lastRenderedHtml || renderReportV2HTML(currentItem);
+  return lastRenderedHtml || buildReportHtml(currentItem);
+}
 function exportHtml() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || 'assessment';
-  const html = buildReportHtml(currentItem);
+  const html = getCurrentHtml();
   const doc = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${html}</body></html>`;
   downloadFile(`${vessel.replace(/\s+/g,'_')}.html`, new Blob([doc], { type: 'text/html;charset=utf-8' }));
 }
@@ -1190,23 +1206,21 @@ function exportPdf() {
       </style>
     </head><body>
       <h1>${escapeHtml(vessel)}</h1>
-      ${buildReportHtml(currentItem)}
+      ${getCurrentHtml()}
       ${chartImg ? `<h3>WERP Risk Profile</h3><img src="${chartImg}" alt="Radar chart">` : ''}
     </body></html>
   `;
   const w = window.open('', '_blank');
   if (w) {
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    w.document.open(); w.document.write(html); w.document.close();
     w.addEventListener('load', () => { try { w.focus(); w.print(); } catch {} });
     setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 500);
   }
 }
-exportPdfBtn.addEventListener('click', exportPdf);
-exportHtmlBtn.addEventListener('click', exportHtml);
-exportMdBtn.addEventListener('click', exportMarkdown);
-exportJsonBtn.addEventListener('click', exportJson);
+exportPdfBtn?.addEventListener('click', exportPdf);
+exportHtmlBtn?.addEventListener('click', exportHtml);
+exportMdBtn?.addEventListener('click', exportMarkdown);
+exportJsonBtn?.addEventListener('click', exportJson);
 
 // Normalization
 function normalizeDoc(d) {

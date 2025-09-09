@@ -62,16 +62,19 @@
     .report-prose video,
     .report-prose iframe { max-width: 100%; height: auto; }
 
-    .report-prose table { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
+    .report-prose table { width: 100%; border-collapse: collapse; }
     .report-prose th, .report-prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
     .report-prose th { background: #f9fafb; font-weight: 600; }
 
     .report-prose pre { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb; }
     .report-prose blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid #e5e7eb; color:#374151; }
 
-    /* Radar chart containment */
-    #werSpiderWrapper { height: 360px; }
-    #werSpiderChart { width: 100% !important; height: 100% !important; display: block; }
+    /* Ensure the report panel scrolls instead of clipping content */
+    #reportContainer { max-height: 80vh; overflow: visible; }
+    #reportScroll { max-height: 75vh; overflow-y: auto; padding-right: 4px; }
+    /* Improve scrollbar usability on some browsers */
+    #reportScroll::-webkit-scrollbar { width: 8px; }
+    #reportScroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
   </style>
 </head>
 <body class="bg-slate-50 text-gray-900">
@@ -207,7 +210,7 @@
       </section>
 
       <!-- Full report panel -->
-      <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden max-h-[80vh] overflow-hidden">
+      <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden">
         <div class="flex items-center justify-between mb-2">
           <h2 id="reportTitle" class="text-2xl font-bold text-gray-900"></h2>
           <div class="flex items-center gap-2">
@@ -226,9 +229,9 @@
             </div>
           </div>
           <!-- Right: fixed-height chart -->
-          <div class="lg:col-span-2 flex flex-col max-h-[75vh]">
+          <div class="lg:col-span-2 flex flex-col">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
-            <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white">
+            <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white h-[360px]">
               <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
             </div>
             <div id="benchLegend" class="mt-2 text-xs text-gray-600 text-center"></div>
@@ -238,7 +241,7 @@
     </div>
   </main>
 
-  <!-- App module moved to external file to avoid </script> parsing issues -->
+  <!-- App module -->
   <script type="module" src="/app.js"></script>
 </body>
 </html>
