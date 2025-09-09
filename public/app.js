@@ -5,9 +5,12 @@ import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
-  getFirestore, doc, setDoc, getDoc, serverTimestamp,
-  collection, onSnapshot
+  getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp,
+  collection, onSnapshot, arrayUnion
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL, listAll, deleteObject
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
 const firebaseConfig = {
@@ -23,9 +26,15 @@ const firebaseConfig = {
 const appId = 'guardian';
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, 'us-central1');
+
+// Callables
 const callGeminiFunction = httpsCallable(functions, 'callGeminiApi');
+const repairWerpsFn = httpsCallable(functions, 'repairWerps');
+let reassessWerpsFn = null;
+try { reassessWerpsFn = httpsCallable(functions, 'reassessWerps'); } catch { /* optional */ }
 
 const assessmentsPath = `artifacts/${appId}/public/data/werpassessments`;
 const appConfigPathCandidates = [
@@ -72,10 +81,25 @@ const reportTitle = document.getElementById('reportTitle');
 const reportContent = document.getElementById('reportContent');
 const benchLegend = document.getElementById('benchLegend');
 
-// Track last HTML we rendered for export
-let lastRenderedHtml = '';
+// Gallery + Phase2
+const galleryGrid = document.getElementById('galleryGrid');
+const galleryEmpty = document.getElementById('galleryEmpty');
+const phase2Input = document.getElementById('phase2Input');
+const phase2Files = document.getElementById('phase2Files');
+const savePhase2Btn = document.getElementById('savePhase2Btn');
+const reassessBtn = document.getElementById('reassessBtn');
+const uploadFilesBtn = document.getElementById('uploadFilesBtn');
+const phase2Status = document.getElementById('phase2Status');
+const uploadStatus = document.getElementById('uploadStatus');
 
-// Paths banner
+// Feedback
+const feedbackSection = document.getElementById('feedbackSection');
+const feedbackInput = document.getElementById('feedbackInput');
+const saveFeedbackBtn = document.getElementById('saveFeedbackBtn');
+const feedbackStatus = document.getElementById('feedbackStatus');
+const feedbackList = document.getElementById('feedbackList');
+
+// Path hints
 const assessPathSpan = document.getElementById('assessPathSpan');
 const appIdSpan = document.getElementById('appIdSpan');
 if (appIdSpan) appIdSpan.textContent = appId;
@@ -89,13 +113,16 @@ const exportJsonBtn = document.getElementById('exportJsonBtn');
 
 // State
 let currentRole = 'user';
+let currentItem = null;
+let currentDocId = null;
 let map;
 let markers = new Map();
 let radarChart = null;
 let dataUnsub = null;
 let allItems = [];
-let currentItem = null;
+let lastRenderedHtml = '';
 
+// Chart config
 let chartConfig = {
   scaleMax: 10,
   benchmarks: { high: 9, medium: 6, low: 3 },
@@ -159,7 +186,7 @@ function renderMarkdown(md) {
   catch { return `<p>${escapeHtml(md || '').replace(/\n{2,}/g, '\n\n').replace(/\n/g, '<br>')}</p>`; }
 }
 
-// Robust text extraction (avoid [object Object])
+// Robust text extraction
 function extractHtml(val) {
   if (typeof val === 'string') {
     const s = val.trim();
@@ -167,17 +194,13 @@ function extractHtml(val) {
     return null;
   }
   if (val == null) return null;
-
   if (typeof val === 'object') {
     const html = getText(val.html);
     if (html) return sanitizeReportHtml(html);
-
     const md = getText(val.markdown ?? val.md);
     if (md) return renderMarkdown(md);
-
     const text = getText(val.text ?? val.content ?? val.value ?? val.body ?? val.summary);
     if (text) return sanitizeReportHtml(`<p>${escapeHtml(text).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
-
     const parts = Array.isArray(val.parts) ? val.parts : Array.isArray(val.content) ? val.content : null;
     if (parts) {
       const chunk = parts
@@ -187,7 +210,6 @@ function extractHtml(val) {
         .trim();
       if (chunk) return extractHtml(chunk);
     }
-
     const acc = [];
     (function dfs(o, depth = 0) {
       if (o == null || acc.length >= 2 || depth > 3) return;
@@ -200,7 +222,6 @@ function extractHtml(val) {
       return sanitizeReportHtml(`<p>${escapeHtml(s).replace(/\n{2,}/g,'\n\n').replace(/\n/g,'<br>')}</p>`);
     }
   }
-
   if (Array.isArray(val)) {
     const chunks = val.map(extractHtml).filter(Boolean);
     if (chunks.length) return chunks.join('\n');
@@ -210,21 +231,17 @@ function extractHtml(val) {
 function extractPlain(val) {
   if (typeof val === 'string') return val.trim() || null;
   if (val == null) return null;
-
   if (typeof val === 'object') {
     const text = getText(val.text ?? val.content ?? val.value ?? val.summary ?? val.body);
     if (text) return text;
-
     const md = getText(val.markdown ?? val.md);
     if (md) return md;
-
     const html = getText(val.html);
     if (html) {
       const tmp = document.createElement('div');
       tmp.innerHTML = sanitizeReportHtml(html);
       return tmp.textContent?.trim() || null;
     }
-
     const parts = Array.isArray(val.parts) ? val.parts : Array.isArray(val.content) ? val.content : null;
     if (parts) {
       const chunk = parts
@@ -232,7 +249,6 @@ function extractPlain(val) {
         .filter(Boolean).join('\n\n').trim();
       if (chunk) return chunk;
     }
-
     let out = null;
     (function dfs(o, depth = 0) {
       if (o == null || out || depth > 3) return;
@@ -242,7 +258,6 @@ function extractPlain(val) {
     })(val);
     return out;
   }
-
   if (Array.isArray(val)) {
     for (const v of val) { const t = extractPlain(v); if (t) return t; }
   }
@@ -257,46 +272,11 @@ function readTextByPaths(obj, paths) {
   return null;
 }
 
-// Severity helpers
-function coerceToNumber(val) {
-  if (typeof val === 'number') return Number.isFinite(val) ? val : null;
-  if (typeof val === 'string') {
-    const s = val.trim();
-    // For generic numbers (WCS/PHS/ESI) allow parsing, but NOT for RPM (RPM uses resolveRPMMultiplier)
-    const m = s.match(/-?\d+(\.\d+)?/);
-    if (m) return Number(m[0]);
-    return null;
-  }
-  if (Array.isArray(val)) {
-    for (const x of val) { const n = coerceToNumber(x); if (n != null) return n; }
-    return null;
-  }
-  if (val && typeof val === 'object') {
-    const candKeys = ['value','score','val','num','amount','rating','points','v','s'];
-    for (const k of candKeys) if (k in val) {
-      const n = coerceToNumber(val[k]); if (n != null) return n;
-    }
-    for (const v of Object.values(val)) {
-      const n = coerceToNumber(v); if (n != null) return n;
-    }
-  }
-  return null;
-}
-function readNumberByPaths(obj, paths) {
-  for (const p of paths) {
-    const n = coerceToNumber(deepGet(obj, p));
-    if (n !== null) return n;
-  }
-  return null;
-}
-
-// RPM multiplier resolution (STRICT 0.5..2.5; never read free numbers from text)
+// RPM multiplier resolution (STRICT 0.5..2.5)
+function clamp(v, min, max) { const n = Number(v); if (!Number.isFinite(n)) return min; return Math.max(min, Math.min(max, n)); }
 function resolveRPMMultiplier(item) {
-  // 1) Explicit final multiplier
   const explicit = toNum(deepGet(item, 'rpm.finalMultiplier')) ?? toNum(deepGet(item, 'RPM.finalMultiplier'));
   if (isFiniteNum(explicit)) return clamp(explicit, 0.5, 2.5);
-
-  // 2) From factors: 1.0 + sum(max(val-1.0, 0)), with caps (Thermal/Physical <=1.4, Chemical <=1.2)
   const factors = deepGet(item, 'rpm.factors') || deepGet(item, 'RPM.factors') || deepGet(item, 'rpm.parameters');
   if (Array.isArray(factors) && factors.length) {
     let base = 1.0;
@@ -304,35 +284,37 @@ function resolveRPMMultiplier(item) {
       const name = String(f?.name ?? f?.factor ?? '').toLowerCase();
       let v = toNum(f?.value);
       if (!isFiniteNum(v)) continue;
-
-      // Apply caps per factor type
       if (name.includes('chemical')) v = Math.min(v, 1.2);
       else if (name.includes('thermal') || name.includes('temperature') || name.includes('warming')) v = Math.min(v, 1.4);
       else if (name.includes('physical') || name.includes('seismic') || name.includes('storm') || name.includes('current')) v = Math.min(v, 1.4);
-      else v = Math.min(v, 1.4); // generic cap
-
+      else v = Math.min(v, 1.4);
       base += Math.max(v - 1.0, 0);
     }
     return clamp(base, 0.5, 2.5);
   }
-
-  // 3) Generic numeric RPM fields (if someone stored raw multiplier)
   const generic = toNum(deepGet(item, 'rpm')) ?? toNum(deepGet(item, 'RPM')) ?? toNum(deepGet(item, 'scores.RPM'));
   if (isFiniteNum(generic)) {
-    // Ignore absurd values (like 240 from depth) by clamping to [0.5, 2.5]; if far outside, fallback to 1.0
     const clamped = clamp(generic, 0.5, 2.5);
     return isFiniteNum(clamped) ? clamped : 1.0;
   }
-
-  return 1.0; // baseline
+  return 1.0;
 }
-function clamp(v, min, max) { const n = Number(v); if (!Number.isFinite(n)) return min; return Math.max(min, Math.min(max, n)); }
 
+// Severity
+function readNumberByPaths(obj, paths) {
+  for (const p of paths) {
+    const v = deepGet(obj, p);
+    if (v == null) continue;
+    const n = typeof v === 'number' ? v : (typeof v === 'string' ? Number(v.replace(/[^\d.-]/g,'')) : null);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
 function computeFormulaSeverity(item) {
   const W = readNumberByPaths(item, ['scores.WCS','wcs','WCS','risk.WCS','phase1.screening.WCS','phase2.scores.WCS']) ?? 0;
   const P = readNumberByPaths(item, ['scores.PHS','phs','PHS','risk.PHS','phase1.screening.PHS','phase2.scores.PHS']) ?? 0;
   const E = readNumberByPaths(item, ['scores.ESI','esi','ESI','risk.ESI','phase1.screening.ESI','phase2.scores.ESI']) ?? 0;
-  const R = resolveRPMMultiplier(item); // Correct multiplier
+  const R = resolveRPMMultiplier(item);
   return (W + P + (E / 3)) * R;
 }
 function bandFromValue(val){
@@ -348,7 +330,7 @@ function getSeverityValue(item) {
   return computeFormulaSeverity(item);
 }
 
-// Config load
+// Config
 async function loadChartConfig() {
   for (const p of appConfigPathCandidates) {
     try {
@@ -417,17 +399,14 @@ function upsertMarker(item){
 }
 function clearMarkers(){ for (const m of markers.values()){ try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-// Scores for radar (generic 0..scaleMax for all axes; RPM scaled from 0.5..2.5 to 0..scaleMax)
+// Radar (generic)
 function getAxisScores(item) {
   const w = readNumberByPaths(item, ['wcs','scores.WCS','WCS','phase1.screening.WCS','phase2.scores.WCS']) ?? 0;
   const p = readNumberByPaths(item, ['phs','scores.PHS','PHS','phase1.screening.PHS','phase2.scores.PHS']) ?? 0;
   const e = readNumberByPaths(item, ['esi','scores.ESI','ESI','phase1.screening.ESI','phase2.scores.ESI']) ?? 0;
-
-  // Map RPM multiplier to the same 0..scaleMax range for visualization only
-  const rpm = resolveRPMMultiplier(item); // 0.5..2.5
+  const rpm = resolveRPMMultiplier(item);
   const max = chartConfig.scaleMax || 10;
-  const rpmScaled = ((rpm - 0.5) / 2.0) * max; // 0.5->0, 2.5->max
-
+  const rpmScaled = ((rpm - 0.5) / 2.0) * max;
   const clampAxis = v => Math.max(0, Math.min(max, Number(v) || 0));
   return [clampAxis(w), clampAxis(p), clampAxis(e), clampAxis(rpmScaled)];
 }
@@ -486,7 +465,7 @@ function renderRadarGeneric(item) {
   renderBenchLegend();
 }
 
-// Vessel name resolver
+// Vessel name
 function getVesselName(it) {
   const direct = [
     it.vesselName, it.name, it.title, it.displayName, it.label,
@@ -504,15 +483,14 @@ function getVesselName(it) {
   return getText(it.id) || 'Unknown';
 }
 
-// Axis details for overview table (use resolved RPM)
+// Overview table data
 function extractAxisDetails(item) {
   const details = {
     WCS: { score: readNumberByPaths(item, ['scores.WCS','wcs','WCS','phase1.screening.WCS']), rationale: null },
     PHS: { score: readNumberByPaths(item, ['scores.PHS','phs','PHS','phase1.screening.PHS']), rationale: null },
     ESI: { score: readNumberByPaths(item, ['scores.ESI','esi','ESI','phase1.screening.ESI']), rationale: null },
-    RPM: { score: resolveRPMMultiplier(item), rationale: null } // multiplier
+    RPM: { score: resolveRPMMultiplier(item), rationale: null }
   };
-
   const flat = flattenEntries(item, 4);
   const ratRx = /(rationale|justification|reason|explanation|basis|notes|comment|detail|narrative)/i;
 
@@ -586,7 +564,7 @@ function renderScreeningSections(item) {
   return sections.join('\n');
 }
 
-// Generic report builders
+// Report builders (generic + v2 detailed)
 function buildReportHtml(item) {
   const blocks = [];
 
@@ -641,14 +619,14 @@ function buildReportHtml(item) {
   const detailsAxes = extractAxisDetails(item);
   const row = (label, d) => {
     const isRPM = label === 'RPM';
-    const scoreTxt = isFiniteNum(d.score) ? (isRPM ? d.score.toFixed(2) : d.score.toFixed(2)) : '—';
+    const scoreTxt = isFiniteNum(d.score) ? d.score.toFixed(2) : '—';
     const ratHtml = extractHtml(d.rationale) || (d.rationale ? sanitizeReportHtml(`<p>${escapeHtml(String(d.rationale))}</p>`) : '');
     return `<tr><th style="white-space:nowrap">${label}${isRPM ? ' (multiplier)' : ''}</th><td style="width:100px">${scoreTxt}</td><td>${ratHtml || ''}</td></tr>`;
   };
   blocks.push(`
     <h3>Factor Scores and Rationale</h3>
     <table>
-      <thead><tr><th>Factor</th><th>${'Score'}</th><th>Rationale</th></tr></thead>
+      <thead><tr><th>Factor</th><th>Score</th><th>Rationale</th></tr></thead>
       <tbody>
         ${row('WCS', detailsAxes.WCS)}
         ${row('PHS', detailsAxes.PHS)}
@@ -664,6 +642,138 @@ function buildReportHtml(item) {
   if (!blocks.length) blocks.push('<p>No formatted report available.</p>');
   return blocks.join('\n');
 }
+
+function hasUnifiedV2(item) {
+  return Array.isArray(item?.wcs?.parameters)
+    && Array.isArray(item?.phs?.parameters)
+    && Array.isArray(item?.esi?.parameters)
+    && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
+}
+function renderReportV2HTML(item) {
+  const name = getVesselName(item);
+  const bg = item?.phase1?.summary?.background ?? '—';
+  const loc = item?.phase1?.summary?.location ?? '—';
+  const disc = item?.phase1?.summary?.discovery ?? '—';
+  const vtype = item?.phase1?.screening?.vesselType ?? '—';
+  const tonnage = item?.phase1?.screening?.tonnage ?? '—';
+  const yearBuilt = item?.phase1?.screening?.yearBuilt ?? '—';
+  const owner = item?.phase1?.screening?.lastOwner ?? '—';
+  const lat = item?.phase1?.screening?.coordinates?.latitude ?? '—';
+  const lng = item?.phase1?.screening?.coordinates?.longitude ?? '—';
+
+  const wcsTotal = Number(item?.wcs?.totalScore ?? 0);
+  const phsTotal = Number(item?.phs?.totalWeightedScore ?? 0);
+  const esiTotal = Number(item?.esi?.totalScore ?? 0);
+  const esiMax = Number(item?.esi?.maxScore ?? (Array.isArray(item?.esi?.parameters) ? item.esi.parameters.length * 10 : 30));
+  const rpmMult = resolveRPMMultiplier(item);
+
+  const rows = {
+    wcs: (item?.wcs?.parameters ?? []).map(p => ({
+      name: p?.name ?? p?.parameter ?? '',
+      rationale: p?.rationale ?? '',
+      score: p?.score ?? ''
+    })),
+    phs: (item?.phs?.parameters ?? []).map(p => ({
+      name: p?.name ?? p?.parameter ?? '',
+      weight: p?.weight ?? '',
+      rationale: p?.rationale ?? '',
+      score: p?.score ?? ''
+    })),
+    esi: (item?.esi?.parameters ?? []).map(p => ({
+      name: p?.name ?? p?.parameter ?? '',
+      rationale: p?.rationale ?? '',
+      score: p?.score ?? ''
+    })),
+    rpm: (item?.rpm?.factors ?? item?.rpm?.parameters ?? []).map(f => ({
+      name: f?.name ?? f?.factor ?? '',
+      rationale: (typeof f?.rationale === 'string' && f.rationale.trim()) ? f.rationale : 'Not specified.',
+      value: f?.value ?? ''
+    }))
+  };
+
+  const table = (headers, keys, data) => {
+    let h = '<table><thead><tr>';
+    headers.forEach(x => h += `<th>${escapeHtml(x)}</th>`);
+    h += '</tr></thead><tbody>';
+    data.forEach(row => {
+      h += '<tr>';
+      keys.forEach(k => {
+        const v = row?.[k] ?? '';
+        h += `<td>${escapeHtml(String(v))}</td>`;
+      });
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+    return h;
+  };
+
+  return `
+    <section>
+      <h3>Case Study Background</h3>
+      <p>${escapeHtml(bg)}</p>
+      <p><strong>Location:</strong> ${escapeHtml(loc)}</p>
+      <p><strong>Discovery:</strong> ${escapeHtml(disc)}</p>
+    </section>
+
+    <section>
+      <h3>Phase 1: Scoping & Screening</h3>
+      <ul class="list-disc ml-5 space-y-1">
+        <li><strong>Vessel Type:</strong> ${escapeHtml(vtype)}</li>
+        <li><strong>Tonnage:</strong> ${escapeHtml(String(tonnage))}</li>
+        <li><strong>Year Built:</strong> ${escapeHtml(String(yearBuilt))}</li>
+        <li><strong>Last Owner:</strong> ${escapeHtml(owner)}</li>
+        <li><strong>Coordinates:</strong> ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Phase 3: WCS (Hull & Structure)</h3>
+      ${table(['Parameter','Rationale','Score (0–5)'], ['name','rationale','score'], rows.wcs)}
+      <p class="mt-2"><strong>Total:</strong> ${isFiniteNum(wcsTotal) ? wcsTotal : '—'} / 20</p>
+    </section>
+
+    <section>
+      <h3>Phase 3: PHS (Pollution Hazard)</h3>
+      <p class="text-xs text-gray-600 mb-2">Weights: Fuel 0.40, Ordnance 0.25, Vessel Integrity 0.20, Hazardous Materials 0.15.</p>
+      ${table(['Parameter','Weight','Rationale','Score (0–10)'], ['name','weight','rationale','score'], rows.phs)}
+      <p class="mt-2"><strong>Total Weighted Score:</strong> ${isFiniteNum(phsTotal) ? phsTotal.toFixed(2) : '—'} / 10</p>
+    </section>
+
+    <section>
+      <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
+      ${table(['Parameter','Rationale','Score (0–10)'], ['name','rationale','score'], rows.esi)}
+      <p class="mt-2"><strong>Total:</strong> ${isFiniteNum(esiTotal) ? esiTotal : '—'} / ${esiMax}</p>
+    </section>
+
+    <section>
+      <h3>Phase 3: RPM (Release Probability Modifier)</h3>
+      ${rows.rpm.length ? table(['Factor','Rationale','Value'], ['name','rationale','value'], rows.rpm) : '<p class="text-gray-600">No factor breakdown provided.</p>'}
+      <p class="mt-2"><strong>Final Multiplier:</strong> ${isFiniteNum(rpmMult) ? rpmMult.toFixed(2) : '—'}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
+    </section>
+
+    <section>
+      <h3>${item?.status === 'completed' ? 'Final' : 'Preliminary'} Risk Synthesis & Classification</h3>
+      ${item?.status === 'completed' ? '' : '<p class="italic text-gray-600">Preliminary scores; Phase 2 verification may adjust risk classification.</p>'}
+    </section>
+
+    <section>
+      <h3>Summative Assessment</h3>
+      <p>${escapeHtml(item?.finalSummary?.summativeAssessment ?? '—')}</p>
+    </section>
+
+    <section>
+      <h3>Remediation Suggestions</h3>
+      ${(item?.finalSummary?.remediationSuggestions ?? []).map(s => `
+        <div class="mt-3">
+          <h4>Priority ${escapeHtml(String(s?.priority ?? ''))}: ${escapeHtml(s?.title ?? '')}</h4>
+          <p>${escapeHtml(s?.description ?? '')}</p>
+        </div>
+      `).join('') || '<p>—</p>'}
+    </section>
+  `;
+}
+
+// Build generic report markdown (used in export)
 function buildReportMarkdown(item) {
   const lines = [];
   const vessel = getVesselName(item);
@@ -724,189 +834,7 @@ function buildReportMarkdown(item) {
   return lines.join('\n');
 }
 
-// Unified v2 detection + renderer (kept)
-function hasUnifiedV2(item) {
-  return Array.isArray(item?.wcs?.parameters)
-    && Array.isArray(item?.phs?.parameters)
-    && Array.isArray(item?.esi?.parameters)
-    && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
-}
-function renderReportV2HTML(item) {
-  const name = getVesselName(item);
-  const bg = item?.phase1?.summary?.background ?? '—';
-  const loc = item?.phase1?.summary?.location ?? '—';
-  const disc = item?.phase1?.summary?.discovery ?? '—';
-  const vtype = item?.phase1?.screening?.vesselType ?? '—';
-  const tonnage = item?.phase1?.screening?.tonnage ?? '—';
-  const yearBuilt = item?.phase1?.screening?.yearBuilt ?? '—';
-  const owner = item?.phase1?.screening?.lastOwner ?? '—';
-  const lat = item?.phase1?.screening?.coordinates?.latitude ?? '—';
-  const lng = item?.phase1?.screening?.coordinates?.longitude ?? '—';
-
-  const wcsTotal = Number(item?.wcs?.totalScore ?? 0);
-  const phsTotal = Number(item?.phs?.totalWeightedScore ?? 0);
-  const esiTotal = Number(item?.esi?.totalScore ?? 0);
-  const esiMax = Number(item?.esi?.maxScore ?? (esiTotal <= 30 ? 30 : 40));
-  const rpmMult = resolveRPMMultiplier(item);
-
-  const rows = {
-    wcs: (item?.wcs?.parameters ?? []).map(p => ({
-      name: p?.name ?? p?.parameter ?? '',
-      rationale: p?.rationale ?? '',
-      score: p?.score ?? ''
-    })),
-    phs: (item?.phs?.parameters ?? []).map(p => ({
-      name: p?.name ?? p?.parameter ?? '',
-      weight: p?.weight ?? '',
-      rationale: p?.rationale ?? '',
-      score: p?.score ?? ''
-    })),
-    esi: (item?.esi?.parameters ?? []).map(p => ({
-      name: p?.name ?? p?.parameter ?? '',
-      rationale: p?.rationale ?? '',
-      score: p?.score ?? ''
-    })),
-    rpm: (item?.rpm?.factors ?? item?.rpm?.parameters ?? []).map(f => ({
-      name: f?.name ?? f?.factor ?? '',
-      rationale: (typeof f?.rationale === 'string' && f.rationale.trim()) ? f.rationale : 'Not specified.',
-      value: f?.value ?? ''
-    }))
-  };
-
-  const table = (headers, keys, data, formats = {}) => {
-    let h = '<table><thead><tr>';
-    headers.forEach(x => h += `<th>${escapeHtml(x)}</th>`);
-    h += '</tr></thead><tbody>';
-    data.forEach(row => {
-      h += '<tr>';
-      keys.forEach(k => {
-        const v = row?.[k];
-        const fmt = formats[k];
-        const out = fmt ? fmt(v, row) : v ?? '';
-        h += `<td>${escapeHtml(String(out))}</td>`;
-      });
-      h += '</tr>';
-    });
-    h += '</tbody></table>';
-    return h;
-  };
-
-  const phase2Section = (item?.status === 'completed')
-    ? `<section><h3>Phase 2: In-Situ Assessment (Completed)</h3><p>${escapeHtml(item?.phase2?.summary ?? '')}</p></section>`
-    : `<section><h3>Phase 2: In-Situ Assessment (Recommended)</h3><p class="text-gray-600">Provide UT readings, ROV imagery, and diver logs to finalize classification.</p></section>`;
-
-  const remediation = (item?.finalSummary?.remediationSuggestions ?? []).map(s => `
-    <div class="mt-3">
-      <h4>Priority ${escapeHtml(String(s?.priority ?? ''))}: ${escapeHtml(s?.title ?? '')}</h4>
-      <p>${escapeHtml(s?.description ?? '')}</p>
-    </div>
-  `).join('');
-
-  return `
-    <section>
-      <h3>Case Study Background</h3>
-      <p>${escapeHtml(bg)}</p>
-      <p><strong>Location:</strong> ${escapeHtml(loc)}</p>
-      <p><strong>Discovery:</strong> ${escapeHtml(disc)}</p>
-    </section>
-
-    <section>
-      <h3>Phase 1: Scoping & Screening</h3>
-      <ul class="list-disc ml-5 space-y-1">
-        <li><strong>Vessel Type:</strong> ${escapeHtml(vtype)}</li>
-        <li><strong>Tonnage:</strong> ${escapeHtml(String(tonnage))}</li>
-        <li><strong>Year Built:</strong> ${escapeHtml(String(yearBuilt))}</li>
-        <li><strong>Last Owner:</strong> ${escapeHtml(owner)}</li>
-        <li><strong>Coordinates:</strong> ${escapeHtml(String(lat))}, ${escapeHtml(String(lng))}</li>
-      </ul>
-    </section>
-
-    ${phase2Section}
-
-    <section>
-      <h3>Phase 3: WCS (Hull & Structure)</h3>
-      ${table(['Parameter','Rationale','Score (0–5)'], ['name','rationale','score'], rows.wcs)}
-      <p class="mt-2"><strong>Total:</strong> ${isFiniteNum(wcsTotal) ? wcsTotal : '—'} / 20</p>
-    </section>
-
-    <section>
-      <h3>Phase 3: PHS (Pollution Hazard)</h3>
-      <p class="text-xs text-gray-600 mb-2">Weights: Fuel 0.40, Ordnance 0.25, Vessel Integrity 0.20, Hazardous Materials 0.15.</p>
-      ${table(['Parameter','Weight','Rationale','Score (0–10)'], ['name','weight','rationale','score'], rows.phs)}
-      <p class="mt-2"><strong>Total Weighted Score:</strong> ${isFiniteNum(phsTotal) ? phsTotal.toFixed(2) : '—'} / 10</p>
-    </section>
-
-    <section>
-      <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
-      ${table(['Parameter','Rationale','Score (0–10)'], ['name','rationale','score'], rows.esi)}
-      <p class="mt-2"><strong>Total:</strong> ${isFiniteNum(esiTotal) ? esiTotal : '—'} / ${esiMax}</p>
-    </section>
-
-    <section>
-      <h3>Phase 3: RPM (Release Probability Modifier)</h3>
-      ${rows.rpm.length ? table(['Factor','Rationale','Value (1.0–1.4 or 1.2 for chemical)'], ['name','rationale','value'], rows.rpm) : '<p class="text-gray-600">No factor breakdown provided.</p>'}
-      <p class="mt-2"><strong>Final Multiplier:</strong> ${isFiniteNum(rpmMult) ? rpmMult.toFixed(2) : '—'}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
-    </section>
-
-    <section>
-      <h3>${item?.status === 'completed' ? 'Final' : 'Preliminary'} Risk Synthesis & Classification</h3>
-      ${item?.status === 'completed' ? '' : '<p class="italic text-gray-600">Preliminary scores; Phase 2 verification may adjust risk classification.</p>'}
-    </section>
-
-    <section>
-      <h3>Summative Assessment</h3>
-      <p>${escapeHtml(item?.finalSummary?.summativeAssessment ?? '—')}</p>
-    </section>
-
-    <section>
-      <h3>Remediation Suggestions</h3>
-      ${remediation || '<p>—</p>'}
-    </section>
-  `;
-}
-function renderRadarV2(item) {
-  const ctx = document.getElementById('werSpiderChart').getContext('2d');
-
-  const wcs = Number(item?.wcs?.totalScore || 0);
-  const phs = Number(item?.phs?.totalWeightedScore || 0);
-  const esiTotal = Number(item?.esi?.totalScore || 0);
-  const esiMax = Number(item?.esi?.maxScore || (esiTotal <= 30 ? 30 : 40));
-  const rpmVal = resolveRPMMultiplier(item);
-
-  const wcs20 = Math.max(0, Math.min(20, wcs)); // already 0..20
-  const phs20 = Math.max(0, Math.min(20, (phs / 10) * 20));
-  const esi20 = Math.max(0, Math.min(20, (esiTotal / (esiMax || 30)) * 20));
-  const rpm20 = Math.max(0, Math.min(20, ((Math.min(Math.max(rpmVal, 0.5), 2.5) - 0.5) / 2.0) * 20));
-
-  const profile = [wcs20, phs20, esi20, rpm20];
-  const lowCap = [6,6,6,6];
-  const medCap = [12,12,12,12];
-  const highCap = [20,20,20,20];
-
-  if (radarChart) radarChart.destroy();
-  radarChart = new Chart(ctx, {
-    type: 'radar',
-    data: {
-      labels: ['WCS','PHS','ESI','RPM'],
-      datasets: [
-        { label: 'Low benchmark', data: lowCap, backgroundColor: 'rgba(16,185,129,0.18)', borderColor: 'rgba(16,185,129,0.45)', pointRadius: 0, order: 1 },
-        { label: 'Medium benchmark', data: medCap, backgroundColor: 'rgba(245,158,11,0.14)', borderColor: 'rgba(245,158,11,0.45)', pointRadius: 0, fill: '-1', order: 2 },
-        { label: 'High benchmark', data: highCap, backgroundColor: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.45)', pointRadius: 0, fill: '-1', order: 3 },
-        { label: 'Risk Profile', data: profile, backgroundColor: 'rgba(30,64,175,0.22)', borderColor: 'rgba(30,64,175,1)', pointBackgroundColor: 'rgba(30,64,175,1)', order: 4 }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: 'bottom' } },
-      scales: { r: { suggestedMin: 0, suggestedMax: 20, ticks: { stepSize: 4 } } }
-    }
-  });
-
-  if (benchLegend) benchLegend.textContent = 'Low/Medium/High rings shown for orientation (0–20 scale)';
-}
-
-// Data load + render
+// Data load
 async function startData() {
   if (dataUnsub) return;
   await loadChartConfig();
@@ -916,17 +844,13 @@ async function startData() {
     allItems = [];
     snap.forEach(docSnap => {
       const raw = docSnap.data() || {};
-      const d0 = normalizeDoc(raw);
-      const d = { ...d0, id: d0.id || docSnap.id };
-
+      const d = { ...normalizeDoc(raw), id: raw?.id || docSnap.id };
       const sv = getSeverityValue(d);
       if (!d.severity || typeof d.severity !== 'object') d.severity = {};
       d.severity.value = sv;
       d.severity.band = d.severity.band || bandFromValue(sv);
-
       allItems.push(d);
     });
-
     if (DEBUG) console.log('[WERP] Loaded docs:', allItems.length, 'from', assessmentsPath);
     render();
   }, (err) => {
@@ -934,21 +858,18 @@ async function startData() {
   });
 }
 
+// Filters and list rendering
 [sevHigh, sevMedium, sevLow].forEach(cb => cb && cb.addEventListener('change', render));
 if (searchBox) searchBox.addEventListener('input', render);
 if (clearSearch) clearSearch.addEventListener('click', () => { searchBox.value = ''; render(); });
 
-function render() {
-  const noDataBanner = document.getElementById('noDataBanner');
-  if (noDataBanner) noDataBanner.classList.toggle('hidden', allItems.length !== 0);
-
+function getVisibleItems() {
   const activeBands = new Set();
   if (sevHigh?.checked) activeBands.add('high');
   if (sevMedium?.checked) activeBands.add('medium');
   if (sevLow?.checked) activeBands.add('low');
   const term = searchBox?.value?.trim().toLowerCase() || '';
-
-  const filtered = allItems.filter(it => {
+  return allItems.filter(it => {
     const band = it?.severity?.band || 'unknown';
     if (!activeBands.has(band) && band !== 'unknown') return false;
     if (term) {
@@ -957,6 +878,11 @@ function render() {
     }
     return true;
   });
+}
+
+function render() {
+  const noDataBanner = document.getElementById('noDataBanner');
+  const filtered = getVisibleItems();
 
   const initial = [];
   const completed = [];
@@ -985,6 +911,7 @@ function render() {
   if (completedCount) completedCount.textContent = String(completed.length);
   if (reassessCount) reassessCount.textContent = String(reassess.length);
 
+  if (noDataBanner) noDataBanner.classList.toggle('hidden', allItems.length !== 0);
   if (noInitial) noInitial.classList.toggle('hidden', initial.length !== 0);
   if (noCompleted) noCompleted.classList.toggle('hidden', completed.length !== 0);
   if (noReassess) noReassess.classList.toggle('hidden', reassess.length !== 0);
@@ -1017,11 +944,14 @@ function drawList(container, items) {
   }
 }
 
+// Open report
 function openReport(item) {
   currentItem = item;
+  currentDocId = item?.id || null;
   const vessel = getVesselName(item);
   if (reportTitle) reportTitle.textContent = vessel || 'Assessment';
 
+  // Render body
   if (hasUnifiedV2(item)) {
     const html = renderReportV2HTML(item);
     lastRenderedHtml = html;
@@ -1034,9 +964,187 @@ function openReport(item) {
     renderRadarGeneric(item);
   }
 
+  // Populate phase 2 input
+  if (phase2Input) {
+    const p2 = deepGet(item, 'phase2.summary') || '';
+    phase2Input.value = getText(p2) || '';
+  }
+  // Load gallery
+  refreshGallery();
+
+  // Load feedback list
+  renderFeedbackList(item);
+
   reportContainer.classList.remove('hidden');
   reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+// Gallery
+function galleryPathFor(docId) {
+  return `artifacts/${appId}/public/uploads/${docId}/phase2`;
+}
+async function refreshGallery() {
+  if (!galleryGrid || !currentDocId) return;
+  galleryGrid.innerHTML = '';
+  galleryEmpty?.classList.add('hidden');
+
+  try {
+    const basePath = galleryPathFor(currentDocId);
+    const listRef = storageRef(storage, basePath);
+    const res = await listAll(listRef);
+    if (!res.items.length) {
+      galleryEmpty?.classList.remove('hidden');
+      return;
+    }
+    for (const itemRef of res.items) {
+      const url = await getDownloadURL(itemRef);
+      const name = itemRef.name || 'file';
+      const isImg = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name);
+      const tile = document.createElement('div');
+      tile.className = 'gallery-tile';
+      if (isImg) {
+        tile.innerHTML = `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(name)}" loading="lazy"></a>`;
+      } else {
+        tile.innerHTML = `<a class="file-tile" href="${url}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`;
+      }
+      galleryGrid.appendChild(tile);
+    }
+  } catch (e) {
+    if (galleryEmpty) {
+      galleryEmpty.textContent = 'No images uploaded or unable to load gallery.';
+      galleryEmpty.classList.remove('hidden');
+    }
+  }
+}
+
+// Phase 2 actions
+async function savePhase2() {
+  if (!currentDocId) { phase2Status.textContent = 'Open a report first.'; return; }
+  const txt = phase2Input.value.trim();
+  phase2Status.textContent = 'Saving...';
+  try {
+    const ref = doc(db, assessmentsPath, currentDocId);
+    await updateDoc(ref, { 'phase2.summary': txt, 'phase2.updatedAt': serverTimestamp() });
+    phase2Status.textContent = 'Saved.';
+    setTimeout(() => phase2Status.textContent = '', 1500);
+  } catch (e) {
+    phase2Status.textContent = 'Save failed.';
+  }
+}
+
+async function uploadFiles() {
+  if (!currentDocId) { uploadStatus.textContent = 'Open a report first.'; return; }
+  const files = Array.from(phase2Files?.files || []);
+  if (!files.length) { uploadStatus.textContent = 'Choose files first.'; return; }
+  uploadStatus.textContent = `Uploading ${files.length} file(s)...`;
+  try {
+    const base = galleryPathFor(currentDocId);
+    const refDoc = doc(db, assessmentsPath, currentDocId);
+    let done = 0;
+    for (const f of files) {
+      const path = `${base}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g,'_')}`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, f, { contentType: f.type || undefined });
+      const url = await getDownloadURL(ref);
+      // Store attachment metadata on doc
+      await updateDoc(refDoc, {
+        'phase2.assets': arrayUnion({
+          name: f.name,
+          path, url,
+          contentType: f.type || '',
+          bytes: f.size || 0,
+          uploadedAt: serverTimestamp()
+        })
+      });
+      done++;
+      uploadStatus.textContent = `Uploaded ${done}/${files.length}`;
+    }
+    phase2Files.value = '';
+    await refreshGallery();
+    setTimeout(() => uploadStatus.textContent = 'Upload complete.', 500);
+    setTimeout(() => uploadStatus.textContent = '', 1500);
+  } catch (e) {
+    uploadStatus.textContent = 'Upload failed.';
+  }
+}
+
+async function reassessWithPhase2() {
+  if (!currentDocId) { phase2Status.textContent = 'Open a report first.'; return; }
+  phase2Status.textContent = 'Submitting reassessment...';
+  const payload = { docId: currentDocId, usePhase2: true, normalize: true };
+  try {
+    if (reassessWerpsFn) {
+      await reassessWerpsFn(payload);
+    } else {
+      await repairWerpsFn(payload);
+    }
+    phase2Status.textContent = 'Reassessment started. Refreshing...';
+    // Allow backend to update, then reload this one doc
+    setTimeout(async () => {
+      const ref = doc(db, assessmentsPath, currentDocId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        currentItem = { ...snap.data(), id: currentDocId };
+        openReport(currentItem);
+      }
+      phase2Status.textContent = 'Reassessment complete.';
+      setTimeout(() => phase2Status.textContent = '', 2000);
+    }, 1500);
+  } catch (e) {
+    phase2Status.textContent = 'Reassessment failed.';
+  }
+}
+savePhase2Btn?.addEventListener('click', savePhase2);
+uploadFilesBtn?.addEventListener('click', uploadFiles);
+reassessBtn?.addEventListener('click', reassessWithPhase2);
+
+// Feedback (per-report)
+function renderFeedbackList(item) {
+  if (!feedbackList) return;
+  feedbackList.innerHTML = '';
+  const entries = Array.isArray(item?.feedback) ? [...item.feedback] : [];
+  entries.sort((a,b) => (b?.createdAt?.seconds || 0) - (a?.createdAt?.seconds || 0));
+  const fmt = (ts) => {
+    try { if (ts?.seconds) return new Date(ts.seconds * 1000).toLocaleString(); if (typeof ts === 'number') return new Date(ts).toLocaleString(); } catch {}
+    return '';
+  };
+  for (const e of entries.slice(0, 12)) {
+    const who = escapeHtml(e?.user || 'Unknown');
+    const when = fmt(e?.createdAt) || '';
+    const msg = escapeHtml(e?.message || '');
+    const li = document.createElement('li');
+    li.className = 'p-2 bg-gray-50 border border-gray-200 rounded';
+    li.innerHTML = `<div class="text-xs text-gray-600 mb-1">${who}${when ? ' • '+when : ''}</div><div class="text-sm">${msg}</div>`;
+    feedbackList.appendChild(li);
+  }
+}
+async function saveFeedback() {
+  if (!currentDocId) { feedbackStatus.textContent = 'Open a report first.'; return; }
+  const msg = feedbackInput.value.trim();
+  if (!msg) { feedbackStatus.textContent = 'Enter feedback text.'; return; }
+  const user = auth.currentUser;
+  const who = user?.email || user?.uid || 'anonymous';
+  feedbackStatus.textContent = 'Saving...';
+  try {
+    const ref = doc(db, assessmentsPath, currentDocId);
+    await updateDoc(ref, {
+      feedback: arrayUnion({
+        message: msg,
+        user: who,
+        createdAt: serverTimestamp()
+      })
+    });
+    if (!Array.isArray(currentItem.feedback)) currentItem.feedback = [];
+    currentItem.feedback.unshift({ message: msg, user: who, createdAt: { seconds: Math.floor(Date.now()/1000) } });
+    renderFeedbackList(currentItem);
+    feedbackInput.value = '';
+    feedbackStatus.textContent = 'Saved.';
+    setTimeout(() => feedbackStatus.textContent = '', 1500);
+  } catch (e) {
+    feedbackStatus.textContent = 'Save failed.';
+  }
+}
+saveFeedbackBtn?.addEventListener('click', saveFeedback);
 
 // Auth UI
 document.getElementById('signInEmailBtn')?.addEventListener('click', async () => {
@@ -1132,10 +1240,10 @@ onAuthStateChanged(auth, async (user) => {
   userNameSpan.classList.remove('hidden');
   signOutBtn.classList.remove('hidden');
 
-  const role = await fetchRoleFor(user.uid);
-  const isAdmin = role === 'admin';
-  const isContributor = isAdmin || role === 'contributor';
-  roleBadge.textContent = `Role: ${role}`;
+  currentRole = await fetchRoleFor(user.uid);
+  roleBadge.textContent = `Role: ${currentRole}`;
+  const isAdmin = currentRole === 'admin';
+  const isContributor = isAdmin || currentRole === 'contributor';
   if (isAdmin) adminToolsBtn.classList.remove('hidden'); else adminToolsBtn.classList.add('hidden');
   analyzeBtn.disabled = !isContributor;
   if (!isContributor) contribHint.classList.remove('hidden'); else contribHint.classList.add('hidden');
@@ -1144,7 +1252,7 @@ onAuthStateChanged(auth, async (user) => {
   await startData();
 });
 
-// Export helpers: use the last on-screen HTML
+// Export
 function downloadFile(filename, blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1222,7 +1330,7 @@ exportHtmlBtn?.addEventListener('click', exportHtml);
 exportMdBtn?.addEventListener('click', exportMarkdown);
 exportJsonBtn?.addEventListener('click', exportJson);
 
-// Normalization
+// Normalize
 function normalizeDoc(d) {
   const out = { ...d };
   if (d && typeof d.data === 'object' && d.data) Object.assign(out, d.data);

@@ -58,10 +58,6 @@
     .report-prose h5,
     .report-prose h6 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
 
-    .report-prose img,
-    .report-prose video,
-    .report-prose iframe { max-width: 100%; height: auto; }
-
     .report-prose table { width: 100%; border-collapse: collapse; }
     .report-prose th, .report-prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
     .report-prose th { background: #f9fafb; font-weight: 600; }
@@ -69,12 +65,14 @@
     .report-prose pre { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb; }
     .report-prose blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid #e5e7eb; color:#374151; }
 
-    /* Ensure the report panel scrolls instead of clipping content */
-    #reportContainer { max-height: 80vh; overflow: visible; }
+    /* Ensure the report panel scrolls naturally */
     #reportScroll { max-height: 75vh; overflow-y: auto; padding-right: 4px; }
-    /* Improve scrollbar usability on some browsers */
     #reportScroll::-webkit-scrollbar { width: 8px; }
     #reportScroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+
+    /* Gallery */
+    .gallery-tile img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; }
+    .gallery-tile .file-tile { height: 120px; display:flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#f8fafc; font-size:12px; color:#475569; padding:6px; text-align:center; }
   </style>
 </head>
 <body class="bg-slate-50 text-gray-900">
@@ -145,6 +143,11 @@
         <p id="statusMessage" class="text-sm text-gray-500 mt-3 h-5" aria-live="polite"></p>
       </section>
 
+      <!-- Map moved here (top, below Analyze, above lists) -->
+      <section class="bg-white border border-gray-200 rounded-xl shadow p-3">
+        <div id="map"></div>
+      </section>
+
       <!-- Filters -->
       <section class="bg-white border border-gray-200 rounded-xl shadow p-4">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -204,14 +207,9 @@
         <span id="appIdSpan" class="font-mono"></span>. Check the collection name and casing in Firestore.
       </section>
 
-      <!-- Map -->
-      <section class="bg-white border border-gray-200 rounded-xl shadow p-3">
-        <div id="map"></div>
-      </section>
-
       <!-- Full report panel -->
       <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden">
-        <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center justify-between mb-3">
           <h2 id="reportTitle" class="text-2xl font-bold text-gray-900"></h2>
           <div class="flex items-center gap-2">
             <button id="exportPdfBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50" title="Export PDF">Export PDF</button>
@@ -221,20 +219,74 @@
           </div>
         </div>
 
-        <div id="reportGrid" class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <!-- Left: scrollable report content -->
+        <!-- Top row: radar chart + gallery -->
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <!-- Chart -->
           <div class="lg:col-span-3">
-            <div id="reportScroll" class="max-h-[75vh] overflow-y-auto pr-2">
-              <div id="reportContent" class="report-prose"></div>
-            </div>
-          </div>
-          <!-- Right: fixed-height chart -->
-          <div class="lg:col-span-2 flex flex-col">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
             <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white h-[360px]">
               <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
             </div>
             <div id="benchLegend" class="mt-2 text-xs text-gray-600 text-center"></div>
+          </div>
+
+          <!-- Gallery -->
+          <div class="lg:col-span-2">
+            <h3 class="text-base font-bold mb-3 text-gray-900">Phase 2 Image Gallery</h3>
+            <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+            <p id="galleryEmpty" class="text-xs text-gray-500 mt-1 hidden">No images uploaded yet.</p>
+          </div>
+        </div>
+
+        <!-- Scrollable report content -->
+        <div id="reportScroll" class="mt-4">
+          <div id="reportContent" class="report-prose"></div>
+        </div>
+
+        <!-- Phase 2 inputs -->
+        <div id="phase2Section" class="mt-6 border-t pt-4">
+          <h3 class="text-base font-semibold text-gray-800 mb-2">Phase 2: In-Situ Assessment (Recommended)</h3>
+          <p class="text-xs text-gray-500 mb-3">Provide UT readings, ROV imagery, and diver logs to finalize classification.</p>
+
+          <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <!-- Notes -->
+            <div class="lg:col-span-3">
+              <label class="text-sm text-gray-700">In-situ notes</label>
+              <textarea id="phase2Input" class="w-full min-h-[120px] p-2 border border-gray-300 rounded-md" placeholder="Paste Phase 2 field observations here..."></textarea>
+              <div class="flex items-center gap-2 mt-2">
+                <button id="savePhase2Btn" class="text-xs px-3 py-1.5 rounded bg-gray-800 text-white hover:bg-gray-700">Save Phase 2</button>
+                <button id="reassessBtn" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Reassess with Phase 2</button>
+                <span id="phase2Status" class="text-xs text-gray-500"></span>
+              </div>
+            </div>
+
+            <!-- Upload -->
+            <div class="lg:col-span-2">
+              <label class="text-sm text-gray-700">Upload files (images, PDFs, logs)</label>
+              <input id="phase2Files" type="file" multiple class="block w-full mt-1 text-sm file:mr-2 file:py-2 file:px-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:text-gray-700 hover:file:bg-gray-50" />
+              <div class="flex items-center gap-2 mt-2">
+                <button id="uploadFilesBtn" class="text-xs px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-600">Upload files</button>
+                <span id="uploadStatus" class="text-xs text-gray-500"></span>
+              </div>
+              <p class="text-[11px] text-gray-500 mt-1">Images will appear in the gallery; other files are attached to this report.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-report feedback -->
+        <div id="feedbackSection" class="mt-6 border-t pt-4">
+          <h3 class="text-base font-semibold text-gray-800 mb-2">Assessment Feedback (per report)</h3>
+          <p class="text-xs text-gray-500 mb-2">Use this to leave guidance or note errors for this specific assessment; entries are saved on the report document.</p>
+          <div class="flex flex-col gap-2">
+            <textarea id="feedbackInput" class="w-full min-h-[80px] p-2 border border-gray-300 rounded-md" placeholder="Highlight issues, corrections, or guidance for reassessment..."></textarea>
+            <div class="flex items-center gap-2">
+              <button id="saveFeedbackBtn" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Save feedback</button>
+              <span id="feedbackStatus" class="text-xs text-gray-500"></span>
+            </div>
+          </div>
+          <div class="mt-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-1">Recent feedback</h4>
+            <ul id="feedbackList" class="space-y-2"></ul>
           </div>
         </div>
       </section>
