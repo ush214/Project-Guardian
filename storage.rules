@@ -1,0 +1,22 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Public read of uploaded report assets; auth required to write.
+    match /artifacts/guardian/public/uploads/{docId}/phase2/{fileName=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 20 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*|application/pdf|text/plain');
+    }
+
+    // Optional: any other subfolders under uploads for this appId
+    match /artifacts/guardian/public/uploads/{docId}/{rest=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 20 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*|application/pdf|text/plain');
+    }
+
+    // Everything else stays denied by default.
+  }
+}
