@@ -33,6 +33,7 @@
     .pill.low { color:#065f46; background:#ecfdf5; border-color:#10b981; }
     .pill.medium { color:#92400e; background:#fffbeb; border-color:#f59e0b; }
     .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
+    .pill.unknown { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
     .prose h3 { font-weight: 700; margin-top: 1rem; }
     .prose table { width: 100%; border-collapse: collapse; margin-top: .25rem; }
     .prose th, .prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
@@ -132,6 +133,19 @@
           <div class="text-xs text-gray-600">Showing: <span id="visibleCounts">0</span></div>
         </div>
         <p class="text-xs text-gray-500 mt-2">Severity = (WCS + PHS + (ESI ÷ 3)) × RPM.</p>
+      </section>
+
+      <!-- Evidence: screenshot to illustrate current issue -->
+      <!-- Place the screenshot file at public/assets/evidence-assessments.png -->
+      <section id="evidenceSection" class="bg-white border border-amber-200 rounded-xl shadow p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-amber-800">Evidence: Current UI shows names but severity as LOW 0.00</h3>
+          <button id="toggleEvidenceBtn" class="text-xs text-amber-700 hover:underline">Hide</button>
+        </div>
+        <p class="text-xs text-amber-700 mt-1">This embedded screenshot documents the issue as seen in production. If the image doesn't load, ensure the file exists at /assets/evidence-assessments.png.</p>
+        <div id="evidenceWrapper" class="mt-3">
+          <img id="evidenceImg" src="/assets/evidence-assessments.png" alt="Screenshot showing Initial Assessments with severity LOW 0.00 for all items" class="w-full rounded border border-amber-200">
+        </div>
       </section>
 
       <!-- No data banner -->
@@ -242,6 +256,15 @@
     // Debug flag (set to false to silence console logs)
     const DEBUG = true;
 
+    // Evidence toggle
+    const evidenceSection = document.getElementById('evidenceSection');
+    const toggleEvidenceBtn = document.getElementById('toggleEvidenceBtn');
+    const evidenceWrapper = document.getElementById('evidenceWrapper');
+    toggleEvidenceBtn?.addEventListener('click', () => {
+      const hidden = evidenceWrapper.classList.toggle('hidden');
+      toggleEvidenceBtn.textContent = hidden ? 'Show' : 'Hide';
+    });
+
     // Role helper: reads Role/role (case-insensitive) from allowlist, fallback to legacy private path
     async function fetchRoleFor(uid) {
       try {
@@ -287,63 +310,90 @@
     function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
     function pickNum(...vals) { for (const v of vals) { const n = toNum(v); if (n !== null) return n; } return null; }
 
-    // Normalize possible nested payloads by shallow-merging common holders into top-level
+    // Shallow merge common nested holders into top-level
     function normalizeDoc(d) {
       const out = { ...d };
       if (d && typeof d.data === 'object' && d.data) Object.assign(out, d.data);
       if (d && typeof d.payload === 'object' && d.payload) Object.assign(out, d.payload);
-      if (d && typeof d.meta === 'object' && d.meta) out.meta = { ...d.meta }; // keep meta too
+      if (d && typeof d.attributes === 'object' && d.attributes) Object.assign(out, d.attributes);
+      if (d && typeof d.details === 'object' && d.details) Object.assign(out, d.details);
+      if (d && typeof d.meta === 'object' && d.meta) out.meta = { ...d.meta };
       if (d && typeof d.metadata === 'object' && d.metadata) out.metadata = { ...d.metadata };
       return out;
     }
 
-    // Vessel name resolver (robust)
-    function getText(v) {
-      if (v == null) return null;
-      const s = String(v).trim();
-      return s.length ? s : null;
+    // Flatten object to scan keys heuristically
+    function flattenObject(obj, maxDepth = 3) {
+      const out = [];
+      function rec(cur, depth) {
+        if (!cur || typeof cur !== 'object' || depth > maxDepth) return;
+        for (const [k, v] of Object.entries(cur)) {
+          out.push([k, v]);
+          if (v && typeof v === 'object') rec(v, depth + 1);
+        }
+      }
+      rec(obj, 0);
+      return out;
     }
+
+    function getText(v) { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; }
+
+    // Heuristic vessel name resolver
     function getVesselName(it) {
-      const cands = [
+      const direct = [
         it.vesselName, it.name, it.title, it.displayName, it.label,
-        it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName,
+        it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
         it.meta?.vesselName, it.meta?.name, it.meta?.title,
         it.metadata?.vesselName, it.metadata?.name, it.metadata?.title,
         it.phase1?.screening?.vesselName,
-        it['vessel_name'], it['Vessel Name'],
-        it.id
+        it['vessel_name'], it['Vessel Name'], it['VESSEL_NAME'],
+        it['wreck_title'], it['ship_name'], it['Ship Name'], it['Name']
       ];
-      for (const c of cands) {
-        const t = getText(c);
-        if (t) return t;
+      for (const c of direct) { const t = getText(c); if (t) return t; }
+
+      const pairs = flattenObject(it, 3);
+      const keyRx = /(vessel|wreck|ship|name|title)/i;
+      for (const [k, v] of pairs) { if (!keyRx.test(k)) continue; const t = getText(v); if (t) return t; }
+
+      return getText(it.id) || 'Unknown';
+    }
+
+    // Read a number from nested paths like "scores.WCS" etc.
+    function readNumberByPaths(obj, paths) {
+      for (const p of paths) {
+        const parts = p.split('.');
+        let cur = obj;
+        for (const part of parts) {
+          if (cur == null) break;
+          cur = cur[part];
+        }
+        const n = toNum(cur);
+        if (n !== null) return n;
       }
-      return 'Unknown';
+      return null;
     }
 
     // Compute severity value from multiple possible fields or from formula
     function computeFormulaSeverity(item) {
-      const W = pickNum(item?.scores?.WCS, item?.wcs, item?.WCS, item?.risk?.WCS, item?.phase2?.scores?.WCS);
-      const P = pickNum(item?.scores?.PHS, item?.phs, item?.PHS, item?.risk?.PHS, item?.phase2?.scores?.PHS);
-      const E = pickNum(item?.scores?.ESI, item?.esi, item?.ESI, item?.risk?.ESI, item?.phase2?.scores?.ESI);
-      const R = pickNum(item?.scores?.RPM, item?.rpm, item?.RPM, item?.risk?.RPM, item?.phase2?.scores?.RPM);
+      const W = readNumberByPaths(item, ['scores.WCS','wcs','WCS','risk.WCS','phase2.scores.WCS','phase1.screening.WCS','metrics.WCS','values.WCS']);
+      const P = readNumberByPaths(item, ['scores.PHS','phs','PHS','risk.PHS','phase2.scores.PHS','phase1.screening.PHS','metrics.PHS','values.PHS']);
+      const E = readNumberByPaths(item, ['scores.ESI','esi','ESI','risk.ESI','phase2.scores.ESI','phase1.screening.ESI','metrics.ESI','values.ESI']);
+      const R = readNumberByPaths(item, ['scores.RPM','rpm','RPM','risk.RPM','phase2.scores.RPM','phase1.screening.RPM','metrics.RPM','values.RPM']);
       if ([W,P,E,R].every(v => v !== null)) return (W + P + (E / 3)) * R;
       return null;
     }
     function getSeverityValue(item) {
-      const direct = pickNum(
-        item?.severity?.value,
-        item?.severityValue,
-        item?.severity_score,
-        item?.severityScore,
-        item?.score,
-        item?.risk?.severity,
-        item?.risk?.score
-      );
+      const direct = readNumberByPaths(item, [
+        'severity.value','severityValue','severity_score','severityScore','score',
+        'risk.severity','risk.score','metrics.severity','values.severity'
+      ]);
       const formula = computeFormulaSeverity(item);
-      return direct ?? formula ?? 0;
+      const v = direct ?? formula;
+      return v == null ? null : v;
     }
     function bandFromValue(val){
-      const v = Number(val) || 0;
+      const v = Number(val);
+      if (!Number.isFinite(v)) return 'unknown';
       if (v >= 7.5) return 'high';
       if (v >= 4) return 'medium';
       return 'low';
@@ -517,12 +567,12 @@
         tileSize: 512,
         zoomOffset: -1,
         accessToken: MAPBOX_TOKEN,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a>'
+        attribution: '&copy; OpenStreetMap &copy; Mapbox'
       }).addTo(map);
     }
 
     function markerIconFor(band){
-      const color = band === "high" ? "red" : band === "medium" ? "orange" : "green";
+      const color = band === "high" ? "red" : band === "medium" ? "orange" : band === "low" ? "green" : "blue";
       return L.icon({
         iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
         shadowUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png',
@@ -535,7 +585,7 @@
       const id = item?.id;
       if (!id) return;
 
-      // Support {latitude, longitude} or {lat, lng}
+      // Support {latitude, longitude} or {lat, lng} or {y, x}
       const lat = coords?.latitude ?? coords?.lat ?? coords?.y;
       const lng = coords?.longitude ?? coords?.lng ?? coords?.x;
       if (lat == null || lng == null) return;
@@ -544,7 +594,8 @@
       const band = item?.severity?.band || bandFromValue(sv);
       const pos = [Number(lat), Number(lng)];
       const title = escapeHtml(getVesselName(item));
-      const popupHtml = `<div><strong>${title}</strong><br/>Severity: ${(band||"").toUpperCase()} ${sv.toFixed(2)}</div>`;
+      const svTxt = Number.isFinite(sv) ? sv.toFixed(2) : 'N/A';
+      const popupHtml = `<div><strong>${title}</strong><br/>Severity: ${(band||"").toUpperCase()} ${svTxt}</div>`;
 
       if (markers.has(id)) {
         const m = markers.get(id);
@@ -567,10 +618,10 @@
     // Radar chart
     function renderRadar(item) {
       const ctx = document.getElementById('werSpiderChart').getContext('2d');
-      const wcs = pickNum(item?.scores?.WCS, item?.wcs, item?.WCS) ?? 0;
-      const phs = pickNum(item?.scores?.PHS, item?.phs, item?.PHS) ?? 0;
-      const esi = pickNum(item?.scores?.ESI, item?.esi, item?.ESI) ?? 0;
-      const rpm = pickNum(item?.scores?.RPM, item?.rpm, item?.RPM) ?? 0;
+      const wcs = readNumberByPaths(item, ['scores.WCS','wcs','WCS']) ?? 0;
+      const phs = readNumberByPaths(item, ['scores.PHS','phs','PHS']) ?? 0;
+      const esi = readNumberByPaths(item, ['scores.ESI','esi','ESI']) ?? 0;
+      const rpm = readNumberByPaths(item, ['scores.RPM','rpm','RPM']) ?? 0;
 
       const data = {
         labels: ['WCS', 'PHS', 'ESI', 'RPM'],
@@ -613,25 +664,27 @@
       dataUnsub = onSnapshot(colRef, (snap) => {
         allItems = [];
         snap.forEach(docSnap => {
-          // Raw data, then normalized for robust field access
           const raw = docSnap.data() || {};
           const d0 = normalizeDoc(raw);
-          const d = { ...d0 }; // work on a copy
+          const d = { ...d0 };
           d.id = d.id || docSnap.id;
 
-          // Compute severity value and band without relying on a specific field name
           const sv = getSeverityValue(d);
           if (!d.severity || typeof d.severity !== 'object') d.severity = {};
-          d.severity.value = sv;
+          d.severity.value = sv; // may be null
           d.severity.band = d.severity.band || bandFromValue(sv);
 
-          // Keep a debug sample of the first few docs
           if (DEBUG && logCount < 3) {
             console.log('[WERP] Sample doc', docSnap.id, {
-              keys: Object.keys(raw || {}),
-              normalizedKeys: Object.keys(d0 || {}),
               vesselNameResolved: getVesselName(d),
-              severityValue: sv
+              severityValue: sv,
+              hasScores: {
+                WCS: readNumberByPaths(d, ['scores.WCS','wcs','WCS']),
+                PHS: readNumberByPaths(d, ['scores.PHS','phs','PHS']),
+                ESI: readNumberByPaths(d, ['scores.ESI','esi','ESI']),
+                RPM: readNumberByPaths(d, ['scores.RPM','rpm','RPM'])
+              },
+              topLevelKeys: Object.keys(raw || {})
             });
             logCount++;
           }
@@ -661,8 +714,8 @@
       const term = searchBox.value.trim().toLowerCase();
 
       const filtered = allItems.filter(it => {
-        const band = it?.severity?.band || 'low';
-        if (!activeBands.has(band)) return false;
+        const band = it?.severity?.band || 'unknown';
+        if (!activeBands.has(band) && band !== 'unknown') return false;
         if (term) {
           const name = getVesselName(it).toLowerCase();
           if (!name.includes(term)) return false;
@@ -687,15 +740,16 @@
         else initial.push(it);
       }
 
-      // Sort by computed severity value desc
-      const bySeverity = (a, b) => (b?.severity?.value ?? 0) - (a?.severity?.value ?? 0);
+      // Sort by computed severity value desc (nulls last)
+      const val = it => (Number.isFinite(it?.severity?.value) ? it.severity.value : -Infinity);
+      const bySeverity = (a, b) => (val(b) - val(a));
       initial.sort(bySeverity);
       completed.sort(bySeverity);
       reassess.sort(bySeverity);
 
-      drawList(initialList, initial, 'initial');
-      drawList(completedList, completed, 'completed');
-      drawList(reassessList, reassess, 'reassess');
+      drawList(initialList, initial);
+      drawList(completedList, completed);
+      drawList(reassessList, reassess);
 
       initialCount.textContent = String(initial.length);
       completedCount.textContent = String(completed.length);
@@ -708,21 +762,24 @@
       clearMarkers();
       for (const it of filtered) upsertMarker(it);
 
-      visibleCounts.textContent = `${filtered.length} of ${allItems.length}`;
+      const total = allItems.length;
+      const vis = filtered.length;
+      visibleCounts.textContent = `${vis} of ${total}`;
     }
 
-    function drawList(container, items, section) {
+    function drawList(container, items) {
       container.innerHTML = '';
       for (const it of items) {
         const li = document.createElement('div');
         li.className = 'list-item flex items-center justify-between gap-3';
-        const band = it?.severity?.band || 'low';
+        const band = it?.severity?.band || 'unknown';
         const vessel = escapeHtml(getVesselName(it));
-        const sv = (it?.severity?.value ?? 0).toFixed(2);
+        const sv = it?.severity?.value;
+        const svTxt = Number.isFinite(sv) ? sv.toFixed(2) : 'N/A';
         li.innerHTML = `
           <div class="min-w-0">
             <div class="text-sm font-semibold text-gray-900 truncate">${vessel || 'Unknown'}</div>
-            <div class="text-xs text-gray-500">Severity: ${band.toUpperCase()} ${sv}</div>
+            <div class="text-xs text-gray-500">Severity: ${band.toUpperCase()} ${svTxt}</div>
           </div>
           <span class="pill ${band}">${band.toUpperCase()}</span>
         `;
@@ -733,6 +790,8 @@
 
     function openReport(item) {
       const vessel = getVesselName(item);
+      const sv = item?.severity?.value;
+      const svTxt = Number.isFinite(sv) ? sv.toFixed(2) : 'N/A';
       reportTitle.textContent = vessel || 'Assessment';
       const html = item?.report?.html || item?.html || item?.reportHtml || item?.report_markdown;
       if (html) {
@@ -742,7 +801,7 @@
           <h3>Summary</h3>
           <table>
             <tr><th>Vessel</th><td>${escapeHtml(vessel)}</td></tr>
-            <tr><th>Severity</th><td>${(item?.severity?.band || 'low').toUpperCase()} ${(item?.severity?.value ?? 0).toFixed(2)}</td></tr>
+            <tr><th>Severity</th><td>${(item?.severity?.band || 'unknown').toUpperCase()} ${svTxt}</td></tr>
             <tr><th>Needs Reassessment</th><td>${Boolean(item?.needsReassessment) ? 'Yes' : 'No'}</td></tr>
             <tr><th>Alerts</th><td>${Array.isArray(item?.alerts) ? item.alerts.length : 0}</td></tr>
           </table>
