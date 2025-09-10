@@ -33,7 +33,7 @@
 
       <div class="grid grid-cols-1 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-800">Primary collection (Replace target)</label>
+          <label class="block text-sm font-medium text-gray-800">Primary collection (Replace/Append target)</label>
           <input id="primaryPath" type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mono"
                  value="artifacts/guardian/public/data/werpassessments" />
           <p class="text-xs text-gray-500 mt-1 mono">artifacts/guardian/public/data/werpassessments</p>
@@ -59,10 +59,18 @@
       <div class="flex flex-wrap gap-2">
         <button id="btnValidate" class="bg-gray-100 hover:bg-gray-200 text-gray-900 text-sm px-3 py-2 rounded border border-gray-300">Validate JSON</button>
         <button id="btnExportPrimary" class="bg-white hover:bg-gray-50 text-gray-900 text-sm px-3 py-2 rounded border border-gray-300">Export primary (backup)</button>
+
+        <!-- New append option -->
+        <button id="btnAppendPrimary" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-2 rounded">Append to primary (no delete)</button>
+
         <button id="btnReplacePrimary" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-2 rounded">Replace primary (delete + import)</button>
         <button id="btnDeleteSecondary" class="bg-amber-600 hover:bg-amber-500 text-white text-sm px-3 py-2 rounded">Delete secondary</button>
         <button id="btnReplaceAndDelete" class="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-2 rounded">Replace primary AND delete secondary</button>
       </div>
+
+      <p class="text-xs text-gray-600">
+        Append will add new documents and skip any incoming items whose <span class="mono">id</span> already exists. Items without an <span class="mono">id</span> are always created with a new ID.
+      </p>
 
       <div id="status" class="text-sm text-gray-700 h-5" aria-live="polite"></div>
       <div id="log" class="text-xs text-gray-800 whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-2 min-h-[80px]"></div>

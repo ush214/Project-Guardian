@@ -72,7 +72,7 @@ const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/w
 const signedOutContainer = document.getElementById("signedOutContainer");
 const appContainer = document.getElementById("appContainer");
 const adminToolsBtn = document.getElementById("adminToolsBtn");
-const importDataBtn = document.getElementById("importDataBtn"); // NEW
+const importDataBtn = document.getElementById("importDataBtn"); // nav button (contributors/admins)
 const userNameSpan = document.getElementById("userName");
 const signOutBtn = document.getElementById("signOutBtn");
 const roleBadge = document.getElementById("roleBadge");
@@ -657,6 +657,119 @@ function renderRadarGeneric(item) {
   radarChart = new Chart(ctx, { type:"radar", data, options });
   renderBenchLegend();
 }
+
+// FIXED: prefer array parameters first; only map factors if it's an array
+function renderReportV2HTML(item) {
+  const v = v2Totals(item);
+
+  const wcsTable = `
+    <table>
+      <thead>
+        <tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr>
+      </thead>
+      <tbody>
+        ${v.wcsRows.map(r => `
+          <tr>
+            <td>${escapeHtml(r.title)}</td>
+            <td>${escapeHtml(r.rationale)}</td>
+            <td>${(Number(r.normalized) || 0).toFixed(2)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+    <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
+    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
+  `;
+
+  const phsRowsHtml = (v.phsRows || []).map(r => `
+    <tr>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.rationale)}</td>
+      <td>${r.weightPct.toFixed(0)}%</td>
+      <td>${r.score.toFixed(2)}</td>
+      <td>${r.weighted.toFixed(2)}</td>
+    </tr>
+  `).join("");
+
+  const esiParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
+  const esiRowsHtml = esiParams.map(p => `
+    <tr>
+      <td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td>
+      <td>${escapeHtml(p?.rationale ?? "")}</td>
+      <td>${escapeHtml(String(p?.score ?? ""))}</td>
+    </tr>
+  `).join("");
+
+  const rpmList = Array.isArray(item?.rpm?.parameters)
+    ? item.rpm.parameters
+    : Array.isArray(item?.rpm?.factors)
+      ? item.rpm.factors
+      : [];
+  const rpmRowsHtml = rpmList.map(f => `
+    <tr>
+      <td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td>
+      <td>${escapeHtml(f?.rationale ?? "Not specified.")}</td>
+      <td>${escapeHtml(String(f?.value ?? ""))}</td>
+    </tr>
+  `).join("");
+
+  const summaryHtml = getSummativeText(item) || "<p>—</p>";
+  const recHtml = getRecommendations(item) || "<p>—</p>";
+
+  return `
+    ${factorSummaryTable(item)}
+
+    <section>
+      <h3>Phase 3: WCS (Hull & Structure)</h3>
+      ${wcsTable}
+    </section>
+
+    <section>
+      <h3>Phase 3: PHS (Pollution Hazard)</h3>
+      <p class="text-xs text-gray-600 mb-2">
+        Weights are treated as percentages and normalized to sum to 100%.
+        Scores are on 0–10; Weighted Score = Score × Weight.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Rationale</th>
+            <th>Weight (%)</th>
+            <th>Score (0–10)</th>
+            <th>Weighted Score</th>
+          </tr>
+        </thead>
+        <tbody>${phsRowsHtml}</tbody>
+      </table>
+      <p class="mt-2"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
+      ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: Input weights did not sum to 100%; normalized for consistency.</p>' : ''}
+    </section>
+
+    <section>
+      <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
+      <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
+      <p class="mt-2"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
+    </section>
+
+    <section>
+      <h3>Phase 3: RPM (Release Probability Modifier)</h3>
+      ${rpmRowsHtml ? `<table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRowsHtml}</tbody></table>` : '<p class="text-gray-600">No factor breakdown provided.</p>'}
+      <p class="mt-2"><strong>Final Multiplier:</strong> ${v.rpm.toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
+    </section>
+
+    <section>
+      <h3>Summary</h3>
+      ${summaryHtml}
+    </section>
+
+    <section>
+      <h3>Recommendations</h3>
+      ${recHtml}
+    </section>
+  `;
+}
+
 function renderRadarV2(item) {
   const ctx = document.getElementById("werSpiderChart")?.getContext("2d"); if (!ctx) return;
   const v = v2Totals(item);
@@ -782,112 +895,6 @@ function buildReportHtml(item) {
   blocks.push("<h3>Recommendations</h3>", recHtml || "<p>—</p>");
 
   return blocks.join("\n");
-}
-
-// v2 detailed report renderer
-function renderReportV2HTML(item) {
-  const v = v2Totals(item);
-
-  const wcsTable = `
-    <table>
-      <thead>
-        <tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr>
-      </thead>
-      <tbody>
-        ${v.wcsRows.map(r => `
-          <tr>
-            <td>${escapeHtml(r.title)}</td>
-            <td>${escapeHtml(r.rationale)}</td>
-            <td>${(Number(r.normalized) || 0).toFixed(2)}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
-    <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
-    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
-  `;
-
-  const phsRowsHtml = (v.phsRows || []).map(r => `
-    <tr>
-      <td>${escapeHtml(r.name)}</td>
-      <td>${escapeHtml(r.rationale)}</td>
-      <td>${r.weightPct.toFixed(0)}%</td>
-      <td>${r.score.toFixed(2)}</td>
-      <td>${r.weighted.toFixed(2)}</td>
-    </tr>
-  `).join("");
-
-  const esiRowsHtml = (item?.esi?.parameters ?? []).map(p => `
-    <tr>
-      <td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td>
-      <td>${escapeHtml(p?.rationale ?? "")}</td>
-      <td>${escapeHtml(String(p?.score ?? ""))}</td>
-    </tr>
-  `).join("");
-
-  const rpmRowsHtml = (item?.rpm?.factors ?? item?.rpm?.parameters ?? []).map(f => `
-    <tr>
-      <td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td>
-      <td>${escapeHtml(f?.rationale ?? "Not specified.")}</td>
-      <td>${escapeHtml(String(f?.value ?? ""))}</td>
-    </tr>
-  `).join("");
-
-  const summaryHtml = getSummativeText(item) || "<p>—</p>";
-  const recHtml = getRecommendations(item) || "<p>—</p>";
-
-  return `
-    ${factorSummaryTable(item)}
-
-    <section>
-      <h3>Phase 3: WCS (Hull & Structure)</h3>
-      ${wcsTable}
-    </section>
-
-    <section>
-      <h3>Phase 3: PHS (Pollution Hazard)</h3>
-      <p class="text-xs text-gray-600 mb-2">
-        Weights are treated as percentages and normalized to sum to 100%.
-        Scores are on 0–10; Weighted Score = Score × Weight.
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Parameter</th>
-            <th>Rationale</th>
-            <th>Weight (%)</th>
-            <th>Score (0–10)</th>
-            <th>Weighted Score</th>
-          </tr>
-        </thead>
-        <tbody>${phsRowsHtml}</tbody>
-      </table>
-      <p class="mt-2"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
-      ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: Input weights did not sum to 100%; normalized for consistency.</p>' : ''}
-    </section>
-
-    <section>
-      <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
-      <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
-      <p class="mt-2"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
-    </section>
-
-    <section>
-      <h3>Phase 3: RPM (Release Probability Modifier)</h3>
-      ${rpmRowsHtml ? `<table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRowsHtml}</tbody></table>` : '<p class="text-gray-600">No factor breakdown provided.</p>'}
-      <p class="mt-2"><strong>Final Multiplier:</strong> ${v.rpm.toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
-    </section>
-
-    <section>
-      <h3>Summary</h3>
-      ${summaryHtml}
-    </section>
-
-    <section>
-      <h3>Recommendations</h3>
-      ${recHtml}
-    </section>
-  `;
 }
 
 // Markdown export
@@ -1275,7 +1282,7 @@ analyzeBtn?.addEventListener("click", async () => {
   } catch (e) {
     statusMessage.textContent = `Analysis failed: ${e?.message || String(e)}`;
   } finally {
-    analyzeBtn.disabled = false;
+       analyzeBtn.disabled = false;
     analyzeText.textContent = "Analyze Wreck";
   }
 });
@@ -1360,7 +1367,7 @@ onAuthStateChanged(auth, async (user) => {
     signedOutContainer.classList.remove("hidden");
     appContainer.classList.add("hidden");
     adminToolsBtn.classList.add("hidden");
-    importDataBtn?.classList.add("hidden"); // NEW
+    importDataBtn?.classList.add("hidden");
     userNameSpan.classList.add("hidden");
     signOutBtn.classList.add("hidden");
     roleBadge.textContent = "Role: —";
@@ -1380,7 +1387,7 @@ onAuthStateChanged(auth, async (user) => {
   const isAdmin = currentRole === "admin";
   const isContributor = isAdmin || currentRole === "contributor";
   if (isAdmin) adminToolsBtn.classList.remove("hidden"); else adminToolsBtn.classList.add("hidden");
-  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden"); // NEW
+  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden");
   if (analyzeBtn) analyzeBtn.disabled = !isContributor;
   if (!isContributor) contribHint?.classList.remove("hidden"); else contribHint?.classList.add("hidden");
 
