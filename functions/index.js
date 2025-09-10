@@ -1,6 +1,6 @@
-// Firebase Functions v2 — permanent no-hotlinking for reference media.
-// Caches media.images into Firebase Storage and surfaces them in phase2.assets (source:"reference").
-// IMPORTANT: Outbound HTTP to external hosts requires billing (Blaze) on Firebase.
+// Firebase Functions v2 — no-hotlinking: cache reference images into Storage.
+// Requires Blaze plan for outbound HTTP. Uses onCall with CORS enabled.
+// Deploy: firebase deploy --only functions:autoCacheReferenceMedia,functions:cacheCollectionReferenceMedia
 
 import { onCall } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -23,8 +23,14 @@ function guessExtFromUrl(url = "") {
 }
 function extFromContentType(ct = "") {
   const map = {
-    "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp",
-    "image/gif": ".gif", "image/bmp": ".bmp", "image/tiff": ".tif", "image/svg+xml": ".svg"
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tif",
+    "image/svg+xml": ".svg"
   };
   return map[ct] || "";
 }
@@ -37,7 +43,7 @@ async function downloadAndSaveImage(bucket, basePath, img) {
   const originalUrl = String(img?.url || "").trim();
   if (!originalUrl) return null;
 
-  // Node.js 20+ has global fetch
+  // Node 20 global fetch
   let resp;
   try {
     resp = await fetch(originalUrl, {
@@ -136,7 +142,6 @@ async function cacheImagesForDoc({ appId, docPath, docId }) {
   let created = 0;
   let skipped = imgs.length - toCache.length;
 
-  // Process in small batches
   const BATCH = 4;
   for (let i = 0; i < toCache.length; i += BATCH) {
     const slice = toCache.slice(i, i + BATCH);
@@ -155,7 +160,7 @@ async function cacheImagesForDoc({ appId, docPath, docId }) {
   return { created, skipped };
 }
 
-// Admin/Contrib callable — backfill a whole collection after import
+// Backfill entire collection after import
 export const cacheCollectionReferenceMedia = onCall(
   { region: "us-central1", cors: true, memory: "1GiB", timeoutSeconds: 540 },
   async (req) => {
@@ -165,7 +170,7 @@ export const cacheCollectionReferenceMedia = onCall(
     if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
     if (!appId || !collectionPath) throw new HttpsError("invalid-argument", "Missing appId or collectionPath.");
 
-    // Role gate: admin or contributor
+    // Role gate (best effort)
     try {
       const allowRef = db.doc(`system/allowlist/users/${uid}`);
       const allowSnap = await allowRef.get();
@@ -192,7 +197,7 @@ export const cacheCollectionReferenceMedia = onCall(
   }
 );
 
-// Automatic Firestore trigger — caches on create/update without user action
+// Auto-cache on create/update
 export const autoCacheReferenceMedia = onDocumentWritten(
   {
     region: "us-central1",
@@ -204,10 +209,10 @@ export const autoCacheReferenceMedia = onDocumentWritten(
     const after = event.data?.after?.data();
     if (!after) return;
 
-    const appNs = event.params.appNs; // e.g., guardian OR guardian-agent-default
+    const appNs = event.params.appNs;
     const docId = event.params.docId;
     const docPath = `artifacts/${appNs}/public/data/werpassessments`;
-    const appId = "guardian"; // Keep stable pathing in Storage
+    const appId = "guardian";
 
     const hasImages = Array.isArray(after?.media?.images) && after.media.images.length > 0;
     if (!hasImages) return;
