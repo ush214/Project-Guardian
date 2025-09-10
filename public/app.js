@@ -1,6 +1,8 @@
-// App — no-hotlinking preferred: render cached Storage assets (phase2.assets) first,
-// but fall back to external image URLs (e.g., media.images) when no cached copies exist.
-// Includes: renderFeedbackList, monitoring button fix, placeholder thumbnails, export handlers, email/password auth.
+// App — prefers cached Storage assets (phase2.assets), falls back to external URLs when needed.
+// Fixes included:
+// - Robust PHS weights parsing: accepts weightPercent/percent strings and falls back to equal weights
+// - Image uploads wired: Upload button + hidden file input -> Storage -> append to phase2.assets
+// - External image fallback remains; cached assets still preferred
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
@@ -153,7 +155,7 @@ const deepGet = (obj, path) => path.split(".").reduce((a,k)=> (a && a[k]!==undef
 // Robust placeholder (no backticks)
 const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">Image unavailable</text></svg>');
 
-// NEW: Generic web image extension matcher and external URL collector
+// External image helpers
 const WEB_IMG_EXT_RX = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(?:\?|#|$)/i;
 function isHttpUrl(u) {
   if (typeof u !== "string") return false;
@@ -178,7 +180,7 @@ function dedupe(arr) {
 function getExternalImageUrls(item) {
   const urls = [];
 
-  // 1) Primary expected location
+  // Primary expected location
   const arr = Array.isArray(item?.media?.images) ? item.media.images : [];
   for (const it of arr) {
     if (!it) continue;
@@ -194,7 +196,7 @@ function getExternalImageUrls(item) {
     }
   }
 
-  // 2) Alternates sometimes present in imports
+  // Alternates sometimes present in imports
   const altArrays = [
     item?.media?.photos, item?.media?.gallery,
     item?.images, item?.photos, item?.gallery,
@@ -237,14 +239,13 @@ function markerIconFor(band) {
   });
 }
 
-// Marker: prefer cached Storage image; fall back to external if none.
+// Marker: prefer cached; fallback external if none
 function getMarkerImageUrl(item) {
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
   const img = assets.find(a => a?.url && webExt.test(String(a?.name || a?.path || "")));
   if (img?.url) return img.url;
 
-  // Fallback to external URLs if no cached assets yet
   const extUrls = getExternalImageUrls(item);
   return extUrls[0] || null;
 }
@@ -356,38 +357,121 @@ function normalizeWcsParameters(rawParams = []) {
   const rows = [
     { title: "Age", rationale: picks.age?.rationale || "Not provided.", normalized: norm(picks.age?.score ?? 0) },
     { title: "Vessel Type/Size", rationale: picks.vessel?.rationale || "Not provided.", normalized: norm(picks.vessel?.score ?? 0) },
-    { title: "Sinking Trauma", rationale: traumaRationale, normalized: traumaNormalized },
+    { title: "Sinking Trauma", rationale: traumaRationale, normalized: norm(picks.trauma?.score ?? 0) },
     { title: "Current Structural Integrity", rationale: picks.integrity?.rationale || "Not provided.", normalized: norm(picks.integrity?.score ?? 0) }
   ];
   const total = rows.reduce((s, r) => s + (Number(r.normalized) || 0), 0);
   return { rows, total: Number(total.toFixed(2)), scaleNote };
 }
+
+// REPLACED: Robust PHS normalizer
 function normalizePhsWeights(params = []) {
-  const wcsNameRx = /(structur|integrit|intact|collapse|fragment|hull|sinking|trauma|age|year|built|commission|vessel\s*(type|size)|tonnage|displacement|class)/i;
-  const allowedPhsRx = /(fuel|bunker|oil|volume|type|munitions|ordnance|uxo|pop|pcb|hazard|asbestos|chem|chemical cargo|heavy metal|paint|anti[- ]?foul|leach|leaching|hfo|diesel)/i;
+  function parseScore(v) {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const m = v.match(/-?\d+(\.\d+)?/);
+      if (m) return Number(m[0]);
+    }
+    if (v != null) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return NaN;
+  }
+  function parseWeightFrom(obj) {
+    const candidates = [
+      "weight", "Weight", "w", "W",
+      "weightPct", "weight_percent", "weightPercent",
+      "percentage", "percent", "Percent", "Percentage",
+      "Weight (%)", "Weight %", "Weight(%)"
+    ];
+    for (const key of candidates) {
+      if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
+        const raw = obj[key];
+        if (typeof raw === "number" && Number.isFinite(raw)) {
+          return { value: raw, hadPercent: raw > 1.5 || raw > 100 };
+        }
+        if (typeof raw === "string") {
+          const trimmed = raw.trim();
+          const hadPercent = /%/.test(trimmed);
+          const num = parseFloat(trimmed.replace("%", ""));
+          if (Number.isFinite(num)) return { value: num, hadPercent };
+        }
+      }
+    }
+    return { value: NaN, hadPercent: false };
+  }
+
   const items = (Array.isArray(params) ? params : [])
-    .map((p) => ({ name: String(p?.name ?? p?.parameter ?? '').trim(), rationale: String(p?.rationale ?? '').trim(), scoreRaw: Number(p?.score), weightRaw: Number(p?.weight) }))
-    .filter(i => i.name && (allowedPhsRx.test(i.name) || !wcsNameRx.test(i.name)));
-  const weights = items.map(i => Number.isFinite(i.weightRaw) ? i.weightRaw : 0);
-  const maxW = weights.length ? Math.max(...weights) : 0;
-  const sumW = weights.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
-  let asPercent = false;
-  if (maxW > 1 || sumW > 1.5 || (sumW > 90 && sumW < 110)) asPercent = true;
-  let fracs = items.map(i => {
-    const w = Number.isFinite(i.weightRaw) ? i.weightRaw : 0;
-    return asPercent ? (w / 100) : w;
+    .map((p) => {
+      const name = String(p?.name ?? p?.parameter ?? p?.title ?? "").trim();
+      const rationale = String(p?.rationale ?? p?.notes ?? p?.note ?? "").trim();
+      const scoreRaw = parseScore(p?.score ?? p?.value ?? p?.points);
+      const { value: weightRaw, hadPercent } = parseWeightFrom(p || {});
+      return { name, rationale, scoreRaw, weightRaw, hadPercent };
+    })
+    .filter((i) => i.name && Number.isFinite(i.scoreRaw));
+
+  if (!items.length) {
+    return { rows: [], totalWeighted: 0, asPercent: false, renormalized: false };
+  }
+
+  const clampScore = (v) => Math.max(0, Math.min(10, Number(v) || 0));
+
+  let anyWeights = false;
+  let anyPercentHint = false;
+  const weights = items.map((i) => {
+    const w = Number(i.weightRaw);
+    if (Number.isFinite(w) && w > 0) {
+      anyWeights = true;
+      if (i.hadPercent) anyPercentHint = true;
+      return w;
+    }
+    return NaN;
   });
-  let fracSum = fracs.reduce((a, b) => a + b, 0), renormalized = false;
-  if (fracSum > 0 && Math.abs(fracSum - 1) > 0.01) { fracs = fracs.map(w => w / fracSum); renormalized = true; fracSum = 1; }
+
+  let weightFracs;
+  let asPercent = false;
+  let renormalized = false;
+
+  if (!anyWeights) {
+    const frac = 1 / items.length;
+    weightFracs = items.map(() => frac);
+    asPercent = false;
+  } else {
+    const finiteWeights = weights.map((w) => (Number.isFinite(w) ? w : 0));
+    const sumW = finiteWeights.reduce((a, b) => a + b, 0);
+
+    if (anyPercentHint || (sumW > 85 && sumW < 115)) {
+      asPercent = true;
+      weightFracs = finiteWeights.map((w) => w / 100);
+    } else {
+      asPercent = false;
+      weightFracs = finiteWeights.slice();
+    }
+
+    let fracSum = weightFracs.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+    if (!Number.isFinite(fracSum) || fracSum <= 0) {
+      const frac = 1 / items.length;
+      weightFracs = items.map(() => frac);
+    } else if (Math.abs(fracSum - 1) > 0.01) {
+      weightFracs = weightFracs.map((w) => (Number.isFinite(w) ? w / fracSum : 0));
+      renormalized = true;
+    }
+  }
+
   const rows = items.map((i, idx) => {
-    const weightFrac = fracs[idx] || 0, weightPct = weightFrac * 100;
-    const score = Math.max(0, Math.min(10, Number(i.scoreRaw) || 0));
+    const weightFrac = weightFracs[idx] || 0;
+    const weightPct = weightFrac * 100;
+    const score = clampScore(i.scoreRaw);
     const weighted = score * weightFrac;
     return { name: i.name, rationale: i.rationale, weightFrac, weightPct, score, weighted };
   });
+
   const totalWeighted = rows.reduce((s, r) => s + r.weighted, 0);
   return { rows, totalWeighted: Number(totalWeighted.toFixed(2)), asPercent, renormalized };
 }
+
 function v2Totals(item) {
   const wNorm = normalizeWcsParameters(item?.wcs?.parameters || []);
   const wcs = wNorm.total;
@@ -510,9 +594,9 @@ function renderReportV2HTML(item) {
     <tr><td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td><td>${escapeHtml(p?.rationale ?? "")}</td><td>${escapeHtml(String(p?.score ?? ""))}</td></tr>
   `).join("");
   const rpmList = Array.isArray(item?.rpm?.parameters) ? item.rpm.parameters : Array.isArray(item?.rpm?.factors) ? item.rpm.factors : [];
-  const rpmRowsHtml = rpmList.map(f => `
-    <tr><td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td><td>${escapeHtml(f?.rationale ?? "Not specified.")}</td><td>${escapeHtml(String(f?.value ?? ""))}</td></tr>
-  `).join("");
+  const rpmRowsHtml = Array.isArray(rpmList)
+    ? rpmList.map(f => `<tr><td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td><td>${escapeHtml(f?.rationale ?? "Not specified.")}</td><td>${escapeHtml(String(f?.value ?? ""))}</td></tr>`).join("")
+    : ""; // in your JSON rpm.factors is an object; we still show finalMultiplier below
 
   const sources = buildSourcesHtml(item);
   const assumptions = buildAssumptionsHtml(item);
@@ -524,7 +608,7 @@ function renderReportV2HTML(item) {
     <section><h3>Phase 3: WCS (Hull & Structure)</h3>${wcsTable}</section>
     <section>
       <h3>Phase 3: PHS (Pollution Hazard)</h3>
-      <p class="text-xs text-gray-600 mb-2">Weights treated as percentages and normalized to 100%. Weighted = Score × Weight.</p>
+      <p class="text-xs text-gray-600 mb-2">Weights normalized to sum to 100%. Weighted = Score × Weight.</p>
       <table>
         <thead><tr><th>Parameter</th><th>Rationale</th><th>Weight (%)</th><th>Score (0–10)</th><th>Weighted</th></tr></thead>
         <tbody>${phsRowsHtml}</tbody>
@@ -537,8 +621,8 @@ function renderReportV2HTML(item) {
       <p class="mt-2"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
     </section>
     <section><h3>Phase 3: RPM (Release Probability Modifier)</h3>
-      ${rpmRowsHtml ? `<table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRowsHtml}</tbody></table>` : '<p class="text-gray-600">No factor breakdown provided.</p>'}
-      <p class="mt-2"><strong>Final Multiplier:</strong> ${v.rpm.toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
+      ${rpmRowsHtml || '<p class="text-gray-600">No factor breakdown provided. Using final multiplier if supplied.</p>'}
+      <p class="mt-2"><strong>Final Multiplier:</strong> ${(Number(item?.rpm?.finalMultiplier) || 1).toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
     </section>
     ${sources || ""}${assumptions || ""}${confidence || ""}
   `;
@@ -665,7 +749,7 @@ function renderUploadsFromDoc() {
   }
 }
 
-// Reference media — prefer cached; fall back to external (hotlinks) if none cached
+// Reference media — prefer cached; fallback external
 function renderReferenceMedia() {
   if (!referenceMediaGrid) return;
   referenceMediaGrid.innerHTML = "";
@@ -728,7 +812,7 @@ function renderReferenceMedia() {
   }
 }
 
-// Feedback — RESTORED
+// Feedback
 function renderFeedbackList(item) {
   if (!feedbackList) return;
   feedbackList.innerHTML = "";
@@ -846,11 +930,10 @@ function onExportPdf() {
     chartImg = cnv?.toDataURL("image/png") || "";
   } catch {}
 
-  // Gather up to 9 images: prefer cached/uploaded assets; fallback to external if none
+  // Prefer cached; fallback external
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
   let urls = assets.filter(a => a?.url && webExt.test(String(a?.name || a?.path || ""))).map(a => a.url).slice(0, 9);
-
   if (!urls.length) {
     const ext = getExternalImageUrls(currentItem);
     urls = ext.slice(0, 9);
@@ -1236,6 +1319,93 @@ function getVesselName(it) {
   for (const c of direct) { const t = getText(c); if (t) return t; }
   return getText(it.id) || "Unknown";
 }
+
+// ----- Upload handlers: wire the "Upload" button and file input -----
+function sanitizeFileName(name = "") {
+  return String(name).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 140) || `file_${Date.now()}`;
+}
+async function uploadSelectedFiles(files) {
+  if (!auth.currentUser) {
+    if (uploadStatus) uploadStatus.textContent = "Sign in to upload.";
+    return;
+  }
+  if (!currentDocId || !currentDocPath) {
+    if (uploadStatus) uploadStatus.textContent = "Open a report before uploading.";
+    return;
+  }
+  const list = Array.from(files || []).filter(Boolean);
+  if (!list.length) return;
+
+  const basePath = `artifacts/${appId}/public/uploads/${currentDocId}/user`;
+
+  let ok = 0, fail = 0;
+  if (uploadStatus) uploadStatus.textContent = `Uploading ${list.length} file(s)...`;
+
+  for (const file of list) {
+    try {
+      if (!/^image\//i.test(file.type)) {
+        fail++;
+        continue;
+      }
+
+      const safeName = sanitizeFileName(file.name || "image");
+      const stamp = Date.now();
+      const path = `${basePath}/${stamp}_${safeName}`;
+      const ref = storageRef(storage, path);
+
+      await uploadBytes(ref, file, { contentType: file.type });
+      const url = await getDownloadURL(ref);
+
+      const asset = {
+        name: file.name || safeName,
+        path,
+        url,
+        contentType: file.type || "",
+        bytes: file.size || undefined,
+        uploadedAtMs: Date.now(),
+        source: "upload"
+      };
+
+      await updateDoc(doc(db, currentDocPath, currentDocId), {
+        "phase2.assets": arrayUnion(asset),
+        "phase2.assetsUpdatedAt": serverTimestamp()
+      });
+
+      ok++;
+    } catch (e) {
+      console.error("Upload failed:", e);
+      fail++;
+    }
+  }
+
+  try {
+    const snap = await getDoc(doc(db, currentDocPath, currentDocId));
+    if (snap.exists()) {
+      currentItem = { ...currentItem, ...snap.data(), id: currentDocId, _path: currentDocPath };
+      renderUploadsFromDoc();
+      renderReferenceMedia();
+      upsertMarker(currentItem);
+    }
+  } catch {}
+
+  if (uploadStatus) {
+    if (ok && !fail) uploadStatus.textContent = `Uploaded ${ok} file(s).`;
+    else if (ok && fail) uploadStatus.textContent = `Uploaded ${ok}, failed ${fail}.`;
+    else uploadStatus.textContent = `Upload failed.`;
+    setTimeout(() => { uploadStatus.textContent = ""; }, 2500);
+  }
+}
+uploadFilesBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (!phase2Files) return;
+  phase2Files.value = "";
+  phase2Files.click();
+});
+phase2Files?.addEventListener("change", async (e) => {
+  const files = e?.target?.files;
+  if (!files || !files.length) return;
+  await uploadSelectedFiles(files);
+});
 
 // Auth => load data
 onAuthStateChanged(auth, async (user) => {
