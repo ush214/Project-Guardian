@@ -34,9 +34,10 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
-let callable = { cacheReferenceMedia: null, cacheCollectionReferenceMedia: null, reassessWerps: null, repairWerps: null };
+let callable = { cacheReferenceMedia: null, cacheCollectionReferenceMedia: null, analyzeWerps: null, reassessWerps: null, repairWerps: null };
 try { callable.cacheReferenceMedia = httpsCallable(functions, "cacheReferenceMedia"); } catch {}
 try { callable.cacheCollectionReferenceMedia = httpsCallable(functions, "cacheCollectionReferenceMedia"); } catch {}
+try { callable.analyzeWerps = httpsCallable(functions, "analyzeWerps"); } catch {}
 try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
 try { callable.repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
 
@@ -226,7 +227,7 @@ function initMap() {
   if (map) return;
   map = L.map("map").setView([10, 150], 3);
   L.tileLayer("https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}", {
-    id: "mapbox/streets-v12", tileSize: 512, zoomOffset: -1, accessToken: MAPBOX_TOKEN,
+    id: "mapbox/satellite-streets-v12", tileSize: 512, zoomOffset: -1, accessToken: MAPBOX_TOKEN,
     attribution: "&copy; OpenStreetMap &copy; Mapbox"
   }).addTo(map);
 }
@@ -326,7 +327,7 @@ function upsertMarker(item) {
   const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : "N/A";
 
   const imgUrl = getMarkerImageUrl(item) || PLACEHOLDER_SVG;
-  const imgHtml = `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" loading="lazy"></div>`;
+  const imgHtml = `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:auto;max-height:180px;object-fit:contain;border-radius:6px;border:1px solid #e5e7eb;background:#f8fafc" loading="lazy"></div>`;
 
   const popupHtml = `
     <div>
@@ -1202,7 +1203,7 @@ function drawList(container, items) {
 }
 
 // Analyze (unchanged behavior)
-const analyzeFunctionNames = ["analyzeWreck", "analyzeWerps", "ingestWerps", "createWerpsAssessment", "createAssessmentFromName"];
+const analyzeFunctionNames = ["analyzeWerps", "reassessWerps"];
 function getCallableByName(name) { try { return httpsCallable(functions, name); } catch { return null; } }
 analyzeBtn?.addEventListener("click", async () => {
   const name = vesselNameInput?.value?.trim();
@@ -1217,7 +1218,7 @@ analyzeBtn?.addEventListener("click", async () => {
     analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck"; return;
   }
   try {
-    const payload = { name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source: "web-app" };
+    const payload = { vesselName: name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source: "web-app" };
     await fn(payload);
     statusMessage.textContent = `Analysis requested via ${fnName}. It will appear shortly.`;
     vesselNameInput.value = "";
