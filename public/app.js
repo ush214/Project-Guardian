@@ -72,6 +72,7 @@ const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/w
 const signedOutContainer = document.getElementById("signedOutContainer");
 const appContainer = document.getElementById("appContainer");
 const adminToolsBtn = document.getElementById("adminToolsBtn");
+const importDataBtn = document.getElementById("importDataBtn"); // NEW
 const userNameSpan = document.getElementById("userName");
 const signOutBtn = document.getElementById("signOutBtn");
 const roleBadge = document.getElementById("roleBadge");
@@ -1359,6 +1360,7 @@ onAuthStateChanged(auth, async (user) => {
     signedOutContainer.classList.remove("hidden");
     appContainer.classList.add("hidden");
     adminToolsBtn.classList.add("hidden");
+    importDataBtn?.classList.add("hidden"); // NEW
     userNameSpan.classList.add("hidden");
     signOutBtn.classList.add("hidden");
     roleBadge.textContent = "Role: —";
@@ -1378,6 +1380,7 @@ onAuthStateChanged(auth, async (user) => {
   const isAdmin = currentRole === "admin";
   const isContributor = isAdmin || currentRole === "contributor";
   if (isAdmin) adminToolsBtn.classList.remove("hidden"); else adminToolsBtn.classList.add("hidden");
+  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden"); // NEW
   if (analyzeBtn) analyzeBtn.disabled = !isContributor;
   if (!isContributor) contribHint?.classList.remove("hidden"); else contribHint?.classList.add("hidden");
 
