@@ -1,10 +1,8 @@
 // App — no-hotlinking: render only from Storage (phase2.assets). If none cached, show placeholder.
-// Automatically requests server-side caching on open (for contrib/admins), while Firestore trigger handles it for everyone.
+// Adds renderFeedbackList back, ensures marker thumbnail box always shows, and sets monitoring wreckId on open.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import {
-  getAuth, onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection, onSnapshot, arrayUnion
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -77,11 +75,13 @@ const reportTitle = document.getElementById("reportTitle");
 const reportContent = document.getElementById("reportContent");
 const benchLegend = document.getElementById("benchLegend");
 
+// Galleries
 const uploadGalleryGrid = document.getElementById("uploadGalleryGrid");
 const uploadGalleryEmpty = document.getElementById("uploadGalleryEmpty");
 const referenceMediaGrid = document.getElementById("referenceMediaGrid");
 const referenceMediaEmpty = document.getElementById("referenceMediaEmpty");
 
+// Phase 2
 const phase2Input = document.getElementById("phase2Input");
 const phase2Files = document.getElementById("phase2Files");
 const savePhase2Btn = document.getElementById("savePhase2Btn");
@@ -90,11 +90,13 @@ const uploadFilesBtn = document.getElementById("uploadFilesBtn");
 const phase2Status = document.getElementById("phase2Status");
 const uploadStatus = document.getElementById("uploadStatus");
 
+// Feedback
 const feedbackInput = document.getElementById("feedbackInput");
 const saveFeedbackBtn = document.getElementById("saveFeedbackBtn");
 const feedbackStatus = document.getElementById("feedbackStatus");
 const feedbackList = document.getElementById("feedbackList");
 
+// Export
 const exportPdfBtn = document.getElementById("exportPdfBtn");
 const exportHtmlBtn = document.getElementById("exportHtmlBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
@@ -135,10 +137,8 @@ let chartConfig = {
 // Utils
 const escapeHtml = (s) => String(s || "").replace(/[&<>\"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
 const isFiniteNum = (n) => typeof n === "number" && Number.isFinite(n);
-const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 const getText = (v) => { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; };
 const deepGet = (obj, path) => path.split(".").reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj);
-const clamp = (v, min, max) => { const n = Number(v); if (!Number.isFinite(n)) return min; return Math.max(min, Math.min(max, n)); };
 
 // Placeholder image
 const PLACEHOLDER_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
@@ -156,8 +156,7 @@ function initMap() {
   if (map) return;
   map = L.map("map").setView([10, 150], 3);
   L.tileLayer("https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}", {
-    id: "mapbox/streets-v12",
-    tileSize: 512, zoomOffset: -1, accessToken: MAPBOX_TOKEN,
+    id: "mapbox/streets-v12", tileSize: 512, zoomOffset: -1, accessToken: MAPBOX_TOKEN,
     attribution: "&copy; OpenStreetMap &copy; Mapbox"
   }).addTo(map);
 }
@@ -170,14 +169,13 @@ function markerIconFor(band) {
   });
 }
 
-// Marker uses ONLY Storage assets (no hotlinking)
+// Marker uses ONLY Storage assets (no hotlinking), but always renders a box (placeholder if missing)
 function getMarkerImageUrl(item) {
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
   const img = assets.find(a => a?.url && webExt.test(String(a?.name || a?.path || "")));
   return img?.url || null;
 }
-
 function upsertMarker(item) {
   const coords = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
   const id = item?.id; if (!id) return;
@@ -191,10 +189,8 @@ function upsertMarker(item) {
   const title = escapeHtml(getVesselName(item));
   const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : "N/A";
 
-  const imgUrl = getMarkerImageUrl(item);
-  const imgHtml = imgUrl
-    ? `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" loading="lazy"></div>`
-    : "";
+  const imgUrl = getMarkerImageUrl(item) || PLACEHOLDER_SVG;
+  const imgHtml = `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" loading="lazy"></div>`;
 
   const popupHtml = `
     <div>
@@ -214,7 +210,7 @@ function upsertMarker(item) {
 }
 function clearMarkers() { for (const m of markers.values()) { try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-// Scoring helpers
+// Scores/helpers
 function readNumberByPaths(obj, paths) {
   for (const p of paths) {
     const v = deepGet(obj, p);
@@ -346,7 +342,7 @@ function getSeverityValue(item) {
   return computeFormulaSeverity(item);
 }
 
-// Overview etc.
+// Overview sections
 const fmt = {
   int: (v) => Number.isFinite(Number(v)) ? String(Number(v)) : "",
   date: (s) => { if (!s && s !== 0) return ""; try { const d = new Date(s); if (!isNaN(d)) return d.toISOString().slice(0,10); } catch {} return String(s); },
@@ -396,7 +392,7 @@ function buildConfidenceHtml(item) {
   const c = item?.confidence || {};
   const parts = [];
   if (isFiniteNum(c?.value)) parts.push(`<div><strong>Value:</strong> ${Number(c.value).toFixed(2)}</div>`);
-  if (getText(c?.confidenceLabel)) parts.push(`<div><strong>Label:</strong> ${escapeHtml(c.confidenceLabel)}</div>`);
+  if (getText(c?.confidenceLabel)) parts.push(`<div><strong>Label:</strong> ${escapeHtml(c.basis || c.confidenceLabel)}</div>`);
   if (getText(c?.basis)) parts.push(`<div><strong>Basis:</strong> ${escapeHtml(c.basis)}</div>`);
   if (!parts.length) return "";
   return `<section><h3>Confidence</h3><div class="text-sm space-y-1">${parts.join("")}</div></section>`;
@@ -428,9 +424,7 @@ function renderReportV2HTML(item) {
     <table>
       <thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr></thead>
       <tbody>
-        ${v.wcsRows.map(r => `
-          <tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.rationale)}</td><td>${(Number(r.normalized) || 0).toFixed(2)}</td></tr>
-        `).join("")}
+        ${v.wcsRows.map(r => `<tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.rationale)}</td><td>${(Number(r.normalized) || 0).toFixed(2)}</td></tr>`).join("")}
       </tbody>
     </table>
     <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
@@ -458,13 +452,13 @@ function renderReportV2HTML(item) {
     <section><h3>Phase 3: WCS (Hull & Structure)</h3>${wcsTable}</section>
     <section>
       <h3>Phase 3: PHS (Pollution Hazard)</h3>
-      <p class="text-xs text-gray-600 mb-2">Weights treated as percentages and normalized to 100%. Weighted Score = Score × Weight.</p>
+      <p class="text-xs text-gray-600 mb-2">Weights treated as percentages and normalized to 100%. Weighted = Score × Weight.</p>
       <table>
         <thead><tr><th>Parameter</th><th>Rationale</th><th>Weight (%)</th><th>Score (0–10)</th><th>Weighted</th></tr></thead>
         <tbody>${phsRowsHtml}</tbody>
       </table>
       <p class="mt-2"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
-      ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: Input weights did not sum to 100%; normalized.</p>' : ''}
+      ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: input weights normalized.</p>' : ''}
     </section>
     <section><h3>Phase 3: ESI (Environmental Sensitivity)</h3>
       <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
@@ -621,7 +615,54 @@ function renderReferenceMedia() {
   }
 }
 
-// Open report — auto-request caching if needed (contrib/admin only)
+// Feedback — RESTORED
+function renderFeedbackList(item) {
+  if (!feedbackList) return;
+  feedbackList.innerHTML = "";
+  const entries = Array.isArray(item?.feedback) ? [...item.feedback] : [];
+  entries.sort((a,b) => {
+    const aMs = a?.createdAtMs ?? (a?.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+    const bMs = b?.createdAtMs ?? (b?.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+    return bMs - aMs;
+  });
+  const fmtTs = (e) => {
+    if (typeof e?.createdAtMs === "number") return new Date(e.createdAtMs).toLocaleString();
+    if (e?.createdAt?.seconds) return new Date(e.createdAt.seconds * 1000).toLocaleString();
+    return "";
+  };
+  for (const e of entries.slice(0, 12)) {
+    const who = escapeHtml(e?.user || "Unknown");
+    const when = fmtTs(e) || "";
+    const msg = escapeHtml(e?.message || "");
+    const li = document.createElement("li");
+    li.className = "p-2 bg-gray-50 border border-gray-200 rounded";
+    li.innerHTML = `<div class="text-xs text-gray-600 mb-1">${who}${when ? " • " + when : ""}</div><div class="text-sm">${msg}</div>`;
+    feedbackList.appendChild(li);
+  }
+}
+saveFeedbackBtn?.addEventListener("click", async () => {
+  if (!currentDocId) { feedbackStatus.textContent = "Open a report first."; return; }
+  const msg = feedbackInput.value.trim();
+  if (!msg) { feedbackStatus.textContent = "Enter feedback text."; return; }
+  const who = auth.currentUser?.email || auth.currentUser?.uid || "anonymous";
+  feedbackStatus.textContent = "Saving...";
+  try {
+    await updateDoc(doc(db, currentDocPath, currentDocId), {
+      feedback: arrayUnion({ message: msg, user: who, createdAtMs: Date.now() }),
+      feedbackUpdatedAt: serverTimestamp()
+    });
+    if (!Array.isArray(currentItem.feedback)) currentItem.feedback = [];
+    currentItem.feedback.unshift({ message: msg, user: who, createdAtMs: Date.now() });
+    renderFeedbackList(currentItem);
+    feedbackInput.value = "";
+    feedbackStatus.textContent = "Saved.";
+    setTimeout(() => feedbackStatus.textContent = "", 1500);
+  } catch (e) {
+    feedbackStatus.textContent = `Save failed: ${e?.message || "error"}`;
+  }
+});
+
+// Open report — set monitoring wreckId, trigger caching if needed
 async function maybeRequestCaching(item) {
   if (!callable.cacheReferenceMedia) return;
   const hasImages = Array.isArray(item?.media?.images) && item.media.images.length > 0;
@@ -630,28 +671,32 @@ async function maybeRequestCaching(item) {
   if (hasImages && !hasRefAssets && canCache) {
     try {
       await callable.cacheReferenceMedia({ appId, docId: item.id, docPath: item._path || currentDocPath });
-      // Refresh the doc shortly after
       setTimeout(async () => {
         const snap = await getDoc(doc(db, item._path || currentDocPath, item.id));
         if (snap.exists()) {
-          currentItem = { ...currentItem, ...snap.data() };
+          currentItem = { ...currentItem, ...snap.data(), id: item.id, _path: item._path || currentDocPath };
           renderUploadsFromDoc();
           renderReferenceMedia();
           upsertMarker(currentItem);
         }
       }, 1000);
-    } catch (e) {
-      // Silent; Firestore trigger will catch it anyway
-    }
+    } catch {}
   }
 }
-
 function openReport(item) {
   currentItem = item;
   currentDocId = item?.id || null;
   currentDocPath = item?._path || READ_COLLECTIONS[0];
   const vessel = getVesselName(item);
   if (reportTitle) reportTitle.textContent = vessel || "Assessment";
+
+  // Set monitoring wreckId for downstream listeners
+  const mon = document.getElementById("monitoring-panel");
+  if (mon) {
+    mon.setAttribute("data-wreck-id", currentDocId || "");
+    // Dispatch a custom event in case monitoring-init.js listens dynamically
+    document.dispatchEvent(new CustomEvent("wreck-change", { detail: { wreckId: currentDocId } }));
+  }
 
   if (hasUnifiedV2(item)) {
     const html = renderReportV2HTML(item);
@@ -670,7 +715,6 @@ function openReport(item) {
   renderUploadsFromDoc();
   renderReferenceMedia();
   renderFeedbackList(item);
-
   maybeRequestCaching(item);
 
   reportContainer.classList.remove("hidden");
@@ -768,69 +812,108 @@ function drawList(container, items) {
   }
 }
 
-// Analyze (unchanged behavior)
-const analyzeFunctionNames = ["analyzeWreck", "analyzeWerps", "ingestWerps", "createWerpsAssessment", "createAssessmentFromName"];
-function getCallableByName(name) { try { return httpsCallable(functions, name); } catch { return null; } }
-analyzeBtn?.addEventListener("click", async () => {
-  const name = vesselNameInput?.value?.trim();
-  if (!name) { statusMessage.textContent = "Enter a vessel name to analyze."; return; }
-  analyzeBtn.disabled = true;
-  analyzeText.textContent = "Analyzing...";
-  statusMessage.textContent = "Submitting analysis request...";
-  let fn = null, fnName = "";
-  for (const n of analyzeFunctionNames) { const c = getCallableByName(n); if (c) { fn = c; fnName = n; break; } }
-  if (!fn) {
-    statusMessage.textContent = "No analysis function deployed.";
-    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck"; return;
-  }
-  try {
-    const payload = { name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source: "web-app" };
-    await fn(payload);
-    statusMessage.textContent = `Analysis requested via ${fnName}. It will appear shortly.`;
-    vesselNameInput.value = "";
-  } catch (e) {
-    statusMessage.textContent = `Analysis failed: ${e?.message || String(e)}`;
-  } finally {
-    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck";
-  }
-});
-
-// Roles, listeners
-async function fetchRoleFor(uid) {
-  try {
-    const allow = await getDoc(doc(db, "system", "allowlist", "users", uid));
-    if (allow.exists()) {
-      const d = allow.data() || {};
-      let r = d.role ?? d.Role ?? d.ROLE;
-      if (typeof r === "string" && r.trim()) {
-        r = r.trim().toLowerCase();
-        if (r.startsWith("admin")) return "admin";
-        if (r.startsWith("contrib")) return "contributor";
-        if (["user","reader","viewer"].includes(r)) return "user";
-      }
-      if (d.admin === true) return "admin";
-      if (d.contributor === true) return "contributor";
-      if (d.allowed === true) return "user";
-    }
-  } catch {}
-  try {
-    const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
-    if (legacy.exists()) {
-      const d = legacy.data() || {};
-      let r = d.role ?? d.Role ?? d.ROLE;
-      if (typeof r === "string" && r.trim()) {
-        r = r.trim().toLowerCase();
-        if (r.startsWith("admin")) return "admin";
-        if (r.startsWith("contrib")) return "contributor";
-        if (["user","reader","viewer"].includes(r)) return "user";
-      }
-      if (d.admin === true) return "admin";
-      if (d.contributor === true) return "contributor";
-    }
-  } catch {}
-  return "user";
+// Misc helpers
+function getVesselName(it) {
+  const direct = [
+    it.vesselName, it.name, it.title, it.displayName, it.label,
+    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
+    it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName
+  ];
+  for (const c of direct) { const t = getText(c); if (t) return t; }
+  return getText(it.id) || "Unknown";
+}
+function normalizeDoc(d) {
+  const out = { ...d };
+  if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
+  if (d && typeof d.payload === "object" && d.payload) Object.assign(out, d.payload);
+  if (d && typeof d.attributes === "object" && d.attributes) Object.assign(out, d.attributes);
+  if (d && typeof d.details === "object" && d.details) Object.assign(out, d.details);
+  if (d && typeof d.meta === "object" && d.meta) out.meta = { ...d.meta };
+  if (d && typeof d.metadata === "object" && d.metadata) out.metadata = { ...d.metadata };
+  return out;
+}
+function isWerpAssessment(d) {
+  const t = String(d?.type ?? d?.recordType ?? d?.category ?? d?.kind ?? d?.meta?.type ?? "").toUpperCase();
+  const et = String(d?.eventType ?? d?.events?.type ?? "").toUpperCase();
+  const name = String(d?.name ?? d?.title ?? d?.id ?? "").toUpperCase();
+  const looksSeismic =
+    t === "SEISMIC_EVENT" || et === "SEISMIC_EVENT" ||
+    (t.includes("SEISMIC") && t.includes("EVENT")) || (et.includes("SEISMIC") && et.includes("EVENT")) ||
+    name.includes("SEISMIC_EVENT");
+  if (looksSeismic) return false;
+  return true;
 }
 
+// Auth => load data
+onAuthStateChanged(auth, async (user) => {
+  for (const u of dataUnsubs) { try { u(); } catch {} }
+  dataUnsubs = [];
+
+  if (!user) {
+    signedOutContainer.classList.remove("hidden");
+    appContainer.classList.add("hidden");
+    importDataBtn?.classList.add("hidden");
+    userNameSpan.classList.add("hidden");
+    signOutBtn.classList.add("hidden");
+    roleBadge.textContent = "Role: —";
+    analyzeBtn && (analyzeBtn.disabled = true);
+    contribHint?.classList.remove("hidden");
+    return;
+  }
+
+  signedOutContainer.classList.add("hidden");
+  appContainer.classList.remove("hidden");
+  userNameSpan.textContent = user.email || user.uid;
+  userNameSpan.classList.remove("hidden");
+  signOutBtn.classList.remove("hidden");
+
+  currentRole = await (async function fetchRoleFor(uid) {
+    try {
+      const allow = await getDoc(doc(db, "system", "allowlist", "users", uid));
+      if (allow.exists()) {
+        const d = allow.data() || {};
+        let r = d.role ?? d.Role ?? d.ROLE;
+        if (typeof r === "string" && r.trim()) {
+          r = r.trim().toLowerCase();
+          if (r.startsWith("admin")) return "admin";
+          if (r.startsWith("contrib")) return "contributor";
+          if (["user","reader","viewer"].includes(r)) return "user";
+        }
+        if (d.admin === true) return "admin";
+        if (d.contributor === true) return "contributor";
+        if (d.allowed === true) return "user";
+      }
+    } catch {}
+    try {
+      const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
+      if (legacy.exists()) {
+        const d = legacy.data() || {};
+        let r = d.role ?? d.Role ?? d.ROLE;
+        if (typeof r === "string" && r.trim()) {
+          r = r.trim().toLowerCase();
+          if (r.startsWith("admin")) return "admin";
+          if (r.startsWith("contrib")) return "contributor";
+          if (["user","reader","viewer"].includes(r)) return "user";
+        }
+        if (d.admin === true) return "admin";
+        if (d.contributor === true) return "contributor";
+      }
+    } catch {}
+    return "user";
+  })(user.uid);
+
+  roleBadge.textContent = `Role: ${currentRole}`;
+  const isAdmin = currentRole === "admin";
+  const isContributor = isAdmin || currentRole === "contributor";
+  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden");
+  if (analyzeBtn) analyzeBtn.disabled = !isContributor;
+  if (!isContributor) contribHint?.classList.remove("hidden"); else contribHint?.classList.add("hidden");
+
+  initMap();
+  await startData();
+});
+
+// Data listeners
 async function loadChartConfig() {
   const paths = [
     `artifacts/${appId}/public/config/werpChart`,
@@ -856,7 +939,6 @@ async function loadChartConfig() {
     } catch {}
   }
 }
-
 async function startData() {
   for (const u of dataUnsubs) { try { u(); } catch {} }
   dataUnsubs = [];
@@ -884,69 +966,3 @@ async function startData() {
     } catch (e) { console.error("Listener error", p, e); }
   }
 }
-
-function normalizeDoc(d) {
-  const out = { ...d };
-  if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
-  if (d && typeof d.payload === "object" && d.payload) Object.assign(out, d.payload);
-  if (d && typeof d.attributes === "object" && d.attributes) Object.assign(out, d.attributes);
-  if (d && typeof d.details === "object" && d.details) Object.assign(out, d.details);
-  if (d && typeof d.meta === "object" && d.meta) out.meta = { ...d.meta };
-  if (d && typeof d.metadata === "object" && d.metadata) out.metadata = { ...d.metadata };
-  return out;
-}
-function isWerpAssessment(d) {
-  const t = String(d?.type ?? d?.recordType ?? d?.category ?? d?.kind ?? d?.meta?.type ?? "").toUpperCase();
-  const et = String(d?.eventType ?? d?.events?.type ?? "").toUpperCase();
-  const name = String(d?.name ?? d?.title ?? d?.id ?? "").toUpperCase();
-  const looksSeismic =
-    t === "SEISMIC_EVENT" || et === "SEISMIC_EVENT" ||
-    (t.includes("SEISMIC") && t.includes("EVENT")) || (et.includes("SEISMIC") && et.includes("EVENT")) ||
-    name.includes("SEISMIC_EVENT");
-  if (looksSeismic) return false;
-  return true;
-}
-function getVesselName(it) {
-  const direct = [
-    it.vesselName, it.name, it.title, it.displayName, it.label,
-    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
-    it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName
-  ];
-  for (const c of direct) { const t = getText(c); if (t) return t; }
-  return getText(it.id) || "Unknown";
-}
-
-// Auth
-onAuthStateChanged(auth, async (user) => {
-  for (const u of dataUnsubs) { try { u(); } catch {} }
-  dataUnsubs = [];
-
-  if (!user) {
-    signedOutContainer.classList.remove("hidden");
-    appContainer.classList.add("hidden");
-    importDataBtn?.classList.add("hidden");
-    userNameSpan.classList.add("hidden");
-    signOutBtn.classList.add("hidden");
-    roleBadge.textContent = "Role: —";
-    analyzeBtn && (analyzeBtn.disabled = true);
-    contribHint?.classList.remove("hidden");
-    return;
-  }
-
-  signedOutContainer.classList.add("hidden");
-  appContainer.classList.remove("hidden");
-  userNameSpan.textContent = user.email || user.uid;
-  userNameSpan.classList.remove("hidden");
-  signOutBtn.classList.remove("hidden");
-
-  currentRole = await fetchRoleFor(user.uid);
-  roleBadge.textContent = `Role: ${currentRole}`;
-  const isAdmin = currentRole === "admin";
-  const isContributor = isAdmin || currentRole === "contributor";
-  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden");
-  if (analyzeBtn) analyzeBtn.disabled = !isContributor;
-  if (!isContributor) contribHint?.classList.remove("hidden"); else contribHint?.classList.add("hidden");
-
-  initMap();
-  await startData();
-});

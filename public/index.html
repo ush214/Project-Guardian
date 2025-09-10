@@ -5,15 +5,25 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Project Guardian – WERP Reports</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
+
+  <!-- Fonts + Tailwind -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- DOMPurify / Marked -->
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+
+  <!-- Monitoring styles -->
   <link rel="stylesheet" href="/monitoring.css" />
+
   <style>
     body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     #map { width: 100%; height: 460px; border-radius: 10px; }
@@ -55,22 +65,25 @@
     <section id="signedOutContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 max-w-md mx-auto">
       <h2 class="text-xl font-semibold text-gray-800 mb-2 text-center">Welcome</h2>
       <p class="text-gray-600 mb-4 text-center">Sign in with your email and password to continue.</p>
-      <div class="space-y-3">
-        <label class="block">
-          <span class="text-sm text-gray-700">Email</span>
-          <input id="emailInput" type="email" class="mt-1 w-full p-3 border border-gray-300 rounded-md" placeholder="you@example.com" autocomplete="email" />
-        </label>
-        <label class="block">
-          <span class="text-sm text-gray-700">Password</span>
-          <input id="passwordInput" type="password" class="mt-1 w-full p-3 border border-gray-300 rounded-md" placeholder="••••••••" autocomplete="current-password" />
-        </label>
-        <p id="authMessage" class="text-sm h-5 text-center text-gray-500" aria-live="polite"></p>
-        <div class="flex flex-col sm:flex-row gap-2 mt-2">
-          <button id="signInEmailBtn" class="flex-1 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Sign in</button>
-          <button id="createAccountBtn" class="flex-1 px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Create account</button>
+
+      <form id="authForm" onsubmit="return false;">
+        <div class="space-y-3">
+          <label class="block">
+            <span class="text-sm text-gray-700">Email</span>
+            <input id="emailInput" type="email" class="mt-1 w-full p-3 border border-gray-300 rounded-md" placeholder="you@example.com" autocomplete="email" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-gray-700">Password</span>
+            <input id="passwordInput" type="password" class="mt-1 w-full p-3 border border-gray-300 rounded-md" placeholder="••••••••" autocomplete="current-password" />
+          </label>
+          <p id="authMessage" class="text-sm h-5 text-center text-gray-500" aria-live="polite"></p>
+          <div class="flex flex-col sm:flex-row gap-2 mt-2">
+            <button id="signInEmailBtn" type="button" class="flex-1 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Sign in</button>
+            <button id="createAccountBtn" type="button" class="flex-1 px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Create account</button>
+          </div>
+          <button id="resetPasswordBtn" type="button" class="w-full text-sm text-indigo-700 hover:underline mt-1">Forgot password?</button>
         </div>
-        <button id="resetPasswordBtn" class="w-full text-sm text-indigo-700 hover:underline mt-1">Forgot password?</button>
-      </div>
+      </form>
       <p class="text-xs text-gray-500 mt-6 text-center">New accounts start as read-only Users. Admin approval is required for Contributor access.</p>
     </section>
 
@@ -86,7 +99,7 @@
         </div>
         <div class="flex flex-col sm:flex-row gap-3">
           <input type="text" id="vesselName" class="flex-1 p-3 border border-gray-300 rounded-md" placeholder="e.g., USS Chevalier" />
-          <button id="analyzeBtn" class="bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-800 transition disabled:opacity-50 disabled:cursor-not-allowed">
+          <button id="analyzeBtn" type="button" class="bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-800 transition disabled:opacity-50 disabled:cursor-not-allowed">
             <span id="analyzeText">Analyze Wreck</span>
           </button>
         </div>
@@ -111,7 +124,7 @@
           </div>
           <div class="flex items-center gap-2">
             <input id="searchBox" type="text" placeholder="Search vessel name..." class="w-64 border border-gray-300 rounded-md px-3 py-2 text-sm">
-            <button id="clearSearch" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm px-3 py-2 rounded">Clear</button>
+            <button id="clearSearch" type="button" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm px-3 py-2 rounded">Clear</button>
           </div>
           <div class="text-xs text-gray-600">Showing: <span id="visibleCounts">0</span></div>
         </div>
@@ -151,10 +164,10 @@
         <div class="flex items-center justify-between mb-3">
           <h2 id="reportTitle" class="text-2xl font-bold text-gray-900"></h2>
           <div class="flex items-center gap-2">
-            <button id="exportPdfBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">Export PDF</button>
-            <button id="exportHtmlBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">HTML</button>
-            <button id="exportMdBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">MD</button>
-            <button id="exportJsonBtn" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">JSON</button>
+            <button id="exportPdfBtn" type="button" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">Export PDF</button>
+            <button id="exportHtmlBtn" type="button" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">HTML</button>
+            <button id="exportMdBtn" type="button" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">MD</button>
+            <button id="exportJsonBtn" type="button" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">JSON</button>
           </div>
         </div>
 
@@ -185,7 +198,8 @@
           <div id="reportContent" class="report-prose"></div>
         </div>
 
-        <div id="monitoring-panel" class="mt-6"></div>
+        <!-- Monitoring Panel receives wreckId at runtime -->
+        <div id="monitoring-panel" class="mt-6" data-wreck-id=""></div>
 
         <div id="phase2Section" class="mt-6 border-top pt-4">
           <h3 class="text-base font-semibold text-gray-800 mb-2">Phase 2: In-Situ Assessment (Recommended)</h3>
@@ -195,8 +209,8 @@
               <label class="text-sm text-gray-700">In-situ notes</label>
               <textarea id="phase2Input" class="w-full min-h-[120px] p-2 border border-gray-300 rounded-md" placeholder="Paste Phase 2 field observations here..."></textarea>
               <div class="flex items-center gap-2 mt-2">
-                <button id="savePhase2Btn" class="text-xs px-3 py-1.5 rounded bg-gray-800 text-white hover:bg-gray-700">Save Phase 2</button>
-                <button id="reassessBtn" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Reassess with Phase 2</button>
+                <button id="savePhase2Btn" type="button" class="text-xs px-3 py-1.5 rounded bg-gray-800 text-white hover:bg-gray-700">Save Phase 2</button>
+                <button id="reassessBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Reassess with Phase 2</button>
                 <span id="phase2Status" class="text-xs text-gray-500"></span>
               </div>
             </div>
@@ -204,7 +218,7 @@
               <label class="text-sm text-gray-700">Upload files (images, PDFs, logs)</label>
               <input id="phase2Files" type="file" multiple class="block w-full mt-1 text-sm file:mr-2 file:py-2 file:px-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:text-gray-700 hover:file:bg-gray-50" />
               <div class="flex items-center gap-2 mt-2">
-                <button id="uploadFilesBtn" class="text-xs px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-600">Upload files</button>
+                <button id="uploadFilesBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-600">Upload files</button>
                 <span id="uploadStatus" class="text-xs text-gray-500"></span>
               </div>
               <p class="text-[11px] text-gray-500 mt-1">Images appear in the gallery; other files are attached to this report.</p>
@@ -217,7 +231,7 @@
           <div class="flex flex-col gap-2">
             <textarea id="feedbackInput" class="w-full min-h-[80px] p-2 border border-gray-300 rounded-md" placeholder="Highlight issues, corrections, or guidance for reassessment..."></textarea>
             <div class="flex items-center gap-2">
-              <button id="saveFeedbackBtn" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Save feedback</button>
+              <button id="saveFeedbackBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Save feedback</button>
               <span id="feedbackStatus" class="text-xs text-gray-500"></span>
             </div>
           </div>
@@ -230,7 +244,9 @@
     </div>
   </main>
 
+  <!-- App logic -->
   <script type="module" src="/app.js"></script>
+  <!-- Monitoring bootstrap -->
   <script type="module" src="/monitoring-init.js"></script>
 </body>
 </html>
