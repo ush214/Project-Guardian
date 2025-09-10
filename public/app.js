@@ -643,38 +643,29 @@ function factorSummaryTable(item) {
 function renderReportV2HTML(item) {
   const v = v2Totals(item);
   const overview = buildOverviewHtml(item);
-  const wcsTable = `
-    <table>
-      <thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr></thead>
-      <tbody>
-        ${v.wcsRows.map(r => `<tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.rationale)}</td><td>${(Number(r.normalized) || 0).toFixed(2)}</td></tr>`).join("")}
-      </tbody>
-    </table>
-    <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
-    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
+  
+  // WCS Card
+  const wcsCard = `
+    <div class="report-card">
+      <h3>Wreck Condition Score (WCS)</h3>
+      <table>
+        <thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr></thead>
+        <tbody>
+          ${v.wcsRows.map(r => `<tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.rationale)}</td><td>${(Number(r.normalized) || 0).toFixed(2)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
+      ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
+    </div>
   `;
+  
+  // PHS Card
   const phsRowsHtml = (v.phsRows || []).map(r => `
     <tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.rationale)}</td><td>${r.weightPct.toFixed(0)}%</td><td>${r.score.toFixed(2)}</td><td>${r.weighted.toFixed(2)}</td></tr>
   `).join("");
-  const esiParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
-  const esiRowsHtml = esiParams.map(p => `
-    <tr><td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td><td>${escapeHtml(p?.rationale ?? "")}</td><td>${escapeHtml(String(p?.score ?? ""))}</td></tr>
-  `).join("");
-  const rpmList = Array.isArray(item?.rpm?.parameters) ? item.rpm.parameters : Array.isArray(item?.rpm?.factors) ? item.rpm.factors : [];
-  const rpmRowsHtml = Array.isArray(rpmList)
-    ? rpmList.map(f => `<tr><td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td><td>${escapeHtml(f?.rationale ?? "Not specified.")}</td><td>${escapeHtml(String(f?.value ?? ""))}</td></tr>`).join("")
-    : "";
-
-  const sources = buildSourcesHtml(item);
-  const assumptions = buildAssumptionsHtml(item);
-  const confidence = buildConfidenceHtml(item);
-
-  return `
-    ${overview || ""}
-    ${factorSummaryTable(item)}
-    <section><h3>Phase 3: WCS (Hull & Structure)</h3>${wcsTable}</section>
-    <section>
-      <h3>Phase 3: PHS (Pollution Hazard)</h3>
+  const phsCard = `
+    <div class="report-card">
+      <h3>Pollution Hazard Score (PHS)</h3>
       <p class="text-xs text-gray-600 mb-2">Weights normalized to sum to 100%. Weighted = Score × Weight.</p>
       <table>
         <thead><tr><th>Parameter</th><th>Rationale</th><th>Weight (%)</th><th>Score (0–10)</th><th>Weighted</th></tr></thead>
@@ -682,15 +673,64 @@ function renderReportV2HTML(item) {
       </table>
       <p class="mt-2"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
       ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: input weights normalized.</p>' : ''}
-    </section>
-    <section><h3>Phase 3: ESI (Environmental Sensitivity)</h3>
+    </div>
+  `;
+  
+  // ESI Card
+  const esiParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
+  const esiRowsHtml = esiParams.map(p => `
+    <tr><td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td><td>${escapeHtml(p?.rationale ?? "")}</td><td>${escapeHtml(String(p?.score ?? ""))}</td></tr>
+  `).join("");
+  const esiCard = `
+    <div class="report-card">
+      <h3>Environmental Sensitivity Index (ESI)</h3>
       <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
       <p class="mt-2"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
-    </section>
-    <section><h3>Phase 3: RPM (Release Probability Modifier)</h3>
+    </div>
+  `;
+  
+  // RPM Card
+  const rpmList = Array.isArray(item?.rpm?.parameters) ? item.rpm.parameters : Array.isArray(item?.rpm?.factors) ? item.rpm.factors : [];
+  const rpmRowsHtml = Array.isArray(rpmList)
+    ? rpmList.map(f => `<tr><td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td><td>${escapeHtml(f?.rationale ?? "Not specified.")}</td><td>${escapeHtml(String(f?.value ?? ""))}</td></tr>`).join("")
+    : "";
+  const rpmCard = `
+    <div class="report-card">
+      <h3>Release Probability Modifier (RPM)</h3>
+      <table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRowsHtml}</tbody></table>
       ${rpmRowsHtml || '<p class="text-gray-600">No factor breakdown provided. Using final multiplier if supplied.</p>'}
       <p class="mt-2"><strong>Final Multiplier:</strong> ${(Number(item?.rpm?.finalMultiplier) || 1).toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
-    </section>
+    </div>
+  `;
+
+  const sources = buildSourcesHtml(item);
+  const assumptions = buildAssumptionsHtml(item);
+  const confidence = buildConfidenceHtml(item);
+  
+  // Overview Card
+  const overviewCard = overview ? `
+    <div class="report-card">
+      ${overview}
+    </div>
+  ` : '';
+  
+  // Summary Card
+  const summaryCard = `
+    <div class="report-card">
+      <h3>Risk Assessment Summary</h3>
+      ${factorSummaryTable(item)}
+    </div>
+  `;
+
+  return `
+    ${overviewCard}
+    <div class="report-two-column">
+      ${wcsCard}
+      ${phsCard}
+      ${esiCard}
+      ${rpmCard}
+    </div>
+    ${summaryCard}
     ${sources || ""}${assumptions || ""}${confidence || ""}
   `;
 }

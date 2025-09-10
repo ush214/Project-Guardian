@@ -39,10 +39,64 @@
     .gallery-tile img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; }
     .gallery-tile .file-tile { height: 120px; display:flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#f8fafc; font-size:12px; color:#475569; padding:6px; text-align:center; }
     .list-scroll { max-height: 420px; overflow-y: auto; padding-right: 4px; }
+    
+    /* Sharp Blue Theme */
+    .blue-theme-primary { background: #1e40af; color: white; }
+    .blue-theme-secondary { background: #3b82f6; color: white; }
+    .blue-theme-accent { background: #60a5fa; color: white; }
+    .blue-theme-light { background: #dbeafe; color: #1e40af; }
+    .blue-theme-card { background: white; border: 2px solid #3b82f6; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1); }
+    
+    /* Two-column report content layout */
+    .report-two-column { 
+      display: grid; 
+      grid-template-columns: 1fr 1fr; 
+      gap: 1.5rem; 
+      margin-top: 1rem; 
+    }
+    .report-card { 
+      background: white; 
+      border: 2px solid #3b82f6; 
+      border-radius: 12px; 
+      padding: 1.25rem; 
+      box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1);
+      transition: all 0.2s ease;
+    }
+    .report-card:hover {
+      box-shadow: 0 8px 25px -5px rgba(59, 130, 246, 0.25);
+      transform: translateY(-2px);
+    }
+    .report-card h3 {
+      color: #1e40af;
+      font-weight: 600;
+      font-size: 1.125rem;
+      margin-bottom: 0.75rem;
+      border-bottom: 2px solid #3b82f6;
+      padding-bottom: 0.5rem;
+    }
+    .report-card h4 {
+      color: #3b82f6;
+      font-weight: 500;
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .report-card table th {
+      background: #dbeafe;
+      color: #1e40af;
+      font-weight: 600;
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .report-two-column {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+    }
   </style>
 </head>
-<body class="bg-slate-50 text-gray-900">
-  <header class="bg-gray-900 text-white">
+<body class="bg-blue-50 text-gray-900">
+  <header class="blue-theme-primary">
     <div class="max-w-6xl mx-auto px-4 py-3 grid grid-cols-3 gap-3 items-center">
       <div class="flex items-center gap-3">
         <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-[72px] w-auto rounded-sm bg-white/5 p-1">
@@ -53,9 +107,9 @@
       </div>
       <div class="flex items-center justify-end gap-2">
         <a id="monitoringBtn" href="/monitoring.html" class="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-1.5 rounded">Monitoring</a>
-        <a id="importDataBtn" href="/import.html" class="hidden bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs px-3 py-1.5 rounded border border-indigo-200">Import Data</a>
-        <span id="userName" class="hidden text-xs text-indigo-200"></span>
-        <button id="signOutBtn" class="hidden bg-gray-600 hover:bg-gray-500 text-white text-xs px-3 py-1.5 rounded">Sign out</button>
+        <a id="importDataBtn" href="/import.html" class="hidden blue-theme-light text-xs px-3 py-1.5 rounded border border-blue-300 hover:bg-blue-100">Import Data</a>
+        <span id="userName" class="hidden text-xs text-blue-200"></span>
+        <button id="signOutBtn" class="hidden bg-blue-700 hover:bg-blue-600 text-white text-xs px-3 py-1.5 rounded">Sign out</button>
       </div>
     </div>
   </header>
@@ -78,10 +132,10 @@
           </label>
           <p id="authMessage" class="text-sm h-5 text-center text-gray-500" aria-live="polite"></p>
           <div class="flex flex-col sm:flex-row gap-2 mt-2">
-            <button id="signInEmailBtn" type="button" class="flex-1 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Sign in</button>
-            <button id="createAccountBtn" type="button" class="flex-1 px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Create account</button>
+            <button id="signInEmailBtn" type="button" class="flex-1 px-4 py-2 rounded blue-theme-primary hover:bg-blue-800">Sign in</button>
+            <button id="createAccountBtn" type="button" class="flex-1 px-4 py-2 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300">Create account</button>
           </div>
-          <button id="resetPasswordBtn" type="button" class="w-full text-sm text-indigo-700 hover:underline mt-1">Forgot password?</button>
+          <button id="resetPasswordBtn" type="button" class="w-full text-sm text-blue-600 hover:underline mt-1">Forgot password?</button>
         </div>
       </form>
       <p class="text-xs text-gray-500 mt-6 text-center">New accounts start as read-only Users. Admin approval is required for Contributor access.</p>
@@ -98,8 +152,8 @@
           </div>
         </div>
         <div class="flex flex-col sm:flex-row gap-3">
-          <input type="text" id="vesselName" class="flex-1 p-3 border border-gray-300 rounded-md" placeholder="e.g., USS Chevalier" />
-          <button id="analyzeBtn" type="button" class="bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-800 transition disabled:opacity-50 disabled:cursor-not-allowed">
+          <input type="text" id="vesselName" class="flex-1 p-3 border-2 border-blue-300 rounded-md focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g., USS Chevalier" />
+          <button id="analyzeBtn" type="button" class="blue-theme-primary font-semibold py-3 px-6 rounded-md hover:bg-blue-800 transition disabled:opacity-50 disabled:cursor-not-allowed">
             <span id="analyzeText">Analyze Wreck</span>
           </button>
         </div>
@@ -209,8 +263,8 @@
               <label class="text-sm text-gray-700">In-situ notes</label>
               <textarea id="phase2Input" class="w-full min-h-[120px] p-2 border border-gray-300 rounded-md" placeholder="Paste Phase 2 field observations here..."></textarea>
               <div class="flex items-center gap-2 mt-2">
-                <button id="savePhase2Btn" type="button" class="text-xs px-3 py-1.5 rounded bg-gray-800 text-white hover:bg-gray-700">Save Phase 2</button>
-                <button id="reassessBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Reassess with Phase 2</button>
+                <button id="savePhase2Btn" type="button" class="text-xs px-3 py-1.5 rounded blue-theme-primary hover:bg-blue-800">Save Phase 2</button>
+                <button id="reassessBtn" type="button" class="text-xs px-3 py-1.5 rounded blue-theme-secondary hover:bg-blue-600">Reassess with Phase 2</button>
                 <span id="phase2Status" class="text-xs text-gray-500"></span>
               </div>
             </div>
@@ -218,7 +272,7 @@
               <label class="text-sm text-gray-700">Upload files (images, PDFs, logs)</label>
               <input id="phase2Files" type="file" multiple class="block w-full mt-1 text-sm file:mr-2 file:py-2 file:px-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:text-gray-700 hover:file:bg-gray-50" />
               <div class="flex items-center gap-2 mt-2">
-                <button id="uploadFilesBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-600">Upload files</button>
+                <button id="uploadFilesBtn" type="button" class="text-xs px-3 py-1.5 rounded blue-theme-primary hover:bg-blue-800">Upload files</button>
                 <span id="uploadStatus" class="text-xs text-gray-500"></span>
               </div>
               <p class="text-[11px] text-gray-500 mt-1">Images appear in the gallery; other files are attached to this report.</p>
@@ -231,7 +285,7 @@
           <div class="flex flex-col gap-2">
             <textarea id="feedbackInput" class="w-full min-h-[80px] p-2 border border-gray-300 rounded-md" placeholder="Highlight issues, corrections, or guidance for reassessment..."></textarea>
             <div class="flex items-center gap-2">
-              <button id="saveFeedbackBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Save feedback</button>
+              <button id="saveFeedbackBtn" type="button" class="text-xs px-3 py-1.5 rounded blue-theme-secondary hover:bg-blue-600">Save feedback</button>
               <span id="feedbackStatus" class="text-xs text-gray-500"></span>
             </div>
           </div>
