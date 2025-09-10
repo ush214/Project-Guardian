@@ -1,0 +1,99 @@
+/* Project Guardian Blue Theme */
+
+/* Base colors - Blue theme */
+:root {
+  --primary-blue: #2563eb;
+  --primary-blue-hover: #1d4ed8;
+  --primary-blue-light: #3b82f6;
+  --secondary-blue: #1e40af;
+  --light-blue: #eff6ff;
+  --card-background: #ffffff;
+  --border-color: #e5e7eb;
+}
+
+/* Body background */
+body {
+  background-color: var(--light-blue);
+}
+
+/* Header styling */
+header {
+  background-color: var(--primary-blue) !important;
+}
+
+/* Primary buttons */
+.bg-indigo-600, .bg-indigo-700 {
+  background-color: var(--primary-blue) !important;
+}
+
+.bg-indigo-600:hover, .bg-indigo-700:hover {
+  background-color: var(--primary-blue-hover) !important;
+}
+
+/* Card styling */
+.bg-white {
+  background-color: var(--card-background);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 3px 0 rgba(37, 99, 235, 0.1), 0 1px 2px 0 rgba(37, 99, 235, 0.06);
+}
+
+/* Rounded corners for cards */
+.rounded-xl {
+  border-radius: 0.75rem;
+}
+
+/* Two-column layout for desktop reports */
+@media (min-width: 1024px) {
+  .report-content-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+  
+  .report-content-grid .full-width {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Enhanced card sections */
+.card-section {
+  background: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.card-section h3 {
+  color: var(--primary-blue);
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+/* Button enhancements */
+.btn-primary {
+  background-color: var(--primary-blue);
+  border-color: var(--primary-blue);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-blue-hover);
+  border-color: var(--primary-blue-hover);
+}
+
+/* Link styling */
+a {
+  color: var(--primary-blue);
+}
+
+a:hover {
+  color: var(--primary-blue-hover);
+}
+
+/* Focus states */
+input:focus, textarea:focus, select:focus {
+  border-color: var(--primary-blue);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
