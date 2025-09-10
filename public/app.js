@@ -1,4 +1,6 @@
-// App — no-hotlinking: render only from Storage (phase2.assets).
+```javascript name=app.js
+// App — no-hotlinking preferred: render cached Storage assets (phase2.assets) first,
+// but fall back to external image URLs (e.g., media.images) when no cached copies exist.
 // Includes: renderFeedbackList, monitoring button fix, placeholder thumbnails, export handlers, email/password auth.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -149,6 +151,71 @@ const isFiniteNum = (n) => typeof n === "number" && Number.isFinite(n);
 const getText = (v) => { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; };
 const deepGet = (obj, path) => path.split(".").reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj);
 
+// NEW: Generic web image extension matcher and external URL collector
+const WEB_IMG_EXT_RX = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(?:\?|#|$)/i;
+function isHttpUrl(u) {
+  if (typeof u !== "string") return false;
+  const s = u.trim();
+  if (!s || s.startsWith("data:") || s.startsWith("blob:")) return false;
+  return /^https?:\/\//i.test(s);
+}
+function looksLikeImageUrl(u) {
+  return isHttpUrl(u) && WEB_IMG_EXT_RX.test(u);
+}
+function dedupe(arr) {
+  const seen = new Set();
+  const out = [];
+  for (const v of arr) {
+    const k = String(v || "");
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(v);
+  }
+  return out;
+}
+function getExternalImageUrls(item) {
+  const urls = [];
+
+  // 1) Primary expected location
+  const arr = Array.isArray(item?.media?.images) ? item.media.images : [];
+  for (const it of arr) {
+    if (!it) continue;
+    if (typeof it === "string" && looksLikeImageUrl(it)) {
+      urls.push(it);
+    } else if (typeof it === "object") {
+      const cands = [it.url, it.href, it.src, it.imageUrl, it.thumbnail, it.thumb, it.picture, it.pic];
+      for (const c of cands) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
+      if (it.link && typeof it.link === "object") {
+        const c2 = [it.link.url, it.link.href, it.link.src];
+        for (const c of c2) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
+      }
+    }
+  }
+
+  // 2) Alternates sometimes present in imports
+  const altArrays = [
+    item?.media?.photos, item?.media?.gallery,
+    item?.images, item?.photos, item?.gallery,
+    item?.referenceMedia
+  ].filter(Array.isArray);
+  for (const arr2 of altArrays) {
+    for (const it of arr2) {
+      if (!it) continue;
+      if (typeof it === "string" && looksLikeImageUrl(it)) urls.push(it);
+      else if (typeof it === "object") {
+        const cands = [it.url, it.href, it.src, it.imageUrl, it.thumbnail, it.thumb, it.picture, it.pic];
+        for (const c of cands) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
+        if (it.link && typeof it.link === "object") {
+          const c2 = [it.link.url, it.link.href, it.link.src];
+          for (const c of c2) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
+        }
+      }
+    }
+  }
+
+  return dedupe(urls);
+}
+
 // Placeholder image
 const PLACEHOLDER_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
   <svg xmlns="http://www.w3.org/2000/svg" width="400" height="240">
@@ -178,12 +245,16 @@ function markerIconFor(band) {
   });
 }
 
-// Marker uses ONLY Storage assets (no hotlinking), but always renders a box (placeholder if missing)
+// Marker: prefer cached Storage image; fall back to external if none.
 function getMarkerImageUrl(item) {
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
   const img = assets.find(a => a?.url && webExt.test(String(a?.name || a?.path || "")));
-  return img?.url || null;
+  if (img?.url) return img.url;
+
+  // Fallback to external URLs if no cached assets yet
+  const extUrls = getExternalImageUrls(item);
+  return extUrls[0] || null;
 }
 function upsertMarker(item) {
   const coords = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
@@ -580,7 +651,7 @@ function renderRadarV2(item) {
   renderBenchLegend();
 }
 
-// Galleries — only Storage assets
+// Galleries — uploads (Storage only)
 function renderUploadsFromDoc() {
   if (!uploadGalleryGrid) return;
   uploadGalleryGrid.innerHTML = "";
@@ -601,25 +672,66 @@ function renderUploadsFromDoc() {
     uploadGalleryGrid.appendChild(tile);
   }
 }
+
+// Reference media — prefer cached; fall back to external (hotlinks) if none cached
 function renderReferenceMedia() {
   if (!referenceMediaGrid) return;
   referenceMediaGrid.innerHTML = "";
   referenceMediaEmpty?.classList.add("hidden");
+
   const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
   const refImgs = assets.filter(a =>
     a?.source === "reference" && a?.url && /\.(png|jpe?g|gif|webp)$/i.test(String(a?.name || a?.path || ""))
   );
-  if (!refImgs.length) { referenceMediaEmpty?.classList.remove("hidden"); return; }
-  for (const a of refImgs) {
+
+  if (refImgs.length) {
+    for (const a of refImgs) {
+      const tile = document.createElement("div");
+      tile.className = "gallery-tile";
+      const link = document.createElement("a");
+      link.href = a.url; link.target = "_blank"; link.rel = "noopener";
+      const img = document.createElement("img");
+      img.src = a.url; img.alt = "Cached media";
+      img.loading = "lazy"; img.referrerPolicy = "no-referrer"; img.onerror = () => { img.src = PLACEHOLDER_SVG; };
+      link.appendChild(img);
+      tile.appendChild(link);
+      referenceMediaGrid.appendChild(tile);
+    }
+    return;
+  }
+
+  // Fallback: external URLs
+  const extUrls = getExternalImageUrls(currentItem);
+  if (!extUrls.length) {
+    referenceMediaEmpty?.classList.remove("hidden");
+    return;
+  }
+
+  for (const u of extUrls) {
     const tile = document.createElement("div");
-    tile.className = "gallery-tile";
+    tile.className = "gallery-tile relative";
     const link = document.createElement("a");
-    link.href = a.url; link.target = "_blank"; link.rel = "noopener";
+    link.href = u; link.target = "_blank"; link.rel = "noopener";
     const img = document.createElement("img");
-    img.src = a.url; img.alt = "Cached media";
+    img.src = u; img.alt = "External (hotlink)";
     img.loading = "lazy"; img.referrerPolicy = "no-referrer"; img.onerror = () => { img.src = PLACEHOLDER_SVG; };
+
+    // External badge
+    const badge = document.createElement("div");
+    badge.textContent = "External";
+    badge.style.position = "absolute";
+    badge.style.top = "4px";
+    badge.style.left = "4px";
+    badge.style.fontSize = "10px";
+    badge.style.padding = "2px 6px";
+    badge.style.borderRadius = "4px";
+    badge.style.background = "rgba(251, 191, 36, 0.15)";
+    badge.style.color = "#92400e";
+    badge.style.border = "1px solid rgba(251, 191, 36, 0.6)";
+
     link.appendChild(img);
     tile.appendChild(link);
+    tile.appendChild(badge);
     referenceMediaGrid.appendChild(tile);
   }
 }
@@ -742,10 +854,15 @@ function onExportPdf() {
     chartImg = cnv?.toDataURL("image/png") || "";
   } catch {}
 
-  // Gather up to 9 images from cached/uploaded assets
+  // Gather up to 9 images: prefer cached/uploaded assets; fallback to external if none
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
-  const urls = assets.filter(a => a?.url && webExt.test(String(a?.name || a?.path || ""))).map(a => a.url).slice(0, 9);
+  let urls = assets.filter(a => a?.url && webExt.test(String(a?.name || a?.path || ""))).map(a => a.url).slice(0, 9);
+
+  if (!urls.length) {
+    const ext = getExternalImageUrls(currentItem);
+    urls = ext.slice(0, 9);
+  }
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title>
     <style>
@@ -1162,3 +1279,4 @@ onAuthStateChanged(auth, async (user) => {
   initMap();
   await startData();
 });
+```
