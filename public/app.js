@@ -2,7 +2,7 @@
 // Fixes included:
 // - Robust PHS weights parsing: accepts weightPercent/percent strings and falls back to equal weights
 // - Image uploads wired: Upload button + hidden file input -> Storage -> append to phase2.assets
-// - External image fallback remains; cached assets still preferred
+// - Robust coordinate resolver for map markers: supports lon vs lng and nested paths like historical.location.coordinates
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
@@ -239,6 +239,71 @@ function markerIconFor(band) {
   });
 }
 
+// Coordinates resolver for varied shapes (supports lon vs lng and nesting)
+function resolveCoordinates(item) {
+  const toNum = (v) => {
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // Extract lat/lng from an object or array
+  function extract(obj, hint = null) {
+    if (!obj) return null;
+
+    // GeoJSON [lng, lat]
+    if (Array.isArray(obj) && obj.length >= 2) {
+      const lngA = toNum(obj[0]);
+      const latA = toNum(obj[1]);
+      if (latA != null && lngA != null) return { lat: latA, lng: lngA };
+      // If looks like [lat, lng]
+      const latB = toNum(obj[0]);
+      const lngB = toNum(obj[1]);
+      if (latB != null && lngB != null) return { lat: latB, lng: lngB };
+      return null;
+    }
+
+    // If object has a nested coordinates field, prefer that
+    if (obj.coordinates) {
+      const nested = extract(obj.coordinates, "nested");
+      if (nested) return nested;
+    }
+
+    // Try common keys
+    const lat = toNum(obj.latitude ?? obj.lat ?? obj.y);
+    // Note: include "lon" here
+    const lng = toNum(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
+
+    if (lat != null && lng != null) return { lat, lng };
+
+    // Some shapes like { latlng: { lat, lng } }
+    if (obj.latlng) {
+      const ll = extract(obj.latlng, "latlng");
+      if (ll) return ll;
+    }
+    return null;
+  }
+
+  const cands = [
+    item?.phase1?.screening?.coordinates,
+    item?.coordinates,
+    item?.location?.coordinates,
+    item?.historical?.location?.coordinates,
+    item?.location,
+    item?.geo,
+    item?.position,
+    item?.geometry?.coordinates, // GeoJSON array
+    item?.geometry
+  ];
+
+  for (const c of cands) {
+    const got = extract(c);
+    if (got) return got;
+  }
+
+  return null;
+}
+
 // Marker: prefer cached; fallback external if none
 function getMarkerImageUrl(item) {
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
@@ -250,15 +315,13 @@ function getMarkerImageUrl(item) {
   return extUrls[0] || null;
 }
 function upsertMarker(item) {
-  const coords = item?.phase1?.screening?.coordinates || item?.coordinates || item?.location || item?.geo || item?.position;
-  const id = item?.id; if (!id) return;
-  const lat = coords?.latitude ?? coords?.lat ?? coords?.y;
-  const lng = coords?.longitude ?? coords?.lng ?? coords?.x;
-  if (lat == null || lng == null) return;
+  const coord = resolveCoordinates(item);
+  const id = item?.id;
+  if (!id || !coord) return;
 
   const sv = getSeverityValue(item);
   const band = item?.severity?.band || bandFromValue(sv);
-  const pos = [Number(lat), Number(lng)];
+  const pos = [Number(coord.lat), Number(coord.lng)];
   const title = escapeHtml(getVesselName(item));
   const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : "N/A";
 
@@ -364,7 +427,7 @@ function normalizeWcsParameters(rawParams = []) {
   return { rows, total: Number(total.toFixed(2)), scaleNote };
 }
 
-// REPLACED: Robust PHS normalizer
+// Robust PHS normalizer
 function normalizePhsWeights(params = []) {
   function parseScore(v) {
     if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -383,7 +446,8 @@ function normalizePhsWeights(params = []) {
       "weight", "Weight", "w", "W",
       "weightPct", "weight_percent", "weightPercent",
       "percentage", "percent", "Percent", "Percentage",
-      "Weight (%)", "Weight %", "Weight(%)"
+      "Weight (%)", "Weight %", "Weight(%)",
+      "weightPercent" // the dataset uses this key
     ];
     for (const key of candidates) {
       if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
@@ -596,7 +660,7 @@ function renderReportV2HTML(item) {
   const rpmList = Array.isArray(item?.rpm?.parameters) ? item.rpm.parameters : Array.isArray(item?.rpm?.factors) ? item.rpm.factors : [];
   const rpmRowsHtml = Array.isArray(rpmList)
     ? rpmList.map(f => `<tr><td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td><td>${escapeHtml(f?.rationale ?? "Not specified.")}</td><td>${escapeHtml(String(f?.value ?? ""))}</td></tr>`).join("")
-    : ""; // in your JSON rpm.factors is an object; we still show finalMultiplier below
+    : "";
 
   const sources = buildSourcesHtml(item);
   const assumptions = buildAssumptionsHtml(item);
@@ -923,14 +987,12 @@ function onExportPdf() {
   if (!currentItem) return;
   const vessel = getVesselName(currentItem) || "assessment";
 
-  // Chart image
   let chartImg = "";
   try {
     const cnv = document.getElementById("werSpiderChart");
     chartImg = cnv?.toDataURL("image/png") || "";
   } catch {}
 
-  // Prefer cached; fallback external
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
   const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
   let urls = assets.filter(a => a?.url && webExt.test(String(a?.name || a?.path || ""))).map(a => a.url).slice(0, 9);
