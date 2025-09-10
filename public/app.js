@@ -1,4 +1,3 @@
-```javascript name=app.js
 // App — no-hotlinking preferred: render cached Storage assets (phase2.assets) first,
 // but fall back to external image URLs (e.g., media.images) when no cached copies exist.
 // Includes: renderFeedbackList, monitoring button fix, placeholder thumbnails, export handlers, email/password auth.
@@ -151,6 +150,9 @@ const isFiniteNum = (n) => typeof n === "number" && Number.isFinite(n);
 const getText = (v) => { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; };
 const deepGet = (obj, path) => path.split(".").reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj);
 
+// Robust placeholder (no backticks)
+const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">Image unavailable</text></svg>');
+
 // NEW: Generic web image extension matcher and external URL collector
 const WEB_IMG_EXT_RX = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(?:\?|#|$)/i;
 function isHttpUrl(u) {
@@ -215,16 +217,6 @@ function getExternalImageUrls(item) {
 
   return dedupe(urls);
 }
-
-// Placeholder image
-const PLACEHOLDER_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="400" height="240">
-    <rect width="100%" height="100%" fill="#f1f5f9"/>
-    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">
-      Image unavailable
-    </text>
-  </svg>
-`);
 
 // Leaflet map
 const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
@@ -1279,4 +1271,3 @@ onAuthStateChanged(auth, async (user) => {
   initMap();
   await startData();
 });
-```
