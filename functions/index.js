@@ -385,3 +385,7 @@ export const autoCacheReferenceMedia = onDocumentWritten(
     }
   }
 );
+
+// Export other cloud functions
+export { analyzeWerps } from "./analyzeWerps.js";
+export { reassessWerps } from "./reassessWerps.js";

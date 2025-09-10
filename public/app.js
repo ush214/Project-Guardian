@@ -503,7 +503,7 @@ function normalizePhsWeights(params = []) {
     weightFracs = items.map(() => frac);
     asPercent = false;
   } else {
-    const finiteWeights = weights.map((w) => (Number.isFinite(w) ? w : 0));
+    const finiteWeights = weights.map((w) => (Number.isFinite(w) && w > 0 ? w : 0));
     const sumW = finiteWeights.reduce((a, b) => a + b, 0);
 
     if (anyPercentHint || (sumW > 85 && sumW < 115)) {
@@ -516,10 +516,13 @@ function normalizePhsWeights(params = []) {
 
     let fracSum = weightFracs.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
     if (!Number.isFinite(fracSum) || fracSum <= 0) {
+      // Fallback to equal weights if sum is zero or invalid
       const frac = 1 / items.length;
       weightFracs = items.map(() => frac);
+      asPercent = false;
+      renormalized = true;
     } else if (Math.abs(fracSum - 1) > 0.01) {
-      weightFracs = weightFracs.map((w) => (Number.isFinite(w) ? w / fracSum : 0));
+      weightFracs = weightFracs.map((w) => (Number.isFinite(w) && w > 0 ? w / fracSum : 1 / items.length));
       renormalized = true;
     }
   }

@@ -22,6 +22,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { db } from "./admin.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { defineSecret } from "firebase-functions/params";
+import { getFollowupPrompt } from "./prompts/loader.js";
 
 const logger = functions.logger;
 const REGION = "us-central1";
@@ -84,71 +85,6 @@ function createModel() {
   return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }
 
-function buildPrompt(vesselName, context, buildYear) {
-  const guidance = (context || "").trim();
-  const guidanceBlock = guidance
-    ? `Operator guidance (apply to scoring and rationales where relevant):\n${guidance}\n\n`
-    : "";
-  const buildYearHint = Number.isFinite(buildYear) && buildYear > 0
-    ? `Known build year: ${buildYear}. If ≤ 1950, Age score should reflect extreme chronological age.`
-    : `If vessel is WWII-era or older, Age reflects extreme chronological age.`;
-
-  return `You are an expert marine environmental risk assessor. Re-assess the vessel comprehensively.
-Return ONLY JSON (no markdown fences):
-
-{
-  "wcs_hull_structure": {
-    "parameters": [
-      {"parameter":"Age","rationale":"...","score":0},
-      {"parameter":"Construction Quality","rationale":"...","score":0},
-      {"parameter":"Wreck Integrity","rationale":"...","score":0},
-      {"parameter":"Corrosion Environment","rationale":"...","score":0}
-    ],
-    "maxScore": 20
-  },
-  "phs_pollution_hazard": {
-    "version": 3,
-    "parameters": [
-      {"parameter":"Fuel Volume & Type","weight":0.50,"rationale":"...","score":0},
-      {"parameter":"Ordnance","weight":0.30,"rationale":"...","score":0},
-      {"parameter":"Hazardous Materials","weight":0.20,"rationale":"...","score":0}
-    ]
-  },
-  "esi_environmental_sensitivity": {
-    "parameters": [
-      {"parameter":"Proximity to Sensitive Ecosystems","rationale":"...","score":0},
-      {"parameter":"Biodiversity Value","rationale":"...","score":0},
-      {"parameter":"Socioeconomic Sensitivity","rationale":"...","score":0}
-    ],
-    "maxScore": 30
-  },
-  "rpm_risk_pressure_modifiers": {
-    "factors": [
-      {"factor":"Thermal Stress (Ocean Warming)","rationale":"...","value":1.0},
-      {"factor":"Seismic Activity","rationale":"...","value":1.0},
-      {"factor":"Anthropogenic Disturbance","rationale":"...","value":1.0}
-    ]
-  },
-  "final_summary": {
-    "summativeAssessment":"...",
-    "remediationSuggestions":[
-      {"priority":1,"title":"...","description":"..."},
-      {"priority":2,"title":"...","description":"..."},
-      {"priority":3,"title":"...","description":"..."}
-    ]
-  }
-}
-
-Rules:
-- Do NOT include structural integrity inside pollution hazard (integrity is in WCS).
-- ${buildYearHint}
-- WCS parameter scores: 0–5 each (total 0–20).
-- PHS: three parameters only, scores 0–10, weights fixed 0.50/0.30/0.20, weighted sum 0–10.
-- ESI: three parameters, 0–10 each (sum 0–30).
-- RPM values 0.5–2.5 (1 baseline). Avoid placeholders—explain uncertainties briefly when needed.
-${guidanceBlock}Vessel: ${vesselName}`;
-}
-
 export const reassessWerps = onCall(
   { region: REGION, timeoutSeconds: 540, memory: "1GiB", secrets: [GEMINI_API_KEY] },
   async (req) => {
@@ -174,7 +110,7 @@ export const reassessWerps = onCall(
     // Run model
     let parsed;
     try {
-      const prompt = buildPrompt(vesselName, context, buildYear);
+      const prompt = getFollowupPrompt({ wreckName: vesselName });
       const model = createModel();
       const res = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
