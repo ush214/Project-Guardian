@@ -1,6 +1,7 @@
 // Firebase core
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 
+
 // Firebase Auth
 import {
   getAuth,
@@ -10,6 +11,15 @@ import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+const admin = require("firebase-admin");
+if (!admin.apps.length) admin.initializeApp();
+
+module.exports = {
+  // keep existing exports here…
+  ...require("./monitoring/storms"),
+  ...require("./monitoring/spills-runner")
+};
 
 // Firestore
 import {
