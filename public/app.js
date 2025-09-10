@@ -1,7 +1,6 @@
 // Firebase core
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 
-
 // Firebase Auth
 import {
   getAuth,
@@ -11,15 +10,6 @@ import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-
-const admin = require("firebase-admin");
-if (!admin.apps.length) admin.initializeApp();
-
-module.exports = {
-  // keep existing exports here…
-  ...require("./monitoring/storms"),
-  ...require("./monitoring/spills-runner")
-};
 
 // Firestore
 import {
@@ -653,10 +643,15 @@ function renderRadarGeneric(item) {
       ring(b.high, "Benchmark High", chartConfig.colors.high, chartConfig.colors.highBorder),
       ring(b.medium, "Benchmark Medium", chartConfig.colors.medium, chartConfig.colors.mediumBorder),
       ring(b.low, "Benchmark Low", chartConfig.colors.low, chartConfig.colors.lowBorder),
-      { label: "Wreck Risk", data: wreck, fill:true, backgroundColor: chartConfig.colors.wreck, borderColor: chartConfig.colors.wreckBorder, pointBackgroundColor: chartConfig.colors.wreckBorder, pointBorderColor:"#fff" }
+      { label: "Wreck Risk", data: wreck, fill:true, backgroundColor: chartConfig.colors.wreck, borderColor: chartConfig.colors.wreckBorder, pointBackgroundColor: chartConfig.colors.wreckBorder, pointRadius: 3, borderWidth: 2 }
     ]
   };
-  const options = { responsive:true, maintainAspectRatio:false, scales:{ r:{ beginAtZero:true, min:0, max, ticks:{ stepSize: Math.max(1, Math.round(max/5)) } } }, plugins:{ legend:{ display:true, position:"bottom" } }, animation:{ duration:250 } };
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: { r: { beginAtZero: true, min: 0, max, ticks: { stepSize: Math.max(1, Math.round(max/5)) } } },
+    plugins: { legend: { display: true, position: "bottom" } }
+  };
   if (radarChart) radarChart.destroy();
   radarChart = new Chart(ctx, { type:"radar", data, options });
   renderBenchLegend();
