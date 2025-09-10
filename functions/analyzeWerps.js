@@ -133,21 +133,10 @@ export const analyzeWerps = onCall(
   {
     region: REGION,
     timeoutSeconds: 540,
-    memory: "1GiB",
+    memory: "1GiB", 
     secrets: [GEMINI_API_KEY],
     invoker: "public",
-    cors: {
-      origin: [
-        "https://project-guardian-agent.web.app",
-        "https://project-guardian-agent.firebaseapp.com", 
-        "http://localhost:3000",
-        "http://localhost:5000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5000"
-      ],
-      methods: ["POST"],
-      allowedHeaders: ["Content-Type", "Authorization"]
-    }
+    cors: true
   },
   async (req) => {
     try {

@@ -34,11 +34,12 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
-let callable = { cacheReferenceMedia: null, cacheCollectionReferenceMedia: null, reassessWerps: null, repairWerps: null };
+let callable = { cacheReferenceMedia: null, cacheCollectionReferenceMedia: null, reassessWerps: null, repairWerps: null, analyzeWerps: null };
 try { callable.cacheReferenceMedia = httpsCallable(functions, "cacheReferenceMedia"); } catch {}
 try { callable.cacheCollectionReferenceMedia = httpsCallable(functions, "cacheCollectionReferenceMedia"); } catch {}
 try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
 try { callable.repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
+try { callable.analyzeWerps = httpsCallable(functions, "analyzeWerps"); } catch {}
 
 const READ_COLLECTIONS = [
   "artifacts/guardian/public/data/werpassessments",
