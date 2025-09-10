@@ -5,75 +5,30 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Project Guardian – WERP Reports</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
-
-  <!-- Fonts + Tailwind -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Leaflet -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
-
-  <!-- Chart.js -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- DOMPurify / Marked -->
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-
-  <!-- Monitoring styles -->
   <link rel="stylesheet" href="/monitoring.css" />
-
   <style>
     body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     #map { width: 100%; height: 460px; border-radius: 10px; }
-
     .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
     .pill.low { color:#065f46; background:#ecfdf5; border-color:#10b981; }
     .pill.medium { color:#92400e; background:#fffbeb; border-color:#f59e0b; }
     .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
     .pill.unknown { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
-
     .report-prose { max-width: none; font-size: 0.92rem; line-height: 1.45; color: #111827; }
-    .report-prose h1 { font-size: 1.25rem; }
-    .report-prose h2 { font-size: 1.1rem; }
-    .report-prose h3 { font-size: 1rem; }
-    .report-prose h4 { font-size: 0.95rem; }
-    .report-prose p,
-    .report-prose ul,
-    .report-prose ol,
-    .report-prose table,
-    .report-prose pre,
-    .report-prose blockquote { margin-top: 0.4rem; margin-bottom: 0.4rem; }
-
-    .report-prose table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: 0.86rem; }
-    .report-prose th, .report-prose td {
-      border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top;
-      word-break: break-word;
-    }
-    .report-prose th { background: #f9fafb; font-weight: 600; white-space: nowrap; }
-
+    .report-prose table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .report-prose th, .report-prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; vertical-align: top; }
     #reportScroll { max-height: 75vh; overflow-y: auto; padding-right: 4px; }
-    #reportScroll::-webkit-scrollbar { width: 8px; }
-    #reportScroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
-
-    /* Gallery tiles */
     .gallery-tile img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; }
     .gallery-tile .file-tile { height: 120px; display:flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#f8fafc; font-size:12px; color:#475569; padding:6px; text-align:center; }
-
-    /* Scrollable lists */
     .list-scroll { max-height: 420px; overflow-y: auto; padding-right: 4px; }
-    .list-scroll::-webkit-scrollbar { width: 8px; }
-    .list-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
   </style>
 </head>
 <body class="bg-slate-50 text-gray-900">
@@ -100,15 +55,14 @@
     <section id="signedOutContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 max-w-md mx-auto">
       <h2 class="text-xl font-semibold text-gray-800 mb-2 text-center">Welcome</h2>
       <p class="text-gray-600 mb-4 text-center">Sign in with your email and password to continue.</p>
-
       <div class="space-y-3">
         <label class="block">
           <span class="text-sm text-gray-700">Email</span>
-          <input id="emailInput" type="email" class="mt-1 w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="you@example.com" autocomplete="email" />
+          <input id="emailInput" type="email" class="mt-1 w-full p-3 border border-gray-300 rounded-md" placeholder="you@example.com" autocomplete="email" />
         </label>
         <label class="block">
           <span class="text-sm text-gray-700">Password</span>
-          <input id="passwordInput" type="password" class="mt-1 w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••••••" autocomplete="current-password" />
+          <input id="passwordInput" type="password" class="mt-1 w-full p-3 border border-gray-300 rounded-md" placeholder="••••••••" autocomplete="current-password" />
         </label>
         <p id="authMessage" class="text-sm h-5 text-center text-gray-500" aria-live="polite"></p>
         <div class="flex flex-col sm:flex-row gap-2 mt-2">
@@ -117,9 +71,7 @@
         </div>
         <button id="resetPasswordBtn" class="w-full text-sm text-indigo-700 hover:underline mt-1">Forgot password?</button>
       </div>
-      <p class="text-xs text-gray-500 mt-6 text-center">
-        New accounts start as read-only Users. Admin approval is required for Contributor access.
-      </p>
+      <p class="text-xs text-gray-500 mt-6 text-center">New accounts start as read-only Users. Admin approval is required for Contributor access.</p>
     </section>
 
     <div id="appContainer" class="hidden space-y-6">
@@ -133,7 +85,7 @@
           </div>
         </div>
         <div class="flex flex-col sm:flex-row gap-3">
-          <input type="text" id="vesselName" class="flex-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="e.g., USS Chevalier" />
+          <input type="text" id="vesselName" class="flex-1 p-3 border border-gray-300 rounded-md" placeholder="e.g., USS Chevalier" />
           <button id="analyzeBtn" class="bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-800 transition disabled:opacity-50 disabled:cursor-not-allowed">
             <span id="analyzeText">Analyze Wreck</span>
           </button>
@@ -141,7 +93,7 @@
         <p id="statusMessage" class="text-sm text-gray-500 mt-3 h-5" aria-live="polite"></p>
       </section>
 
-      <!-- Map (top) -->
+      <!-- Map -->
       <section class="bg-white border border-gray-200 rounded-xl shadow p-3">
         <div id="map"></div>
       </section>
@@ -158,7 +110,7 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <input id="searchBox" type="text" placeholder="Search vessel name..." class="w-64 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <input id="searchBox" type="text" placeholder="Search vessel name..." class="w-64 border border-gray-300 rounded-md px-3 py-2 text-sm">
             <button id="clearSearch" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm px-3 py-2 rounded">Clear</button>
           </div>
           <div class="text-xs text-gray-600">Showing: <span id="visibleCounts">0</span></div>
@@ -194,12 +146,6 @@
         </div>
       </section>
 
-      <!-- No data -->
-      <section id="noDataBanner" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-md p-3 hidden">
-        No assessments found at <span id="assessPathSpan" class="font-mono"></span> for appId
-        <span id="appIdSpan" class="font-mono"></span>. Check the collection name and casing in Firestore.
-      </section>
-
       <!-- Report -->
       <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden">
         <div class="flex items-center justify-between mb-3">
@@ -212,7 +158,6 @@
           </div>
         </div>
 
-        <!-- Top row: chart + galleries -->
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
           <div class="lg:col-span-3">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
@@ -224,36 +169,27 @@
 
           <div class="lg:col-span-2 space-y-4">
             <div>
-              <div class="flex items-center justify-between mb-2">
-                <h3 class="text-base font-bold text-gray-900">Uploaded Files</h3>
-              </div>
+              <h3 class="text-base font-bold mb-3 text-gray-900">Uploaded Files</h3>
               <div id="uploadGalleryGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
               <p id="uploadGalleryEmpty" class="text-xs text-gray-500 mt-1 hidden">No uploads yet.</p>
             </div>
             <div>
-              <div class="flex items-center justify-between mb-2">
-                <h3 class="text-base font-bold text-gray-900">Reference Media</h3>
-                <button id="cacheMediaBtn" class="hidden text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded">Cache reference media</button>
-              </div>
+              <h3 class="text-base font-bold mb-3 text-gray-900">Cached Media</h3>
               <div id="referenceMediaGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
-              <p id="referenceMediaEmpty" class="text-xs text-gray-500 mt-1 hidden">No reference media provided.</p>
+              <p id="referenceMediaEmpty" class="text-xs text-gray-500 mt-1 hidden">No cached media yet.</p>
             </div>
           </div>
         </div>
 
-        <!-- Report content -->
         <div id="reportScroll" class="mt-4">
           <div id="reportContent" class="report-prose"></div>
         </div>
 
-        <!-- Monitoring Panel -->
         <div id="monitoring-panel" class="mt-6"></div>
 
-        <!-- Phase 2 inputs -->
         <div id="phase2Section" class="mt-6 border-top pt-4">
           <h3 class="text-base font-semibold text-gray-800 mb-2">Phase 2: In-Situ Assessment (Recommended)</h3>
           <p class="text-xs text-gray-500 mb-3">Provide UT readings, ROV imagery, and diver logs to finalize classification.</p>
-
           <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
             <div class="lg:col-span-3">
               <label class="text-sm text-gray-700">In-situ notes</label>
@@ -276,7 +212,6 @@
           </div>
         </div>
 
-        <!-- Feedback -->
         <div id="feedbackSection" class="mt-6 border-t pt-4">
           <h3 class="text-base font-semibold text-gray-800 mb-2">Assessment Feedback (per report)</h3>
           <div class="flex flex-col gap-2">
@@ -295,9 +230,7 @@
     </div>
   </main>
 
-  <!-- App logic -->
   <script type="module" src="/app.js"></script>
-  <!-- Monitoring bootstrap -->
   <script type="module" src="/monitoring-init.js"></script>
 </body>
 </html>

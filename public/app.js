@@ -1,41 +1,18 @@
-// Firebase core
+// App — no-hotlinking: render only from Storage (phase2.assets). If none cached, show placeholder.
+// Automatically requests server-side caching on open (for contrib/admins), while Firestore trigger handles it for everyone.
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-
-// Firebase Auth
 import {
-  getAuth,
-  onAuthStateChanged,
-  signOut,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  sendPasswordResetEmail
+  getAuth, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-
-// Firestore
 import {
-  getFirestore,
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  serverTimestamp,
-  collection,
-  onSnapshot,
-  arrayUnion
+  getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection, onSnapshot, arrayUnion
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-// Firebase Storage
 import {
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-
-// Cloud Functions
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
-// App config
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",
@@ -46,7 +23,6 @@ const firebaseConfig = {
   measurementId: "G-NRLH3WSCQ9"
 };
 
-// Initialize
 const appId = "guardian";
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -54,22 +30,18 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
-// Optional callable functions (probe safely)
-const callable = { reassessWerps: null, repairWerps: null, cacheReferenceMedia: null };
+let callable = { cacheReferenceMedia: null, reassessWerps: null, repairWerps: null };
+try { callable.cacheReferenceMedia = httpsCallable(functions, "cacheReferenceMedia"); } catch {}
 try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
 try { callable.repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
-try { callable.cacheReferenceMedia = httpsCallable(functions, "cacheReferenceMedia"); } catch {}
 
-// READ from these collections
 const READ_COLLECTIONS = [
   "artifacts/guardian/public/data/werpassessments",
   "artifacts/guardian-agent-default/public/data/werpassessments"
 ];
-
-// New assessments created by Analyze will be written here
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
 
-// DOM refs
+// DOM
 const signedOutContainer = document.getElementById("signedOutContainer");
 const appContainer = document.getElementById("appContainer");
 const importDataBtn = document.getElementById("importDataBtn");
@@ -82,7 +54,6 @@ const analyzeBtn = document.getElementById("analyzeBtn");
 const analyzeText = document.getElementById("analyzeText");
 const vesselNameInput = document.getElementById("vesselName");
 const statusMessage = document.getElementById("statusMessage");
-const authMessage = document.getElementById("authMessage");
 
 const sevHigh = document.getElementById("sevHigh");
 const sevMedium = document.getElementById("sevMedium");
@@ -106,14 +77,11 @@ const reportTitle = document.getElementById("reportTitle");
 const reportContent = document.getElementById("reportContent");
 const benchLegend = document.getElementById("benchLegend");
 
-// Galleries
 const uploadGalleryGrid = document.getElementById("uploadGalleryGrid");
 const uploadGalleryEmpty = document.getElementById("uploadGalleryEmpty");
 const referenceMediaGrid = document.getElementById("referenceMediaGrid");
 const referenceMediaEmpty = document.getElementById("referenceMediaEmpty");
-const cacheMediaBtn = document.getElementById("cacheMediaBtn");
 
-// Phase 2 inputs
 const phase2Input = document.getElementById("phase2Input");
 const phase2Files = document.getElementById("phase2Files");
 const savePhase2Btn = document.getElementById("savePhase2Btn");
@@ -122,23 +90,15 @@ const uploadFilesBtn = document.getElementById("uploadFilesBtn");
 const phase2Status = document.getElementById("phase2Status");
 const uploadStatus = document.getElementById("uploadStatus");
 
-// Feedback
 const feedbackInput = document.getElementById("feedbackInput");
 const saveFeedbackBtn = document.getElementById("saveFeedbackBtn");
 const feedbackStatus = document.getElementById("feedbackStatus");
 const feedbackList = document.getElementById("feedbackList");
 
-// Export buttons
 const exportPdfBtn = document.getElementById("exportPdfBtn");
 const exportHtmlBtn = document.getElementById("exportHtmlBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
-
-// Path hints
-const assessPathSpan = document.getElementById("assessPathSpan");
-const appIdSpan = document.getElementById("appIdSpan");
-if (appIdSpan) appIdSpan.textContent = appId;
-if (assessPathSpan) assessPathSpan.textContent = READ_COLLECTIONS.join(" + ");
 
 // State
 let currentRole = "user";
@@ -152,7 +112,7 @@ let dataUnsubs = [];
 let allItems = [];
 let lastRenderedHtml = "";
 
-// PDF logos
+// Logos for PDF
 const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
 const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
@@ -172,7 +132,7 @@ let chartConfig = {
   }
 };
 
-// Utilities
+// Utils
 const escapeHtml = (s) => String(s || "").replace(/[&<>\"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
 const isFiniteNum = (n) => typeof n === "number" && Number.isFinite(n);
 const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
@@ -180,329 +140,24 @@ const getText = (v) => { if (v == null) return null; const s = String(v).trim();
 const deepGet = (obj, path) => path.split(".").reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj);
 const clamp = (v, min, max) => { const n = Number(v); if (!Number.isFinite(n)) return min; return Math.max(min, Math.min(max, n)); };
 
-// Sanitizers/formatters
-function sanitizeReportHtml(html) {
-  let safe = DOMPurify.sanitize(html || "", {
-    RETURN_TRUSTED_TYPE: false,
-    WHOLE_DOCUMENT: false,
-    USE_PROFILES: { html: true },
-    FORBID_TAGS: ["script","style","link"],
-    FORBID_ATTR: ["style","onerror","onload"]
-  });
-  safe = safe.replace(/<(p|div)>\s*(?:&nbsp;|\u00A0|\s|<br\s*\/?>)*<\/\1>/gi, "")
-             .replace(/(?:<br\s*\/?>\s*){3,}/gi, "<br><br>");
-  return safe;
-}
-function renderMarkdown(md) {
-  try { return sanitizeReportHtml(marked.parse(md || "")); }
-  catch { return `<p>${escapeHtml(md || "")}</p>`; }
-}
-function extractHtml(val) {
-  if (typeof val === "string") {
-    const s = val.trim();
-    if (s) return sanitizeReportHtml(`<p>${escapeHtml(s).replace(/\n{2,}/g,"\n\n").replace(/\n/g,"<br>")}</p>`);
-    return null;
-  }
-  if (val == null) return null;
-  if (typeof val === "object") {
-    const html = getText(val.html); if (html) return sanitizeReportHtml(html);
-    const md = getText(val.markdown ?? val.md); if (md) return renderMarkdown(md);
-    const text = getText(val.text ?? val.content ?? val.value ?? val.body ?? val.summary);
-    if (text) return sanitizeReportHtml(`<p>${escapeHtml(text).replace(/\n/g,"<br>")}</p>`);
-  }
-  if (Array.isArray(val)) {
-    const chunks = val.map(extractHtml).filter(Boolean);
-    if (chunks.length) return chunks.join("\n");
-  }
-  return null;
-}
-function extractPlain(val) {
-  if (typeof val === "string") return val.trim() || null;
-  if (val == null) return null;
-  if (typeof val === "object") {
-    const text = getText(val.text ?? val.content ?? val.value ?? val.summary ?? val.body); if (text) return text;
-    const md = getText(val.markdown ?? val.md); if (md) return md;
-    const html = getText(val.html); if (html) { const tmp = document.createElement("div"); tmp.innerHTML = sanitizeReportHtml(html); return tmp.textContent?.trim() || null; }
-  }
-  if (Array.isArray(val)) for (const v of val) { const t = extractPlain(v); if (t) return t; }
-  return null;
-}
-function readNumberByPaths(obj, paths) {
-  for (const p of paths) {
-    const v = deepGet(obj, p);
-    if (v == null) continue;
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (typeof v === "string") {
-      const m = v.match(/-?\d+(\.\d+)?/);
-      if (m) { const n = Number(m[0]); if (Number.isFinite(n)) return n; }
-    }
-  }
-  return null;
-}
+// Placeholder image
+const PLACEHOLDER_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="400" height="240">
+    <rect width="100%" height="100%" fill="#f1f5f9"/>
+    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">
+      Image unavailable
+    </text>
+  </svg>
+`);
 
-// Identify if a doc is a WERP assessment (exclude seismic-only docs)
-function isWerpAssessment(d) {
-  const t = String(d?.type ?? d?.recordType ?? d?.category ?? d?.kind ?? d?.meta?.type ?? "").toUpperCase();
-  const et = String(d?.eventType ?? d?.events?.type ?? "").toUpperCase();
-  const name = String(d?.name ?? d?.title ?? d?.id ?? "").toUpperCase();
-  const looksSeismic =
-    t === "SEISMIC_EVENT" ||
-    et === "SEISMIC_EVENT" ||
-    (t.includes("SEISMIC") && t.includes("EVENT")) ||
-    (et.includes("SEISMIC") && et.includes("EVENT")) ||
-    name.includes("SEISMIC_EVENT");
-  if (looksSeismic) return false;
-  return true;
-}
-
-// v2 unified WERP detection
-function hasUnifiedV2(item) {
-  return Array.isArray(item?.wcs?.parameters)
-      && Array.isArray(item?.phs?.parameters)
-      && Array.isArray(item?.esi?.parameters)
-      && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
-}
-
-// Strict RPM multiplier resolver (0.5..2.5)
-function resolveRPMMultiplier(item) {
-  const explicit = toNum(deepGet(item, "rpm.finalMultiplier")) ?? toNum(deepGet(item, "RPM.finalMultiplier"));
-  if (isFiniteNum(explicit)) return clamp(explicit, 0.5, 2.5);
-
-  const factors = deepGet(item, "rpm.factors") || deepGet(item, "RPM.factors") || deepGet(item, "rpm.parameters");
-  if (Array.isArray(factors) && factors.length) {
-    let base = 1.0;
-    for (const f of factors) {
-      const name = String(f?.name ?? f?.factor ?? "").toLowerCase();
-      let v = toNum(f?.value); if (!isFiniteNum(v)) continue;
-      if (name.includes("chemical")) v = Math.min(v, 1.2);
-      else if (name.includes("thermal") || name.includes("warming") || name.includes("temperature")) v = Math.min(v, 1.4);
-      else if (name.includes("physical") || name.includes("seismic") || name.includes("storm") || name.includes("current")) v = Math.min(v, 1.4);
-      else v = Math.min(v, 1.4);
-      base += Math.max(v - 1.0, 0);
-    }
-    return clamp(base, 0.5, 2.5);
-  }
-
-  const generic = toNum(deepGet(item, "rpm")) ?? toNum(deepGet(item, "RPM")) ?? toNum(deepGet(item, "scores.RPM"));
-  if (isFiniteNum(generic)) return clamp(generic, 0.5, 2.5);
-  return 1.0;
-}
-
-// WCS normalizer
-function normalizeWcsParameters(rawParams = []) {
-  const params = (Array.isArray(rawParams) ? rawParams : [])
-    .map(p => ({
-      name: String(p?.name ?? p?.parameter ?? "").trim(),
-      rationale: String(p?.rationale ?? "").trim(),
-      score: Number(p?.score)
-    }))
-    .filter(p => (p.name || p.rationale) && Number.isFinite(p.score));
-
-  const rawScores = params.map(p => p.score);
-  const maxScore = rawScores.length ? Math.max(...rawScores) : 0;
-  const scale = maxScore > 5 && maxScore <= 10 ? 10 : 5;
-  const scaleNote = maxScore > 5;
-
-  const rx = {
-    age: [
-      /\bage\b/i, /\byear/i, /\bbuilt\b/i, /\blaunched\b/i, /\bcommission/i, /\bdecommission/i,
-      /since\s*sink/i, /\bsubmerged\b/i, /\bdecade/i, /\bcentur/i, /\bmodern\b/i
-    ],
-    vessel: [
-      /\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i,
-      /\bdisplacement\b/i, /\blength\b/i, /\bbeam\b/i, /\bdraft\b/i, /\bauxiliary\b/i, /\boiler\b/i,
-      /\btanker\b/i, /\bdestroyer\b/i, /\bcruiser\b/i, /\bmerchant\b/i, /\bsubmarine\b/i, /\btransport\b/i
-    ],
-    trauma: [
-      /\btorpedo/i, /\btype\s*93\b/i, /\bdepth\s*charge/i, /\bmine\b/i, /\bbomb/i, /\bexplosion/i,
-      /\bdetonat/i, /\bshell(hit|ing)?\b/i, /\bgunfire\b/i, /\bcollision\b/i, /\bgrounding\b/i,
-      /\bscuttl/i, /\bsinking\b/i, /\bbreach\b/i, /\bcatastroph/i
-    ],
-    integrity: [
-      /\bstructur/i, /\bintegrit/i, /\bintact\b/i, /\bcollaps/i, /\bfragment/i, /\bbroken\b/i,
-      /\bruptur/i, /\bbuckl/i, /\bcondition\b/i, /\bhull\b/i, /\bsection/i, /\bsevered\b/i
-    ]
-  };
-
-  function matchScore(p, patterns) {
-    const name = p.name || "";
-    const rat = p.rationale || "";
-    let score = 0;
-    for (const pat of (Array.isArray(patterns) ? patterns : [patterns])) {
-      if (pat.test(name)) score += 3;
-      if (pat.test(rat)) score += 1;
-    }
-    return score;
-  }
-  function bestMatch(patterns) {
-    let best = null;
-    for (const p of params) {
-      const s = matchScore(p, patterns);
-      if (s > 0 && (!best || s > best.s)) best = { p, s };
-    }
-    return best?.p;
-  }
-
-  const picks = {
-    age: bestMatch(rx.age),
-    vessel: bestMatch(rx.vessel),
-    trauma: bestMatch(rx.trauma),
-    integrity: bestMatch(rx.integrity)
-  };
-
-  const norm = (v) => {
-    if (!Number.isFinite(v)) return 0;
-    if (scale === 10) return Math.max(0, Math.min(5, v / 2));
-    return Math.max(0, Math.min(5, v));
-  };
-
-  let traumaNormalized;
-  let traumaRationale = "Not provided.";
-  if (picks.trauma) {
-    traumaNormalized = norm(picks.trauma.score);
-    traumaRationale = picks.trauma.rationale || "Not provided.";
-  } else if (picks.integrity) {
-    const rat = picks.integrity.rationale || "";
-    const name = picks.integrity.name || "";
-    const looksTraumatic = rx.trauma.some(re => re.test(rat) || re.test(name));
-    traumaNormalized = looksTraumatic ? 5 : 0;
-    traumaRationale = looksTraumatic ? (rat || "Derived from integrity rationale.") : "Not provided.";
-  } else {
-    traumaNormalized = 0;
-  }
-
-  const rows = [
-    { title: "Age", rationale: picks.age?.rationale || "Not provided.", normalized: norm(picks.age?.score ?? 0) },
-    { title: "Vessel Type/Size", rationale: picks.vessel?.rationale || "Not provided.", normalized: norm(picks.vessel?.score ?? 0) },
-    { title: "Sinking Trauma", rationale: traumaRationale, normalized: traumaNormalized },
-    { title: "Current Structural Integrity", rationale: picks.integrity?.rationale || "Not provided.", normalized: norm(picks.integrity?.score ?? 0) }
-  ];
-
-  const total = rows.reduce((s, r) => s + (Number(r.normalized) || 0), 0);
-  return { rows, total: Number(total.toFixed(2)), scaleNote };
-}
-
-// Normalize PHS weights
-function normalizePhsWeights(params = []) {
-  const wcsNameRx = /(structur|integrit|intact|collapse|fragment|hull|sinking|trauma|age|year|built|commission|vessel\s*(type|size)|tonnage|displacement|class)/i;
-  const allowedPhsRx = /(fuel|bunker|oil|volume|type|munitions|ordnance|uxo|pop|pcb|hazard|asbestos|chem|chemical cargo|heavy metal|paint|anti[- ]?foul|leach|leaching|hfo|diesel)/i;
-
-  const items = (Array.isArray(params) ? params : [])
-    .map((p) => ({
-      name: String(p?.name ?? p?.parameter ?? '').trim(),
-      rationale: String(p?.rationale ?? '').trim(),
-      scoreRaw: Number(p?.score),
-      weightRaw: Number(p?.weight)
-    }))
-    .filter(i => i.name && (allowedPhsRx.test(i.name) || !wcsNameRx.test(i.name)));
-
-  const weights = items.map(i => Number.isFinite(i.weightRaw) ? i.weightRaw : 0);
-  const maxW = weights.length ? Math.max(...weights) : 0;
-  const sumW = weights.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
-
-  let asPercent = false;
-  if (maxW > 1) asPercent = true;
-  else if (sumW > 1.5) asPercent = true;
-  else if (sumW > 90 && sumW < 110) asPercent = true;
-
-  let fracs = items.map(i => {
-    const w = Number.isFinite(i.weightRaw) ? i.weightRaw : 0;
-    return asPercent ? (w / 100) : w;
-  });
-
-  let fracSum = fracs.reduce((a, b) => a + b, 0);
-  let renormalized = false;
-  if (fracSum > 0 && Math.abs(fracSum - 1) > 0.01) {
-    fracs = fracs.map(w => w / fracSum);
-    renormalized = true;
-    fracSum = 1;
-  }
-
-  const rows = items.map((i, idx) => {
-    const weightFrac = fracs[idx] || 0;
-    const weightPct = weightFrac * 100;
-    const score = Math.max(0, Math.min(10, Number(i.scoreRaw) || 0));
-    const weighted = score * weightFrac;
-    return { name: i.name, rationale: i.rationale, weightFrac, weightPct, score, weighted };
-  });
-
-  const totalWeighted = rows.reduce((s, r) => s + r.weighted, 0);
-  return { rows, totalWeighted: Number(totalWeighted.toFixed(2)), asPercent, renormalized };
-}
-
-// v2 totals
-function v2Totals(item) {
-  const wNorm = normalizeWcsParameters(item?.wcs?.parameters || []);
-  const wcs = wNorm.total;
-  const p = normalizePhsWeights(item?.phs?.parameters || []);
-  const phs = Math.max(0, Math.min(10, p.totalWeighted));
-  const eParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
-  const esi = eParams.reduce((s, par) => s + Math.max(0, Math.min(10, Number(par?.score) || 0)), 0);
-  const esiMax = Number(item?.esi?.maxScore) || (eParams.length ? eParams.length * 10 : 30);
-  const rpm = resolveRPMMultiplier(item);
-  return {
-    wcs, phs, esi, esiMax, rpm,
-    wcsScaleNote: wNorm.scaleNote,
-    wcsRows: wNorm.rows, phsRows: p.rows, phsAsPercent: p.asPercent, phsRenormalized: p.renormalized
-  };
-}
-
-// Severity calc
-function computeFormulaSeverity(item) {
-  if (hasUnifiedV2(item)) {
-    const v = v2Totals(item);
-    return (v.wcs + v.phs + (v.esi / 3)) * v.rpm;
-  }
-  const W = readNumberByPaths(item, ["scores.WCS","wcs","WCS","phase1.screening.WCS","phase2.scores.WCS"]) ?? 0;
-  const P = readNumberByPaths(item, ["scores.PHS","phs","PHS","phase1.screening.PHS","phase2.scores.PHS"]) ?? 0;
-  const E = readNumberByPaths(item, ["scores.ESI","esi","ESI","phase1.screening.ESI","phase2.scores.ESI"]) ?? 0;
-  const R = resolveRPMMultiplier(item);
-  return (W + P + (E / 3)) * R;
-}
-function bandFromValue(val) { const v = Number(val); if (!Number.isFinite(v)) return "unknown"; if (v >= 7.5) return "high"; if (v >= 4) return "medium"; return "low"; }
-function getSeverityValue(item) {
-  const direct = readNumberByPaths(item, ["severity.value","severityValue","severity_score","severityScore","risk.severity","risk.score"]);
-  if (direct !== null) return direct;
-  return computeFormulaSeverity(item);
-}
-
-// Load chart config (optional)
-async function loadChartConfig() {
-  const paths = [
-    `artifacts/${appId}/public/config/werpChart`,
-    `artifacts/${appId}/public/config/werpRadarBenchmarks`,
-    `artifacts/${appId}/public/config/werp`
-  ];
-  for (const p of paths) {
-    try {
-      const snap = await getDoc(doc(db, p));
-      if (snap.exists()) {
-        const cfg = snap.data() || {};
-        if (typeof cfg.scaleMax === "number") chartConfig.scaleMax = cfg.scaleMax;
-        if (cfg.benchmarks && typeof cfg.benchmarks === "object") {
-          chartConfig.benchmarks = {
-            high: Number(cfg.benchmarks.high ?? chartConfig.benchmarks.high),
-            medium: Number(cfg.benchmarks.medium ?? chartConfig.benchmarks.medium),
-            low: Number(cfg.benchmarks.low ?? chartConfig.benchmarks.low)
-          };
-        }
-        if (cfg.colors && typeof cfg.colors === "object") chartConfig.colors = { ...chartConfig.colors, ...cfg.colors };
-        break;
-      }
-    } catch {}
-  }
-}
-
-// Map
+// Leaflet map
 const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
 function initMap() {
   if (map) return;
   map = L.map("map").setView([10, 150], 3);
   L.tileLayer("https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}", {
     id: "mapbox/streets-v12",
-    tileSize: 512,
-    zoomOffset: -1,
-    accessToken: MAPBOX_TOKEN,
+    tileSize: 512, zoomOffset: -1, accessToken: MAPBOX_TOKEN,
     attribution: "&copy; OpenStreetMap &copy; Mapbox"
   }).addTo(map);
 }
@@ -515,57 +170,12 @@ function markerIconFor(band) {
   });
 }
 
-// Host preference for reliable thumbnails
-const HOST_PREFERENCE = [
-  "oceanexplorer.noaa.gov",
-  "upload.wikimedia.org",
-  "commons.wikimedia.org",
-  "wikipedia.org",
-  "noaa.gov",
-  "sanctuaries.noaa.gov"
-];
-const HOST_BLOCKLIST = [
-  "nmssanctuaries.blob.core.windows.net"
-];
-function hostFromUrl(u) { try { return new URL(String(u)).hostname.replace(/^www\./, ""); } catch { return ""; } }
-function sortByHostPreference(urls) {
-  return urls.slice().sort((a, b) => {
-    const ha = hostFromUrl(a), hb = hostFromUrl(b);
-    const ia = HOST_BLOCKLIST.includes(ha) ? 999 : Math.max(HOST_PREFERENCE.indexOf(ha), 50);
-    const ib = HOST_BLOCKLIST.includes(hb) ? 999 : Math.max(HOST_PREFERENCE.indexOf(hb), 50);
-    return ia - ib;
-  });
-}
-
-// Choose a thumbnail image for the marker popup
+// Marker uses ONLY Storage assets (no hotlinking)
 function getMarkerImageUrl(item) {
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
-  const urls = [];
-
-  // Uploaded assets (includes cached reference)
   const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
-  for (const a of assets) {
-    const n = a?.name || a?.path || "";
-    if (a?.url && webExt.test(String(n))) urls.push(a.url);
-  }
-
-  // Reference media (representative first)
-  const mediaImages = Array.isArray(item?.media?.images) ? item.media.images : [];
-  const rep = mediaImages.filter(m => m?.url && m?.representative);
-  const nonrep = mediaImages.filter(m => m?.url && !m?.representative);
-  for (const m of rep) if (webExt.test(String(m.url))) urls.push(m.url);
-  for (const m of nonrep) if (webExt.test(String(m.url))) urls.push(m.url);
-
-  // Fallback top-level fields
-  const candidates = [
-    item?.thumbnailUrl, item?.imageUrl, item?.coverImage, item?.coverPhoto,
-    item?.image, item?.photo, item?.thumbnail, item?.bannerImage
-  ].filter(Boolean);
-  for (const u of candidates) { try { const s = String(u); if (webExt.test(s)) urls.push(s); } catch {} }
-
-  if (!urls.length) return null;
-  const preferred = sortByHostPreference(urls)[0];
-  return preferred || null;
+  const img = assets.find(a => a?.url && webExt.test(String(a?.name || a?.path || "")));
+  return img?.url || null;
 }
 
 function upsertMarker(item) {
@@ -583,7 +193,7 @@ function upsertMarker(item) {
 
   const imgUrl = getMarkerImageUrl(item);
   const imgHtml = imgUrl
-    ? `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" style="width:220px;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" loading="lazy"></div>`
+    ? `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" loading="lazy"></div>`
     : "";
 
   const popupHtml = `
@@ -604,106 +214,144 @@ function upsertMarker(item) {
 }
 function clearMarkers() { for (const m of markers.values()) { try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-// Radar chart helpers
-function getAxisScores(item) {
-  let w, p, e;
-  if (hasUnifiedV2(item)) {
-    const v = v2Totals(item);
-    w = v.wcs; p = v.phs; e = v.esi;
-  } else {
-    w = readNumberByPaths(item, ["wcs","scores.WCS","WCS","phase1.screening.WCS","phase2.scores.WCS"]) ?? 0;
-    p = readNumberByPaths(item, ["phs","scores.PHS","PHS","phase1.screening.PHS","phase2.scores.PHS"]) ?? 0;
-    e = readNumberByPaths(item, ["esi","scores.ESI","ESI","phase1.screening.ESI","phase2.scores.ESI"]) ?? 0;
+// Scoring helpers
+function readNumberByPaths(obj, paths) {
+  for (const p of paths) {
+    const v = deepGet(obj, p);
+    if (v == null) continue;
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const m = v.match(/-?\d+(\.\d+)?/);
+      if (m) { const n = Number(m[0]); if (Number.isFinite(n)) return n; }
+    }
   }
-  const rpm = resolveRPMMultiplier(item);
-  const max = chartConfig.scaleMax || 10;
-  const rpmScaled = ((rpm - 0.5) / 2.0) * max;
-  const clampAxis = (v) => Math.max(0, Math.min(max, Number(v) || 0));
-  return [clampAxis(w), clampAxis(p), clampAxis(e), clampAxis(rpmScaled)];
+  return null;
 }
-function renderBenchLegend() {
-  const b = chartConfig.benchmarks;
-  const el = benchLegend; if (!el) return;
-  el.innerHTML = `
-    <span style="color:${chartConfig.colors.highBorder}">High</span>: ${b.high} &nbsp;|&nbsp;
-    <span style="color:${chartConfig.colors.mediumBorder}">Medium</span>: ${b.medium} &nbsp;|&nbsp;
-    <span style="color:${chartConfig.colors.lowBorder}">Low</span>: ${b.low}
-  `;
+function hasUnifiedV2(item) {
+  return Array.isArray(item?.wcs?.parameters)
+      && Array.isArray(item?.phs?.parameters)
+      && Array.isArray(item?.esi?.parameters)
+      && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
 }
-function renderRadarGeneric(item) {
-  const ctx = document.getElementById("werSpiderChart")?.getContext("2d"); if (!ctx) return;
-  const labels = ["WCS","PHS","ESI","RPM"];
-  const wreck = getAxisScores(item);
-  const max = chartConfig.scaleMax || 10;
-  const b = chartConfig.benchmarks;
-  const ring = (val, label, bg, border) => ({ label, data:[val,val,val,val], fill:true, backgroundColor:bg, borderColor:border, pointRadius:0, borderWidth:1 });
-  const data = {
-    labels,
-    datasets: [
-      ring(b.high, "Benchmark High", chartConfig.colors.high, chartConfig.colors.highBorder),
-      ring(b.medium, "Benchmark Medium", chartConfig.colors.medium, chartConfig.colors.mediumBorder),
-      ring(b.low, "Benchmark Low", chartConfig.colors.low, chartConfig.colors.lowBorder),
-      { label: "Wreck Risk", data: wreck, fill:true, backgroundColor: chartConfig.colors.wreck, borderColor: chartConfig.colors.wreckBorder, pointBackgroundColor: chartConfig.colors.wreckBorder, pointRadius: 3, borderWidth: 2 }
-    ]
+function resolveRPMMultiplier(item) {
+  const toNum = (v)=>{ const n=Number(v); return Number.isFinite(n)?n:null; };
+  const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+  const explicit = toNum(deepGet(item, "rpm.finalMultiplier")) ?? toNum(deepGet(item, "RPM.finalMultiplier"));
+  if (Number.isFinite(explicit)) return clamp(explicit, 0.5, 2.5);
+  const factors = deepGet(item, "rpm.factors") || deepGet(item, "RPM.factors") || deepGet(item, "rpm.parameters");
+  if (Array.isArray(factors) && factors.length) {
+    let base = 1.0;
+    for (const f of factors) {
+      const name = String(f?.name ?? f?.factor ?? "").toLowerCase();
+      let v = toNum(f?.value); if (!Number.isFinite(v)) continue;
+      if (name.includes("chemical")) v = Math.min(v, 1.2);
+      else if (name.includes("thermal") || name.includes("warming") || name.includes("temperature")) v = Math.min(v, 1.4);
+      else if (name.includes("physical") || name.includes("seismic") || name.includes("storm") || name.includes("current")) v = Math.min(v, 1.4);
+      else v = Math.min(v, 1.4);
+      base += Math.max(v - 1.0, 0);
+    }
+    return clamp(base, 0.5, 2.5);
+  }
+  const generic = toNum(deepGet(item, "rpm")) ?? toNum(deepGet(item, "RPM")) ?? toNum(deepGet(item, "scores.RPM"));
+  if (Number.isFinite(generic)) return clamp(generic, 0.5, 2.5);
+  return 1.0;
+}
+function normalizeWcsParameters(rawParams = []) {
+  const params = (Array.isArray(rawParams) ? rawParams : [])
+    .map(p => ({ name: String(p?.name ?? p?.parameter ?? "").trim(), rationale: String(p?.rationale ?? "").trim(), score: Number(p?.score) }))
+    .filter(p => (p.name || p.rationale) && Number.isFinite(p.score));
+  const rawScores = params.map(p => p.score);
+  const maxScore = rawScores.length ? Math.max(...rawScores) : 0;
+  const scale = maxScore > 5 && maxScore <= 10 ? 10 : 5;
+  const scaleNote = maxScore > 5;
+  const rx = {
+    age: [/\bage\b/i, /\byear/i, /\bbuilt\b/i, /\blaunched\b/i, /\bcommission/i, /\bdecommission/i, /since\s*sink/i, /\bsubmerged\b/i, /\bdecade/i, /\bcentur/i, /\bmodern\b/i],
+    vessel: [/\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i, /\bdisplacement\b/i, /\blength\b/i, /\bbeam\b/i, /\bdraft\b/i, /\bauxiliary\b/i, /\boiler\b/i, /\btanker\b/i, /\bdestroyer\b/i, /\bcruiser\b/i, /\bmerchant\b/i, /\bsubmarine\b/i, /\btransport\b/i],
+    trauma: [/\btorpedo/i, /\btype\s*93\b/i, /\bdepth\s*charge/i, /\bmine\b/i, /\bbomb/i, /\bexplosion/i, /\bdetonat/i, /\bshell(hit|ing)?\b/i, /\bgunfire\b/i, /\bcollision\b/i, /\bgrounding\b/i, /\bscuttl/i, /\bsinking\b/i, /\bbreach\b/i, /\bcatastroph/i],
+    integrity: [/\bstructur/i, /\bintegrit/i, /\bintact\b/i, /\bcollaps/i, /\bfragment/i, /\bbroken\b/i, /\bruptur/i, /\bbuckl/i, /\bcondition\b/i, /\bhull\b/i, /\bsection/i, /\bsevered\b/i]
   };
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: { r: { beginAtZero: true, min: 0, max, ticks: { stepSize: Math.max(1, Math.round(max/5)) } } },
-    plugins: { legend: { display: true, position: "bottom" } }
-  };
-  if (radarChart) radarChart.destroy();
-  radarChart = new Chart(ctx, { type:"radar", data, options });
-  renderBenchLegend();
+  function matchScore(p, patterns) {
+    const name = p.name || "", rat = p.rationale || ""; let s = 0;
+    for (const re of (Array.isArray(patterns) ? patterns : [patterns])) { if (re.test(name)) s += 3; if (re.test(rat)) s += 1; }
+    return s;
+  }
+  function best(patterns) { let best = null; for (const p of params) { const s = matchScore(p, patterns); if (s > 0 && (!best || s > best.s)) best = { p, s }; } return best?.p; }
+  const picks = { age: best(rx.age), vessel: best(rx.vessel), trauma: best(rx.trauma), integrity: best(rx.integrity) };
+  const norm = (v) => !Number.isFinite(v) ? 0 : scale === 10 ? Math.max(0, Math.min(5, v/2)) : Math.max(0, Math.min(5, v));
+  let traumaNormalized, traumaRationale = "Not provided.";
+  if (picks.trauma) { traumaNormalized = norm(picks.trauma.score); traumaRationale = picks.trauma.rationale || "Not provided."; }
+  else if (picks.integrity) {
+    const rat = picks.integrity.rationale || "", name = picks.integrity.name || "";
+    const looks = rx.trauma.some(re => re.test(rat) || re.test(name));
+    traumaNormalized = looks ? 5 : 0; traumaRationale = looks ? (rat || "Derived from integrity rationale.") : "Not provided.";
+  } else traumaNormalized = 0;
+  const rows = [
+    { title: "Age", rationale: picks.age?.rationale || "Not provided.", normalized: norm(picks.age?.score ?? 0) },
+    { title: "Vessel Type/Size", rationale: picks.vessel?.rationale || "Not provided.", normalized: norm(picks.vessel?.score ?? 0) },
+    { title: "Sinking Trauma", rationale: traumaRationale, normalized: traumaNormalized },
+    { title: "Current Structural Integrity", rationale: picks.integrity?.rationale || "Not provided.", normalized: norm(picks.integrity?.score ?? 0) }
+  ];
+  const total = rows.reduce((s, r) => s + (Number(r.normalized) || 0), 0);
+  return { rows, total: Number(total.toFixed(2)), scaleNote };
 }
-
-// v2 radar
-function renderRadarV2(item) {
-  const ctx = document.getElementById("werSpiderChart")?.getContext("2d"); if (!ctx) return;
-  const v = v2Totals(item);
-  const wcs20 = Math.max(0, Math.min(20, v.wcs));
-  const phs20 = Math.max(0, Math.min(20, (v.phs / 10) * 20));
-  const esi20 = Math.max(0, Math.min(20, (v.esi / (v.esiMax || 30)) * 20));
-  const rpm20 = Math.max(0, Math.min(20, ((Math.min(Math.max(v.rpm, 0.5), 2.5) - 0.5) / 2.0) * 20));
-  const profile = [wcs20, phs20, esi20, rpm20];
-  const lowCap = [6,6,6,6], medCap = [12,12,12,12], highCap = [20,20,20,20];
-
-  if (radarChart) radarChart.destroy();
-  radarChart = new Chart(ctx, {
-    type: "radar",
-    data: {
-      labels: ["WCS","PHS","ESI","RPM"],
-      datasets: [
-        { label:"Low benchmark", data: lowCap, backgroundColor:"rgba(16,185,129,0.18)", borderColor:"rgba(16,185,129,0.45)", pointRadius:0, order:1 },
-        { label:"Medium benchmark", data: medCap, backgroundColor:"rgba(245,158,11,0.14)", borderColor:"rgba(245,158,11,0.45)", pointRadius:0, fill:"-1", order:2 },
-        { label:"High benchmark", data: highCap, backgroundColor:"rgba(239,68,68,0.12)", borderColor:"rgba(239,68,68,0.45)", pointRadius:0, fill:"-1", order:3 },
-        { label:"Risk Profile", data: profile, backgroundColor:"rgba(30,64,175,0.22)", borderColor:"rgba(30,64,175,1)", pointBackgroundColor:"rgba(30,64,175,1)", order:4 }
-      ]
-    },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, scales:{ r:{ suggestedMin:0, suggestedMax:20, ticks:{ stepSize:4 } } } }
+function normalizePhsWeights(params = []) {
+  const wcsNameRx = /(structur|integrit|intact|collapse|fragment|hull|sinking|trauma|age|year|built|commission|vessel\s*(type|size)|tonnage|displacement|class)/i;
+  const allowedPhsRx = /(fuel|bunker|oil|volume|type|munitions|ordnance|uxo|pop|pcb|hazard|asbestos|chem|chemical cargo|heavy metal|paint|anti[- ]?foul|leach|leaching|hfo|diesel)/i;
+  const items = (Array.isArray(params) ? params : [])
+    .map((p) => ({ name: String(p?.name ?? p?.parameter ?? '').trim(), rationale: String(p?.rationale ?? '').trim(), scoreRaw: Number(p?.score), weightRaw: Number(p?.weight) }))
+    .filter(i => i.name && (allowedPhsRx.test(i.name) || !wcsNameRx.test(i.name)));
+  const weights = items.map(i => Number.isFinite(i.weightRaw) ? i.weightRaw : 0);
+  const maxW = weights.length ? Math.max(...weights) : 0;
+  const sumW = weights.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+  let asPercent = false;
+  if (maxW > 1 || sumW > 1.5 || (sumW > 90 && sumW < 110)) asPercent = true;
+  let fracs = items.map(i => {
+    const w = Number.isFinite(i.weightRaw) ? i.weightRaw : 0;
+    return asPercent ? (w / 100) : w;
   });
-  renderBenchLegend();
+  let fracSum = fracs.reduce((a, b) => a + b, 0), renormalized = false;
+  if (fracSum > 0 && Math.abs(fracSum - 1) > 0.01) { fracs = fracs.map(w => w / fracSum); renormalized = true; fracSum = 1; }
+  const rows = items.map((i, idx) => {
+    const weightFrac = fracs[idx] || 0, weightPct = weightFrac * 100;
+    const score = Math.max(0, Math.min(10, Number(i.scoreRaw) || 0));
+    const weighted = score * weightFrac;
+    return { name: i.name, rationale: i.rationale, weightFrac, weightPct, score, weighted };
+  });
+  const totalWeighted = rows.reduce((s, r) => s + r.weighted, 0);
+  return { rows, totalWeighted: Number(totalWeighted.toFixed(2)), asPercent, renormalized };
+}
+function v2Totals(item) {
+  const wNorm = normalizeWcsParameters(item?.wcs?.parameters || []);
+  const wcs = wNorm.total;
+  const p = normalizePhsWeights(item?.phs?.parameters || []);
+  const phs = Math.max(0, Math.min(10, p.totalWeighted));
+  const eParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
+  const esi = eParams.reduce((s, par) => s + Math.max(0, Math.min(10, Number(par?.score) || 0)), 0);
+  const esiMax = Number(item?.esi?.maxScore) || (eParams.length ? eParams.length * 10 : 30);
+  const rpm = resolveRPMMultiplier(item);
+  return { wcs, phs, esi, esiMax, rpm, wcsRows: wNorm.rows, phsRows: p.rows, phsRenormalized: p.renormalized, wcsScaleNote: wNorm.scaleNote };
+}
+function computeFormulaSeverity(item) {
+  if (hasUnifiedV2(item)) { const v = v2Totals(item); return (v.wcs + v.phs + (v.esi / 3)) * v.rpm; }
+  const W = readNumberByPaths(item, ["scores.WCS","wcs","WCS","phase1.screening.WCS","phase2.scores.WCS"]) ?? 0;
+  const P = readNumberByPaths(item, ["scores.PHS","phs","PHS","phase1.screening.PHS","phase2.scores.PHS"]) ?? 0;
+  const E = readNumberByPaths(item, ["scores.ESI","esi","ESI","phase1.screening.ESI","phase2.scores.ESI"]) ?? 0;
+  const R = resolveRPMMultiplier(item);
+  return (W + P + (E / 3)) * R;
+}
+function bandFromValue(val) { const v = Number(val); if (!Number.isFinite(v)) return "unknown"; if (v >= 7.5) return "high"; if (v >= 4) return "medium"; return "low"; }
+function getSeverityValue(item) {
+  const direct = readNumberByPaths(item, ["severity.value","severityValue","severity_score","severityScore","risk.severity","risk.score"]);
+  if (direct !== null) return direct;
+  return computeFormulaSeverity(item);
 }
 
-// Overview builder
+// Overview etc.
 const fmt = {
   int: (v) => Number.isFinite(Number(v)) ? String(Number(v)) : "",
-  date: (s) => {
-    if (!s && s !== 0) return "";
-    try {
-      const d = new Date(s);
-      if (!isNaN(d)) return d.toISOString().slice(0,10);
-    } catch {}
-    return String(s);
-  },
-  coord: (lat, lng) => {
-    const a = Number(lat), b = Number(lng);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return "";
-    const f = (n) => n.toFixed(4);
-    return `${f(a)}°, ${f(b)}°`;
-  }
+  date: (s) => { if (!s && s !== 0) return ""; try { const d = new Date(s); if (!isNaN(d)) return d.toISOString().slice(0,10); } catch {} return String(s); },
+  coord: (lat, lng) => { const a = Number(lat), b = Number(lng); if (!Number.isFinite(a) || !Number.isFinite(b)) return ""; return `${a.toFixed(4)}°, ${b.toFixed(4)}°`; }
 };
-
 function buildOverviewHtml(item) {
   const h = item?.historical || {};
   const age = h?.ageAndSinking || {};
@@ -724,49 +372,26 @@ function buildOverviewHtml(item) {
     ["Location", getText(loc?.description)]
   ].filter(([_, v]) => !!v);
   if (!rows.length) return "";
-  const trs = rows.map(([k, v]) =>
-    `<tr><th style="white-space:nowrap">${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`
-  ).join("");
-  return `
-    <section>
-      <h3>Vessel Overview</h3>
-      <table>
-        <tbody>${trs}</tbody>
-      </table>
-    </section>
-  `;
+  const trs = rows.map(([k, v]) => `<tr><th style="white-space:nowrap">${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`).join("");
+  return `<section><h3>Vessel Overview</h3><table><tbody>${trs}</tbody></table></section>`;
 }
-
 function buildSourcesHtml(item) {
   const src = Array.isArray(item?.sources) ? item.sources : [];
   if (!src.length) return "";
   const links = src.map(u => {
-    const t = String(u || "").trim();
-    const safe = escapeHtml(t);
+    const t = String(u || "").trim(); const safe = escapeHtml(t);
     return t ? `<li><a href="${safe}" target="_blank" rel="noopener">${safe}</a></li>` : "";
   }).filter(Boolean).join("");
   if (!links) return "";
-  return `
-    <section>
-      <h3>Sources</h3>
-      <ul class="list-disc ml-5">${links}</ul>
-    </section>
-  `;
+  return `<section><h3>Sources</h3><ul class="list-disc ml-5">${links}</ul></section>`;
 }
-
 function buildAssumptionsHtml(item) {
   const arr = Array.isArray(item?.assumptions) ? item.assumptions : [];
   if (!arr.length) return "";
   const lis = arr.map(s => `<li>${escapeHtml(String(s || ""))}</li>`).join("");
   if (!lis) return "";
-  return `
-    <section>
-      <h3>Assumptions</h3>
-      <ul class="list-disc ml-5">${lis}</ul>
-    </section>
-  `;
+  return `<section><h3>Assumptions</h3><ul class="list-disc ml-5">${lis}</ul></section>`;
 }
-
 function buildConfidenceHtml(item) {
   const c = item?.confidence || {};
   const parts = [];
@@ -774,15 +399,8 @@ function buildConfidenceHtml(item) {
   if (getText(c?.confidenceLabel)) parts.push(`<div><strong>Label:</strong> ${escapeHtml(c.confidenceLabel)}</div>`);
   if (getText(c?.basis)) parts.push(`<div><strong>Basis:</strong> ${escapeHtml(c.basis)}</div>`);
   if (!parts.length) return "";
-  return `
-    <section>
-      <h3>Confidence</h3>
-      <div class="text-sm space-y-1">${parts.join("")}</div>
-    </section>
-  `;
+  return `<section><h3>Confidence</h3><div class="text-sm space-y-1">${parts.join("")}</div></section>`;
 }
-
-// Factor Summary
 function factorSummaryTable(item) {
   const rows = [];
   if (hasUnifiedV2(item)) {
@@ -801,81 +419,233 @@ function factorSummaryTable(item) {
     rows.push(`<tr><th>ESI</th><td>${E.toFixed(2)}</td><td>0–30/40</td></tr>`);
     rows.push(`<tr><th>RPM</th><td>${R.toFixed(2)}×</td><td>multiplier</td></tr>`);
   }
-  return `<h3>Factor Scores Summary</h3>
-    <table><thead><tr><th>Factor</th><th>Score</th><th>Scale</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  return `<h3>Factor Scores Summary</h3><table><thead><tr><th>Factor</th><th>Score</th><th>Scale</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+}
+function renderReportV2HTML(item) {
+  const v = v2Totals(item);
+  const overview = buildOverviewHtml(item);
+  const wcsTable = `
+    <table>
+      <thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr></thead>
+      <tbody>
+        ${v.wcsRows.map(r => `
+          <tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.rationale)}</td><td>${(Number(r.normalized) || 0).toFixed(2)}</td></tr>
+        `).join("")}
+      </tbody>
+    </table>
+    <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
+    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
+  `;
+  const phsRowsHtml = (v.phsRows || []).map(r => `
+    <tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.rationale)}</td><td>${r.weightPct.toFixed(0)}%</td><td>${r.score.toFixed(2)}</td><td>${r.weighted.toFixed(2)}</td></tr>
+  `).join("");
+  const esiParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
+  const esiRowsHtml = esiParams.map(p => `
+    <tr><td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td><td>${escapeHtml(p?.rationale ?? "")}</td><td>${escapeHtml(String(p?.score ?? ""))}</td></tr>
+  `).join("");
+  const rpmList = Array.isArray(item?.rpm?.parameters) ? item.rpm.parameters : Array.isArray(item?.rpm?.factors) ? item.rpm.factors : [];
+  const rpmRowsHtml = rpmList.map(f => `
+    <tr><td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td><td>${escapeHtml(f?.rationale ?? "Not specified.")}</td><td>${escapeHtml(String(f?.value ?? ""))}</td></tr>
+  `).join("");
+
+  const sources = buildSourcesHtml(item);
+  const assumptions = buildAssumptionsHtml(item);
+  const confidence = buildConfidenceHtml(item);
+
+  return `
+    ${overview || ""}
+    ${factorSummaryTable(item)}
+    <section><h3>Phase 3: WCS (Hull & Structure)</h3>${wcsTable}</section>
+    <section>
+      <h3>Phase 3: PHS (Pollution Hazard)</h3>
+      <p class="text-xs text-gray-600 mb-2">Weights treated as percentages and normalized to 100%. Weighted Score = Score × Weight.</p>
+      <table>
+        <thead><tr><th>Parameter</th><th>Rationale</th><th>Weight (%)</th><th>Score (0–10)</th><th>Weighted</th></tr></thead>
+        <tbody>${phsRowsHtml}</tbody>
+      </table>
+      <p class="mt-2"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
+      ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: Input weights did not sum to 100%; normalized.</p>' : ''}
+    </section>
+    <section><h3>Phase 3: ESI (Environmental Sensitivity)</h3>
+      <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
+      <p class="mt-2"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
+    </section>
+    <section><h3>Phase 3: RPM (Release Probability Modifier)</h3>
+      ${rpmRowsHtml ? `<table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRowsHtml}</tbody></table>` : '<p class="text-gray-600">No factor breakdown provided.</p>'}
+      <p class="mt-2"><strong>Final Multiplier:</strong> ${v.rpm.toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
+    </section>
+    ${sources || ""}${assumptions || ""}${confidence || ""}
+  `;
+}
+function buildReportHtml(item) {
+  const blocks = [];
+  const overview = buildOverviewHtml(item); if (overview) blocks.push(overview);
+  blocks.push(factorSummaryTable(item));
+  const W = readNumberByPaths(item, ["wcs","scores.WCS","WCS"]) ?? 0;
+  const P = readNumberByPaths(item, ["phs","scores.PHS","PHS"]) ?? 0;
+  const E = readNumberByPaths(item, ["esi","scores.ESI","ESI"]) ?? 0;
+  const R = resolveRPMMultiplier(item);
+  blocks.push(`
+    <h3>Factor Scores and Rationale</h3>
+    <table>
+      <thead><tr><th>Factor</th><th>Score</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><th>WCS</th><td>${W.toFixed(2)}</td><td></td></tr>
+        <tr><th>PHS</th><td>${P.toFixed(2)}</td><td></td></tr>
+        <tr><th>ESI</th><td>${E.toFixed(2)}</td><td></td></tr>
+        <tr><th>RPM</th><td>${R.toFixed(2)}×</td><td></td></tr>
+      </tbody>
+    </table>
+  `);
+  const sources = buildSourcesHtml(item);
+  const assumptions = buildAssumptionsHtml(item);
+  const confidence = buildConfidenceHtml(item);
+  if (sources) blocks.push(sources);
+  if (assumptions) blocks.push(assumptions);
+  if (confidence) blocks.push(confidence);
+  return blocks.join("\n");
 }
 
-// Placeholder for broken images (SVG)
-const PLACEHOLDER_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="400" height="240">
-    <rect width="100%" height="100%" fill="#f1f5f9"/>
-    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">
-      Image unavailable
-    </text>
-  </svg>
-`);
+// Radar visuals
+function renderBenchLegend() {
+  const b = chartConfig.benchmarks;
+  const el = benchLegend; if (!el) return;
+  el.innerHTML = `<span style="color:${chartConfig.colors.highBorder}">High</span>: ${b.high} &nbsp;|&nbsp;
+                  <span style="color:${chartConfig.colors.mediumBorder}">Medium</span>: ${b.medium} &nbsp;|&nbsp;
+                  <span style="color:${chartConfig.colors.lowBorder}">Low</span>: ${b.low}`;
+}
+function getAxisScores(item) {
+  let w, p, e;
+  if (hasUnifiedV2(item)) { const v = v2Totals(item); w = v.wcs; p = v.phs; e = v.esi; }
+  else {
+    w = readNumberByPaths(item, ["wcs","scores.WCS","WCS","phase1.screening.WCS","phase2.scores.WCS"]) ?? 0;
+    p = readNumberByPaths(item, ["phs","scores.PHS","PHS","phase1.screening.PHS","phase2.scores.PHS"]) ?? 0;
+    e = readNumberByPaths(item, ["esi","scores.ESI","ESI","phase1.screening.ESI","phase2.scores.ESI"]) ?? 0;
+  }
+  const rpm = resolveRPMMultiplier(item);
+  const max = chartConfig.scaleMax || 10;
+  const rpmScaled = ((rpm - 0.5) / 2.0) * max;
+  const clampAxis = (v) => Math.max(0, Math.min(max, Number(v) || 0));
+  return [clampAxis(w), clampAxis(p), clampAxis(e), clampAxis(rpmScaled)];
+}
+function renderRadarGeneric(item) {
+  const ctx = document.getElementById("werSpiderChart")?.getContext("2d"); if (!ctx) return;
+  const labels = ["WCS","PHS","ESI","RPM"];
+  const wreck = getAxisScores(item);
+  const max = chartConfig.scaleMax || 10;
+  const b = chartConfig.benchmarks;
+  const ring = (val, label, bg, border) => ({ label, data:[val,val,val,val], fill:true, backgroundColor:bg, borderColor:border, pointRadius:0, borderWidth:1 });
+  const data = {
+    labels, datasets: [
+      ring(b.high, "Benchmark High", chartConfig.colors.high, chartConfig.colors.highBorder),
+      ring(b.medium, "Benchmark Medium", chartConfig.colors.medium, chartConfig.colors.mediumBorder),
+      ring(b.low, "Benchmark Low", chartConfig.colors.low, chartConfig.colors.lowBorder),
+      { label: "Wreck Risk", data: wreck, fill:true, backgroundColor: chartConfig.colors.wreck, borderColor: chartConfig.colors.wreckBorder, pointBackgroundColor: chartConfig.colors.wreckBorder, pointRadius: 3, borderWidth: 2 }
+    ]
+  };
+  const options = { responsive: true, maintainAspectRatio: false,
+    scales: { r: { beginAtZero: true, min: 0, max, ticks: { stepSize: Math.max(1, Math.round(max/5)) } } },
+    plugins: { legend: { display: true, position: "bottom" } }
+  };
+  if (radarChart) radarChart.destroy();
+  radarChart = new Chart(ctx, { type:"radar", data, options });
+  renderBenchLegend();
+}
+function renderRadarV2(item) {
+  const ctx = document.getElementById("werSpiderChart")?.getContext("2d"); if (!ctx) return;
+  const v = v2Totals(item);
+  const wcs20 = Math.max(0, Math.min(20, v.wcs));
+  const phs20 = Math.max(0, Math.min(20, (v.phs / 10) * 20));
+  const esi20 = Math.max(0, Math.min(20, (v.esi / (v.esiMax || 30)) * 20));
+  const rpm20 = Math.max(0, Math.min(20, ((Math.min(Math.max(v.rpm, 0.5), 2.5) - 0.5) / 2.0) * 20));
+  const profile = [wcs20, phs20, esi20, rpm20];
+  const caps = { low:[6,6,6,6], med:[12,12,12,12], high:[20,20,20,20] };
+  if (radarChart) radarChart.destroy();
+  radarChart = new Chart(ctx, {
+    type: "radar",
+    data: {
+      labels: ["WCS","PHS","ESI","RPM"],
+      datasets: [
+        { label:"Low benchmark", data: caps.low, backgroundColor:"rgba(16,185,129,0.18)", borderColor:"rgba(16,185,129,0.45)", pointRadius:0, order:1 },
+        { label:"Medium benchmark", data: caps.med, backgroundColor:"rgba(245,158,11,0.14)", borderColor:"rgba(245,158,11,0.45)", pointRadius:0, fill:"-1", order:2 },
+        { label:"High benchmark", data: caps.high, backgroundColor:"rgba(239,68,68,0.12)", borderColor:"rgba(239,68,68,0.45)", pointRadius:0, fill:"-1", order:3 },
+        { label:"Risk Profile", data: profile, backgroundColor:"rgba(30,64,175,0.22)", borderColor:"rgba(30,64,175,1)", pointBackgroundColor:"rgba(30,64,175,1)", order:4 }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, scales:{ r:{ suggestedMin:0, suggestedMax:20, ticks:{ stepSize:4 } } } }
+  });
+  renderBenchLegend();
+}
 
-// Galleries
+// Galleries — only Storage assets
 function renderUploadsFromDoc() {
   if (!uploadGalleryGrid) return;
   uploadGalleryGrid.innerHTML = "";
   uploadGalleryEmpty?.classList.add("hidden");
-
   const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
-  if (!assets.length) { uploadGalleryEmpty?.classList.remove("hidden"); return; }
-
-  for (const a of assets) {
-    const url = a?.url || "";
-    const name = a?.name || a?.path || "file";
-    const isImg = /\.(png|jpe?g|gif|webp|bmp|svg|tif|tiff)$/i.test(name);
+  const imgs = assets.filter(a => a?.url && /\.(png|jpe?g|gif|webp|bmp|svg|tif|tiff)$/i.test(String(a?.name || a?.path || "")));
+  if (!imgs.length) { uploadGalleryEmpty?.classList.remove("hidden"); return; }
+  for (const a of imgs) {
     const tile = document.createElement("div");
     tile.className = "gallery-tile";
-    if (isImg && url) {
-      const link = document.createElement("a");
-      link.href = url; link.target = "_blank"; link.rel = "noopener";
-      const img = document.createElement("img");
-      img.src = url; img.alt = escapeHtml(name);
-      img.loading = "lazy";
-      img.referrerPolicy = "no-referrer";
-      img.onerror = () => { img.src = PLACEHOLDER_SVG; };
-      link.appendChild(img);
-      tile.appendChild(link);
-    } else {
-      tile.innerHTML = `<a class="file-tile" href="${url}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`;
-    }
+    const link = document.createElement("a");
+    link.href = a.url; link.target = "_blank"; link.rel = "noopener";
+    const img = document.createElement("img");
+    img.src = a.url; img.alt = escapeHtml(a?.name || "image");
+    img.loading = "lazy"; img.referrerPolicy = "no-referrer"; img.onerror = () => { img.src = PLACEHOLDER_SVG; };
+    link.appendChild(img);
+    tile.appendChild(link);
     uploadGalleryGrid.appendChild(tile);
   }
 }
-
 function renderReferenceMedia() {
   if (!referenceMediaGrid) return;
   referenceMediaGrid.innerHTML = "";
   referenceMediaEmpty?.classList.add("hidden");
-
-  const imgs = Array.isArray(currentItem?.media?.images) ? currentItem.media.images : [];
-  const media = imgs.filter(m => m?.url && /\.(png|jpe?g|gif|webp)$/i.test(String(m.url)));
-  if (!media.length) { referenceMediaEmpty?.classList.remove("hidden"); return; }
-
-  const sorted = sortByHostPreference(media.map(m => String(m.url)));
-
-  for (const u of sorted) {
-    const url = String(u);
+  const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
+  const refImgs = assets.filter(a =>
+    a?.source === "reference" && a?.url && /\.(png|jpe?g|gif|webp)$/i.test(String(a?.name || a?.path || ""))
+  );
+  if (!refImgs.length) { referenceMediaEmpty?.classList.remove("hidden"); return; }
+  for (const a of refImgs) {
     const tile = document.createElement("div");
     tile.className = "gallery-tile";
     const link = document.createElement("a");
-    link.href = url; link.target = "_blank"; link.rel = "noopener";
+    link.href = a.url; link.target = "_blank"; link.rel = "noopener";
     const img = document.createElement("img");
-    img.src = url; img.alt = "Reference media";
-    img.loading = "lazy";
-    img.referrerPolicy = "no-referrer";
-    img.onerror = () => { img.src = PLACEHOLDER_SVG; };
+    img.src = a.url; img.alt = "Cached media";
+    img.loading = "lazy"; img.referrerPolicy = "no-referrer"; img.onerror = () => { img.src = PLACEHOLDER_SVG; };
     link.appendChild(img);
     tile.appendChild(link);
     referenceMediaGrid.appendChild(tile);
   }
 }
 
-// Open report
+// Open report — auto-request caching if needed (contrib/admin only)
+async function maybeRequestCaching(item) {
+  if (!callable.cacheReferenceMedia) return;
+  const hasImages = Array.isArray(item?.media?.images) && item.media.images.length > 0;
+  const hasRefAssets = Array.isArray(item?.phase2?.assets) && item.phase2.assets.some(a => a?.source === "reference");
+  const canCache = currentRole === "admin" || currentRole === "contributor";
+  if (hasImages && !hasRefAssets && canCache) {
+    try {
+      await callable.cacheReferenceMedia({ appId, docId: item.id, docPath: item._path || currentDocPath });
+      // Refresh the doc shortly after
+      setTimeout(async () => {
+        const snap = await getDoc(doc(db, item._path || currentDocPath, item.id));
+        if (snap.exists()) {
+          currentItem = { ...currentItem, ...snap.data() };
+          renderUploadsFromDoc();
+          renderReferenceMedia();
+          upsertMarker(currentItem);
+        }
+      }, 1000);
+    } catch (e) {
+      // Silent; Firestore trigger will catch it anyway
+    }
+  }
+}
+
 function openReport(item) {
   currentItem = item;
   currentDocId = item?.id || null;
@@ -901,406 +671,13 @@ function openReport(item) {
   renderReferenceMedia();
   renderFeedbackList(item);
 
-  // Show cache button for contributors/admins if media exists
-  const hasRefMedia = Array.isArray(item?.media?.images) && item.media.images.length > 0;
-  const canCache = currentRole === "admin" || currentRole === "contributor";
-  if (cacheMediaBtn) cacheMediaBtn.classList.toggle("hidden", !(canCache && hasRefMedia));
+  maybeRequestCaching(item);
 
   reportContainer.classList.remove("hidden");
   reportContainer.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Phase 2 actions
-savePhase2Btn?.addEventListener("click", async () => {
-  if (!currentDocId) { phase2Status.textContent = "Open a report first."; return; }
-  const txt = phase2Input.value.trim();
-  phase2Status.textContent = "Saving...";
-  try {
-    await updateDoc(doc(db, currentDocPath, currentDocId), {
-      "phase2.summary": txt,
-      "phase2.updatedAt": serverTimestamp()
-    });
-    phase2Status.textContent = "Saved.";
-    setTimeout(() => phase2Status.textContent = "", 1500);
-  } catch (e) {
-    phase2Status.textContent = `Save failed: ${e?.message || "error"}`;
-  }
-});
-
-uploadFilesBtn?.addEventListener("click", async () => {
-  if (!currentDocId) { uploadStatus.textContent = "Open a report first."; return; }
-  const files = Array.from(phase2Files?.files || []);
-  if (!files.length) { uploadStatus.textContent = "Choose files first."; return; }
-
-  uploadStatus.textContent = `Uploading ${files.length} file(s)...`;
-  try {
-    const basePath = `artifacts/${appId}/public/uploads/${currentDocId}/phase2`;
-    const refDoc = doc(db, currentDocPath, currentDocId);
-    let done = 0;
-
-    for (const f of files) {
-      const safe = `${Date.now()}_${f.name.replace(/[^\w.\-]+/g, "_")}`;
-      const ref = storageRef(storage, `${basePath}/${safe}`);
-      await uploadBytes(ref, f, { contentType: f.type || undefined });
-      const url = await getDownloadURL(ref);
-
-      await updateDoc(refDoc, {
-        "phase2.assets": arrayUnion({
-          name: f.name,
-          path: `${basePath}/${safe}`,
-          url,
-          contentType: f.type || "",
-          bytes: f.size || 0,
-          uploadedAtMs: Date.now()
-        })
-      });
-
-      done++;
-      uploadStatus.textContent = `Uploaded ${done}/${files.length}`;
-    }
-
-    await updateDoc(refDoc, { "phase2.assetsUpdatedAt": serverTimestamp() });
-
-    const snap = await getDoc(refDoc);
-    if (snap.exists()) currentItem = { ...currentItem, ...snap.data() };
-    renderUploadsFromDoc();
-
-    setTimeout(() => uploadStatus.textContent = "Upload complete.", 300);
-    setTimeout(() => uploadStatus.textContent = "", 1500);
-  } catch (e) {
-    uploadStatus.textContent = `Upload failed: ${e?.message || "403/permission? Check Storage rules."}`;
-  }
-});
-
-// NEW: Cache reference media (server-side download + storage)
-cacheMediaBtn?.addEventListener("click", async () => {
-  if (!currentDocId || !callable.cacheReferenceMedia) return;
-  cacheMediaBtn.disabled = true;
-  const oldText = cacheMediaBtn.textContent;
-  cacheMediaBtn.textContent = "Caching...";
-  try {
-    const payload = { appId, docId: currentDocId, docPath: currentDocPath };
-    const res = await callable.cacheReferenceMedia(payload);
-    const result = res?.data || {};
-    // Re-fetch doc and re-open to refresh galleries and marker thumbnails
-    const snap = await getDoc(doc(db, currentDocPath, currentDocId));
-    if (snap.exists()) {
-      currentItem = { ...currentItem, ...snap.data(), id: currentDocId, _path: currentDocPath };
-      openReport(currentItem);
-    }
-    cacheMediaBtn.textContent = result?.created ? `Cached ${result.created} image(s)` : "Cached";
-    setTimeout(() => { cacheMediaBtn.textContent = oldText; cacheMediaBtn.disabled = false; }, 1500);
-  } catch (e) {
-    cacheMediaBtn.textContent = "Failed";
-    setTimeout(() => { cacheMediaBtn.textContent = oldText; cacheMediaBtn.disabled = false; }, 1500);
-  }
-});
-
-reassessBtn?.addEventListener("click", async () => {
-  if (!currentDocId) { phase2Status.textContent = "Open a report first."; return; }
-  phase2Status.textContent = "Submitting reassessment...";
-  try {
-    const payload = { docId: currentDocId, docPath: currentDocPath, usePhase2: true, normalize: true };
-    if (callable.reassessWerps) await callable.reassessWerps(payload);
-    else if (callable.repairWerps) await callable.repairWerps(payload);
-
-    setTimeout(async () => {
-      const snap = await getDoc(doc(db, currentDocPath, currentDocId));
-      if (snap.exists()) { currentItem = { ...currentItem, ...snap.data(), id: currentDocId, _path: currentDocPath }; openReport(currentItem); }
-      phase2Status.textContent = "Reassessment complete.";
-      setTimeout(() => phase2Status.textContent = "", 2000);
-    }, 1500);
-  } catch (e) {
-    phase2Status.textContent = `Reassessment failed: ${e?.message || "error"}`;
-  }
-});
-
-// Feedback
-function renderFeedbackList(item) {
-  if (!feedbackList) return;
-  feedbackList.innerHTML = "";
-  const entries = Array.isArray(item?.feedback) ? [...item.feedback] : [];
-  entries.sort((a,b) => {
-    const aMs = a?.createdAtMs ?? (a?.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
-    const bMs = b?.createdAtMs ?? (b?.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
-    return bMs - aMs;
-  });
-  const fmtTs = (e) => {
-    if (typeof e?.createdAtMs === "number") return new Date(e.createdAtMs).toLocaleString();
-    if (e?.createdAt?.seconds) return new Date(e.createdAt.seconds * 1000).toLocaleString();
-    return "";
-  };
-  for (const e of entries.slice(0, 12)) {
-    const who = escapeHtml(e?.user || "Unknown");
-    const when = fmtTs(e) || "";
-    const msg = escapeHtml(e?.message || "");
-    const li = document.createElement("li");
-    li.className = "p-2 bg-gray-50 border border-gray-200 rounded";
-    li.innerHTML = `<div class="text-xs text-gray-600 mb-1">${who}${when ? " • " + when : ""}</div><div class="text-sm">${msg}</div>`;
-    feedbackList.appendChild(li);
-  }
-}
-saveFeedbackBtn?.addEventListener("click", async () => {
-  if (!currentDocId) { feedbackStatus.textContent = "Open a report first."; return; }
-  const msg = feedbackInput.value.trim();
-  if (!msg) { feedbackStatus.textContent = "Enter feedback text."; return; }
-  const who = auth.currentUser?.email || auth.currentUser?.uid || "anonymous";
-  feedbackStatus.textContent = "Saving...";
-  try {
-    await updateDoc(doc(db, currentDocPath, currentDocId), {
-      feedback: arrayUnion({ message: msg, user: who, createdAtMs: Date.now() }),
-      feedbackUpdatedAt: serverTimestamp()
-    });
-    if (!Array.isArray(currentItem.feedback)) currentItem.feedback = [];
-    currentItem.feedback.unshift({ message: msg, user: who, createdAtMs: Date.now() });
-    renderFeedbackList(currentItem);
-    feedbackInput.value = "";
-    feedbackStatus.textContent = "Saved.";
-    setTimeout(() => feedbackStatus.textContent = "", 1500);
-  } catch (e) {
-    feedbackStatus.textContent = `Save failed: ${e?.message || "error"}`;
-  }
-});
-
-// Analyze new vessel
-const analyzeFunctionNames = [
-  "analyzeWreck",
-  "analyzeWerps",
-  "ingestWerps",
-  "createWerpsAssessment",
-  "createAssessmentFromName"
-];
-function getCallableByName(name) {
-  try { return httpsCallable(functions, name); } catch { return null; }
-}
-analyzeBtn?.addEventListener("click", async () => {
-  const name = vesselNameInput?.value?.trim();
-  if (!name) { statusMessage.textContent = "Enter a vessel name to analyze."; return; }
-  analyzeBtn.disabled = true;
-  analyzeText.textContent = "Analyzing...";
-  statusMessage.textContent = "Submitting analysis request...";
-
-  let fn = null;
-  let fnName = "";
-  for (const n of analyzeFunctionNames) {
-    const c = getCallableByName(n);
-    if (c) { fn = c; fnName = n; break; }
-  }
-  if (!fn) {
-    statusMessage.textContent = "No analysis function is deployed (expected one of: " + analyzeFunctionNames.join(", ") + ").";
-    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck";
-    return;
-  }
-
-  try {
-    const payload = { name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source: "web-app" };
-    await fn(payload);
-    statusMessage.textContent = `Analysis requested via ${fnName}. It will appear in the lists when ready.`;
-    vesselNameInput.value = "";
-  } catch (e) {
-    statusMessage.textContent = `Analysis failed: ${e?.message || String(e)}`;
-  } finally {
-    analyzeBtn.disabled = false;
-    analyzeText.textContent = "Analyze Wreck";
-  }
-});
-
-// Roles
-async function fetchRoleFor(uid) {
-  try {
-    const allowDocRef = doc(db, "system", "allowlist", "users", uid);
-    const allowDoc = await getDoc(allowDocRef);
-    if (allowDoc.exists()) {
-      const d = allowDoc.data() || {};
-      let r = d.role ?? d.Role ?? d.ROLE;
-      if (typeof r === "string" && r.trim()) {
-        r = r.trim().toLowerCase();
-        if (r.startsWith("admin")) return "admin";
-        if (r.startsWith("contrib")) return "contributor";
-        if (["user","reader","viewer"].includes(r)) return "user";
-      }
-      if (d.admin === true) return "admin";
-      if (d.contributor === true) return "contributor";
-      if (d.allowed === true) return "user";
-    }
-  } catch {}
-  try {
-    const legacyRef = doc(db, `artifacts/${appId}/private/users/${uid}`);
-    const legacyDoc = await getDoc(legacyRef);
-    if (legacyDoc.exists()) {
-      const d = legacyDoc.data() || {};
-      let r = d.role ?? d.Role ?? d.ROLE;
-      if (typeof r === "string" && r.trim()) {
-        r = r.trim().toLowerCase();
-        if (r.startsWith("admin")) return "admin";
-        if (r.startsWith("contrib")) return "contributor";
-        if (["user","reader","viewer"].includes(r)) return "user";
-      }
-      if (d.admin === true) return "admin";
-      if (d.contributor === true) return "contributor";
-    }
-  } catch {}
-  return "user";
-}
-
-// Auth state
-onAuthStateChanged(auth, async (user) => {
-  for (const u of dataUnsubs) { try { u(); } catch {} }
-  dataUnsubs = [];
-
-  if (!user) {
-    signedOutContainer.classList.remove("hidden");
-    appContainer.classList.add("hidden");
-    importDataBtn?.classList.add("hidden");
-    userNameSpan.classList.add("hidden");
-    signOutBtn.classList.add("hidden");
-    roleBadge.textContent = "Role: —";
-    analyzeBtn && (analyzeBtn.disabled = true);
-    contribHint?.classList.remove("hidden");
-    return;
-  }
-
-  signedOutContainer.classList.add("hidden");
-  appContainer.classList.remove("hidden");
-  userNameSpan.textContent = user.email || user.uid;
-  userNameSpan.classList.remove("hidden");
-  signOutBtn.classList.remove("hidden");
-
-  currentRole = await fetchRoleFor(user.uid);
-  roleBadge.textContent = `Role: ${currentRole}`;
-  const isAdmin = currentRole === "admin";
-  const isContributor = isAdmin || currentRole === "contributor";
-  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden");
-  if (analyzeBtn) analyzeBtn.disabled = !isContributor;
-  if (!isContributor) contribHint?.classList.remove("hidden"); else contribHint?.classList.add("hidden");
-
-  initMap();
-  await startData();
-});
-
-// Export helpers and bindings
-function downloadFile(filename, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-function getCurrentHtml() {
-  if (!currentItem) return "";
-  if (hasUnifiedV2(currentItem)) return lastRenderedHtml || renderReportV2HTML(currentItem);
-  return lastRenderedHtml || buildReportHtml(currentItem);
-}
-function onExportHtml() {
-  if (!currentItem) return;
-  const vessel = getVesselName(currentItem) || "assessment";
-  const html = getCurrentHtml();
-  const docHtml = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${html}</body></html>`;
-  downloadFile(`${vessel.replace(/\s+/g,"_")}.html`, new Blob([docHtml], { type: "text/html;charset=utf-8" }));
-}
-function onExportMarkdown() {
-  if (!currentItem) return;
-  const vessel = getVesselName(currentItem) || "assessment";
-  const md = buildReportMarkdown(currentItem);
-  downloadFile(`${vessel.replace(/\s+/g,"_")}.md`, new Blob([md], { type: "text/markdown;charset=utf-8" }));
-}
-function onExportJson() {
-  if (!currentItem) return;
-  const vessel = getVesselName(currentItem) || "assessment";
-  const json = JSON.stringify(currentItem, null, 2);
-  downloadFile(`${vessel.replace(/\s+/g,"_")}.json`, new Blob([json], { type: "application/json;charset=utf-8" }));
-}
-function onExportPdf() {
-  if (!currentItem) return;
-  const vessel = getVesselName(currentItem) || "assessment";
-
-  // Chart image
-  let chartImg = "";
-  try {
-    const cnv = document.getElementById("werSpiderChart");
-    chartImg = cnv?.toDataURL("image/png") || "";
-  } catch {}
-
-  // Gather up to 9 images across uploads + reference media
-  const webExt = /\.(png|jpe?g|webp|gif)$/i;
-  const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
-  const uploadUrls = assets.filter(a => webExt.test(a?.name || a?.path || "") && a?.url).map(a => a.url);
-  const mediaImgs = Array.isArray(currentItem?.media?.images) ? currentItem.media.images : [];
-  const refUrls = mediaImgs.filter(m => m?.url && webExt.test(String(m.url))).map(m => String(m.url));
-  const galleryUrls = [...uploadUrls, ...refUrls].slice(0, 9);
-
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title>
-    <style>
-      body { font-family: Inter, Arial, sans-serif; color:#111; line-height:1.5; padding:24px; }
-      .pdf-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
-      .pdf-header img { height: 72px; width: auto; }
-      h1 { font-size: 20px; margin: 8px 0 14px; text-align:center; }
-      h2,h3,h4 { margin: 10px 0 6px; }
-      table { width:100%; border-collapse: collapse; margin: 8px 0; }
-      th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
-      th { background:#f5f5f5; }
-      .gallery { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 10px 0; }
-      .gallery img { width:100%; height:120px; object-fit:cover; border:1px solid #e5e7eb; border-radius:6px; }
-      @media print { body { -webkit-print-color-adjust: exact; } }
-    </style></head><body>
-      <div class="pdf-header">
-        <img src="${LOGO_LEFT}" alt="Logo left">
-        <div style="font-weight:600; font-size:14px;">Project Guardian – WERP Reports</div>
-        <img src="${LOGO_RIGHT}" alt="Logo right">
-      </div>
-      <h1>${escapeHtml(vessel)}</h1>
-
-      ${getCurrentHtml()}
-      ${chartImg ? `<h3>WERP Risk Profile</h3><img src="${chartImg}" alt="Radar chart" style="max-width:100%;border:1px solid #e5e7eb;border-radius:6px">` : ""}
-
-      ${galleryUrls.length ? `<h3>Gallery</h3><div class="gallery">${galleryUrls.map(u => `<img src="${u}" alt="Gallery image">`).join("")}</div>` : ""}
-    </body></html>`;
-
-  const w = window.open("", "_blank");
-  if (w) {
-    w.document.open(); w.document.write(html); w.document.close();
-    w.addEventListener("load", () => { try { w.focus(); w.print(); } catch {} });
-    setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 500);
-  }
-}
-exportPdfBtn?.addEventListener("click", onExportPdf);
-exportHtmlBtn?.addEventListener("click", onExportHtml);
-exportMdBtn?.addEventListener("click", onExportMarkdown);
-exportJsonBtn?.addEventListener("click", onExportJson);
-
-// Data listeners
-async function startData() {
-  for (const u of dataUnsubs) { try { u(); } catch {} }
-  dataUnsubs = [];
-
-  await loadChartConfig();
-
-  const byKey = new Map();
-  const applySnap = (snap, basePath) => {
-    snap.forEach(docSnap => {
-      const raw = docSnap.data() || {};
-      const d = { ...normalizeDoc(raw), id: raw?.id || docSnap.id, _path: basePath };
-      if (!isWerpAssessment(d)) return;
-      const sv = getSeverityValue(d);
-      d.severity = { ...(d.severity || {}), value: sv, band: d.severity?.band || bandFromValue(sv) };
-      byKey.set(`${basePath}::${d.id}`, d);
-    });
-    allItems = Array.from(byKey.values());
-    render();
-  };
-
-  for (const p of READ_COLLECTIONS) {
-    try {
-      const un = onSnapshot(collection(db, p),
-        (snap) => applySnap(snap, p),
-        (err) => console.error(`Snapshot error (${p})`, err)
-      );
-      dataUnsubs.push(un);
-    } catch (e) { console.error("Listener error", p, e); }
-  }
-}
-
-// Filters
+// Lists / render pipeline
 [sevHigh, sevMedium, sevLow].forEach(cb => cb && cb.addEventListener("change", render));
 searchBox?.addEventListener("input", render);
 clearSearch?.addEventListener("click", () => { searchBox.value = ""; render(); });
@@ -1391,18 +768,123 @@ function drawList(container, items) {
   }
 }
 
-// Vessel naming
-function getVesselName(it) {
-  const direct = [
-    it.vesselName, it.name, it.title, it.displayName, it.label,
-    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
-    it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName
-  ];
-  for (const c of direct) { const t = getText(c); if (t) return t; }
-  return getText(it.id) || "Unknown";
+// Analyze (unchanged behavior)
+const analyzeFunctionNames = ["analyzeWreck", "analyzeWerps", "ingestWerps", "createWerpsAssessment", "createAssessmentFromName"];
+function getCallableByName(name) { try { return httpsCallable(functions, name); } catch { return null; } }
+analyzeBtn?.addEventListener("click", async () => {
+  const name = vesselNameInput?.value?.trim();
+  if (!name) { statusMessage.textContent = "Enter a vessel name to analyze."; return; }
+  analyzeBtn.disabled = true;
+  analyzeText.textContent = "Analyzing...";
+  statusMessage.textContent = "Submitting analysis request...";
+  let fn = null, fnName = "";
+  for (const n of analyzeFunctionNames) { const c = getCallableByName(n); if (c) { fn = c; fnName = n; break; } }
+  if (!fn) {
+    statusMessage.textContent = "No analysis function deployed.";
+    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck"; return;
+  }
+  try {
+    const payload = { name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source: "web-app" };
+    await fn(payload);
+    statusMessage.textContent = `Analysis requested via ${fnName}. It will appear shortly.`;
+    vesselNameInput.value = "";
+  } catch (e) {
+    statusMessage.textContent = `Analysis failed: ${e?.message || String(e)}`;
+  } finally {
+    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck";
+  }
+});
+
+// Roles, listeners
+async function fetchRoleFor(uid) {
+  try {
+    const allow = await getDoc(doc(db, "system", "allowlist", "users", uid));
+    if (allow.exists()) {
+      const d = allow.data() || {};
+      let r = d.role ?? d.Role ?? d.ROLE;
+      if (typeof r === "string" && r.trim()) {
+        r = r.trim().toLowerCase();
+        if (r.startsWith("admin")) return "admin";
+        if (r.startsWith("contrib")) return "contributor";
+        if (["user","reader","viewer"].includes(r)) return "user";
+      }
+      if (d.admin === true) return "admin";
+      if (d.contributor === true) return "contributor";
+      if (d.allowed === true) return "user";
+    }
+  } catch {}
+  try {
+    const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
+    if (legacy.exists()) {
+      const d = legacy.data() || {};
+      let r = d.role ?? d.Role ?? d.ROLE;
+      if (typeof r === "string" && r.trim()) {
+        r = r.trim().toLowerCase();
+        if (r.startsWith("admin")) return "admin";
+        if (r.startsWith("contrib")) return "contributor";
+        if (["user","reader","viewer"].includes(r)) return "user";
+      }
+      if (d.admin === true) return "admin";
+      if (d.contributor === true) return "contributor";
+    }
+  } catch {}
+  return "user";
 }
 
-// Flatten helper
+async function loadChartConfig() {
+  const paths = [
+    `artifacts/${appId}/public/config/werpChart`,
+    `artifacts/${appId}/public/config/werpRadarBenchmarks`,
+    `artifacts/${appId}/public/config/werp`
+  ];
+  for (const p of paths) {
+    try {
+      const snap = await getDoc(doc(db, p));
+      if (snap.exists()) {
+        const cfg = snap.data() || {};
+        if (typeof cfg.scaleMax === "number") chartConfig.scaleMax = cfg.scaleMax;
+        if (cfg.benchmarks && typeof cfg.benchmarks === "object") {
+          chartConfig.benchmarks = {
+            high: Number(cfg.benchmarks.high ?? chartConfig.benchmarks.high),
+            medium: Number(cfg.benchmarks.medium ?? chartConfig.benchmarks.medium),
+            low: Number(cfg.benchmarks.low ?? chartConfig.benchmarks.low)
+          };
+        }
+        if (cfg.colors && typeof cfg.colors === "object") chartConfig.colors = { ...chartConfig.colors, ...cfg.colors };
+        break;
+      }
+    } catch {}
+  }
+}
+
+async function startData() {
+  for (const u of dataUnsubs) { try { u(); } catch {} }
+  dataUnsubs = [];
+  await loadChartConfig();
+  const byKey = new Map();
+  const applySnap = (snap, basePath) => {
+    snap.forEach(docSnap => {
+      const raw = docSnap.data() || {};
+      const d = { ...normalizeDoc(raw), id: raw?.id || docSnap.id, _path: basePath };
+      if (!isWerpAssessment(d)) return;
+      const sv = getSeverityValue(d);
+      d.severity = { ...(d.severity || {}), value: sv, band: d.severity?.band || bandFromValue(sv) };
+      byKey.set(`${basePath}::${d.id}`, d);
+    });
+    allItems = Array.from(byKey.values());
+    render();
+  };
+  for (const p of READ_COLLECTIONS) {
+    try {
+      const un = onSnapshot(collection(db, p),
+        (snap) => applySnap(snap, p),
+        (err) => console.error(`Snapshot error (${p})`, err)
+      );
+      dataUnsubs.push(un);
+    } catch (e) { console.error("Listener error", p, e); }
+  }
+}
+
 function normalizeDoc(d) {
   const out = { ...d };
   if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
@@ -1413,3 +895,58 @@ function normalizeDoc(d) {
   if (d && typeof d.metadata === "object" && d.metadata) out.metadata = { ...d.metadata };
   return out;
 }
+function isWerpAssessment(d) {
+  const t = String(d?.type ?? d?.recordType ?? d?.category ?? d?.kind ?? d?.meta?.type ?? "").toUpperCase();
+  const et = String(d?.eventType ?? d?.events?.type ?? "").toUpperCase();
+  const name = String(d?.name ?? d?.title ?? d?.id ?? "").toUpperCase();
+  const looksSeismic =
+    t === "SEISMIC_EVENT" || et === "SEISMIC_EVENT" ||
+    (t.includes("SEISMIC") && t.includes("EVENT")) || (et.includes("SEISMIC") && et.includes("EVENT")) ||
+    name.includes("SEISMIC_EVENT");
+  if (looksSeismic) return false;
+  return true;
+}
+function getVesselName(it) {
+  const direct = [
+    it.vesselName, it.name, it.title, it.displayName, it.label,
+    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
+    it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName
+  ];
+  for (const c of direct) { const t = getText(c); if (t) return t; }
+  return getText(it.id) || "Unknown";
+}
+
+// Auth
+onAuthStateChanged(auth, async (user) => {
+  for (const u of dataUnsubs) { try { u(); } catch {} }
+  dataUnsubs = [];
+
+  if (!user) {
+    signedOutContainer.classList.remove("hidden");
+    appContainer.classList.add("hidden");
+    importDataBtn?.classList.add("hidden");
+    userNameSpan.classList.add("hidden");
+    signOutBtn.classList.add("hidden");
+    roleBadge.textContent = "Role: —";
+    analyzeBtn && (analyzeBtn.disabled = true);
+    contribHint?.classList.remove("hidden");
+    return;
+  }
+
+  signedOutContainer.classList.add("hidden");
+  appContainer.classList.remove("hidden");
+  userNameSpan.textContent = user.email || user.uid;
+  userNameSpan.classList.remove("hidden");
+  signOutBtn.classList.remove("hidden");
+
+  currentRole = await fetchRoleFor(user.uid);
+  roleBadge.textContent = `Role: ${currentRole}`;
+  const isAdmin = currentRole === "admin";
+  const isContributor = isAdmin || currentRole === "contributor";
+  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden");
+  if (analyzeBtn) analyzeBtn.disabled = !isContributor;
+  if (!isContributor) contribHint?.classList.remove("hidden"); else contribHint?.classList.add("hidden");
+
+  initMap();
+  await startData();
+});
