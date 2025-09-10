@@ -1,63 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Project Guardian – Import/Replace Data</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="utf-8">
+  <title>Import WERP Assessments</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
-  </style>
 </head>
 <body class="bg-slate-50 text-gray-900">
-  <header class="bg-gray-900 text-white">
-    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-      <h1 class="text-base sm:text-lg font-semibold">Import/Replace Data</h1>
-      <div class="flex items-center gap-2">
-        <a href="/monitoring.html" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded">Monitoring</a>
-        <a href="/index.html" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded">Back to App</a>
-      </div>
-    </div>
-  </header>
+  <main class="max-w-5xl mx-auto p-6 space-y-4">
+    <h1 class="text-xl font-semibold">Import WERP Assessments</h1>
 
-  <main class="max-w-4xl mx-auto px-4 py-6 space-y-6">
-    <section class="bg-white border border-gray-200 rounded-xl shadow p-5 space-y-5">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="text-sm text-gray-600">Signed in as:</div>
-          <div id="signedInAs" class="text-sm font-semibold">—</div>
-        </div>
-        <div class="text-sm">
-          Role: <span id="roleBadge" class="px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">—</span>
-        </div>
+    <section class="bg-white border border-gray-200 rounded-xl shadow p-4 space-y-3">
+      <div class="grid md:grid-cols-2 gap-3">
+        <label class="block">
+          <span class="text-sm text-gray-700">Primary collection path</span>
+          <input id="primaryPathInput" type="text" class="mt-1 w-full p-2 border border-gray-300 rounded"
+                 value="artifacts/guardian/public/data/werpassessments">
+        </label>
+        <label class="block">
+          <span class="text-sm text-gray-700">Secondary collection path (optional)</span>
+          <input id="secondaryPathInput" type="text" class="mt-1 w-full p-2 border border-gray-300 rounded"
+                 value="artifacts/guardian-agent-default/public/data/werpassessments">
+        </label>
       </div>
 
-      <div class="grid grid-cols-1 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-800">Primary collection (Replace/Append target)</label>
-          <input id="primaryPath" type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mono"
-                 value="artifacts/guardian/public/data/werpassessments" />
-          <p class="text-xs text-gray-500 mt-1 mono">artifacts/guardian/public/data/werpassessments</p>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-800">Secondary collection (Delete only)</label>
-          <input id="secondaryPath" type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mono"
-                 value="artifacts/guardian-agent-default/public/data/werpassessments" />
-          <p class="text-xs text-gray-500 mt-1 mono">artifacts/guardian-agent-default/public/data/werpassessments</p>
-        </div>
+      <div class="grid md:grid-cols-2 gap-3">
+        <label class="block">
+          <span class="text-sm text-gray-700">Upload JSON file</span>
+          <input id="fileInput" type="file" accept=".json" class="mt-1 w-full p-2 border border-gray-300 rounded bg-white">
+        </label>
+        <label class="block">
+          <span class="text-sm text-gray-700">Or paste JSON below</span>
+        </label>
       </div>
 
-      <div class="space-y-2">
-        <label class="block text-sm font-medium text-gray-800">JSON to Import</label>
-        <textarea id="jsonInput" class="w-full min-h-[260px] border border-gray-300 rounded-md p-2 text-sm mono"
-                  placeholder='Paste a JSON array (e.g., [{"id":"X",...}, {...}]) or newline-delimited JSON objects'></textarea>
-        <div class="flex items-center justify-between text-xs text-gray-500">
-          <span>If an object contains an "id" (or "docId"/"slug"), it will be used as the document ID; otherwise a random ID will be generated.</span>
-          <span id="parsedCount" class="text-gray-600"></span>
-        </div>
-      </div>
+      <textarea id="jsonInput" class="w-full min-h-[220px] p-2 border border-gray-300 rounded" placeholder='[ { "id": "vessel-1", ... }, ... ]'></textarea>
 
       <div class="flex flex-wrap gap-2">
         <button id="btnValidate" class="bg-gray-100 hover:bg-gray-200 text-gray-900 text-sm px-3 py-2 rounded border border-gray-300">Validate JSON</button>
@@ -65,17 +42,17 @@
 
         <button id="btnAppendPrimary" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-2 rounded">Append to primary (no delete)</button>
 
-        <button id="btnReplacePrimary" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-2 rounded">Replace primary (delete + import) <span class="text-[10px] align-super">(Admin)</span></button>
-        <button id="btnDeleteSecondary" class="bg-amber-600 hover:bg-amber-500 text-white text-sm px-3 py-2 rounded">Delete secondary <span class="text-[10px] align-super">(Admin)</span></button>
-        <button id="btnReplaceAndDelete" class="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-2 rounded">Replace primary AND delete secondary <span class="text-[10px] align-super">(Admin)</span></button>
+        <button id="btnReplacePrimary" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-2 rounded">Replace primary (delete + import)</button>
+        <button id="btnDeleteSecondary" class="bg-amber-600 hover:bg-amber-500 text-white text-sm px-3 py-2 rounded">Delete secondary</button>
+        <button id="btnReplaceAndDelete" class="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-2 rounded">Replace primary AND delete secondary</button>
+
+        <button id="btnCachePrimary" class="bg-gray-800 hover:bg-gray-700 text-white text-sm px-3 py-2 rounded">Cache media for primary (no hotlinks)</button>
       </div>
 
-      <p class="text-xs text-gray-600">
-        Append will add new documents and skip any incoming items whose <span class="mono">id</span> already exists. Items without an <span class="mono">id</span> are always created with a new ID.
-      </p>
-
-      <div id="status" class="text-sm text-gray-700 h-5" aria-live="polite"></div>
-      <div id="log" class="text-xs text-gray-800 whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-2 min-h-[80px]"></div>
+      <div class="text-sm">
+        <div id="status" class="mt-2 h-5 text-gray-600"></div>
+        <pre id="log" class="mt-2 p-2 bg-slate-900 text-slate-100 rounded overflow-auto max-h-[260px] text-xs"></pre>
+      </div>
     </section>
   </main>
 

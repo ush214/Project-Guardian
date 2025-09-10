@@ -1,11 +1,13 @@
-// Import/Replace tool with append and schema normalization for the UI.
-import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import {
-  getFirestore, collection, getDocs, writeBatch, doc, setDoc, deleteDoc, serverTimestamp, getDoc
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+// Importer with backfill cache button.
+// Requires authenticated Contributor/Admin to run destructive actions and to call the backfill function.
 
-// Firebase config (same as main app)
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import {
+  getFirestore, doc, setDoc, getDoc, getDocs, collection, deleteDoc, writeBatch
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",
@@ -15,16 +17,18 @@ const firebaseConfig = {
   appId: "1:84395007243:web:b07e5f4c4264d27611160e",
   measurementId: "G-NRLH3WSCQ9"
 };
-if (getApps().length === 0) initializeApp(firebaseConfig);
-const auth = getAuth();
-const db = getFirestore();
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const functions = getFunctions(app, "us-central1");
 
-// DOM
+const callCacheCollection = httpsCallable(functions, "cacheCollectionReferenceMedia");
+
+// DOM helpers
 const el = (id) => document.getElementById(id);
-const signedInAs = el("signedInAs");
-const roleBadge = el("roleBadge");
-const primaryPathInput = el("primaryPath");
-const secondaryPathInput = el("secondaryPath");
+const primaryPathInput = el("primaryPathInput");
+const secondaryPathInput = el("secondaryPathInput");
+const fileInput = el("fileInput");
 const jsonInput = el("jsonInput");
 const btnValidate = el("btnValidate");
 const btnExportPrimary = el("btnExportPrimary");
@@ -32,378 +36,201 @@ const btnAppendPrimary = el("btnAppendPrimary");
 const btnReplacePrimary = el("btnReplacePrimary");
 const btnDeleteSecondary = el("btnDeleteSecondary");
 const btnReplaceAndDelete = el("btnReplaceAndDelete");
+const btnCachePrimary = el("btnCachePrimary");
 const statusEl = el("status");
 const logEl = el("log");
-const parsedCountEl = el("parsedCount");
 
-// Role detection (mirrors app.js)
-async function fetchRoleFor(uid) {
-  const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-  const appId = "guardian";
-  try {
-    const allowDocRef = doc(db, "system", "allowlist", "users", uid);
-    const allowDoc = await getDoc(allowDocRef);
-    if (allowDoc.exists()) {
-      const d = allowDoc.data() || {};
-      let r = d.role ?? d.Role ?? d.ROLE;
-      if (typeof r === "string" && r.trim()) {
-        r = r.trim().toLowerCase();
-        if (r.startsWith("admin")) return "admin";
-        if (r.startsWith("contrib")) return "contributor";
-        if (["user","reader","viewer"].includes(r)) return "user";
-      }
-      if (d.admin === true) return "admin";
-      if (d.contributor === true) return "contributor";
-      if (d.allowed === true) return "user";
-    }
-  } catch {}
-  try {
-    const legacyRef = doc(db, `artifacts/${appId}/private/users/${uid}`);
-    const legacyDoc = await getDoc(legacyRef);
-    if (legacyDoc.exists()) {
-      const d = legacyDoc.data() || {};
-      let r = d.role ?? d.Role ?? d.ROLE;
-      if (typeof r === "string" && r.trim()) {
-        r = r.trim().toLowerCase();
-        if (r.startsWith("admin")) return "admin";
-        if (r.startsWith("contrib")) return "contributor";
-        if (["user","reader","viewer"].includes(r)) return "user";
-      }
-      if (d.admin === true) return "admin";
-      if (d.contributor === true) return "contributor";
-    }
-  } catch {}
-  return "user";
-}
-
-function setStatus(msg) { statusEl.textContent = msg || ""; }
-function log(msg) { if (msg) logEl.textContent += msg + "\n"; }
+function setStatus(s) { statusEl.textContent = s || ""; }
+function log(s) { logEl.textContent += (s + "\n"); }
 function clearLog() { logEl.textContent = ""; }
 
-function parseInputJson(raw) {
-  const t = (raw || "").trim();
-  if (!t) return [];
-  try {
-    const parsed = JSON.parse(t);
-    if (Array.isArray(parsed)) return parsed;
-    if (typeof parsed === "object") return [parsed];
-  } catch {
-    const lines = t.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const arr = [];
-    for (const line of lines) {
-      try { arr.push(JSON.parse(line)); }
-      catch (e) { throw new Error("Invalid JSON line: " + line.slice(0, 120)); }
-    }
-    return arr;
+async function readJsonFromInputs() {
+  const file = fileInput.files?.[0];
+  if (file) {
+    try {
+      const txt = await file.text();
+      return JSON.parse(txt);
+    } catch (e) { throw new Error("Invalid JSON file: " + (e?.message || e)); }
   }
-  return [];
+  if (jsonInput.value.trim()) {
+    try {
+      return JSON.parse(jsonInput.value);
+    } catch (e) { throw new Error("Invalid pasted JSON: " + (e?.message || e)); }
+  }
+  throw new Error("Provide JSON via file upload or paste area.");
 }
 
-// Schema normalization for UI
-function transformItem(raw) {
-  const item = { ...raw };
-
-  // Ensure id if provided
-  item.id = item.id || item.docId || item.slug || "";
-
-  // Coordinates to top-level {lat, lng}
-  const coord = raw?.historical?.location?.coordinates;
-  if (coord && typeof coord.lat === "number" && (typeof coord.lon === "number" || typeof coord.lng === "number")) {
-    const lon = typeof coord.lng === "number" ? coord.lng : coord.lon;
-    item.coordinates = { lat: coord.lat, lng: lon };
-  }
-
-  // PHS weights: weightPercent -> weight
-  if (Array.isArray(item?.phs?.parameters)) {
-    item.phs.parameters = item.phs.parameters.map(p => {
-      const q = { ...p };
-      if (q.weight == null && typeof q.weightPercent === "number") {
-        q.weight = q.weightPercent;
-      }
-      return q;
-    });
-  }
-
-  // RPM factors: object -> array of parameters; remove object (safeguard)
-  if (item?.rpm && !Array.isArray(item.rpm.parameters)) {
-    if (item.rpm.factors && typeof item.rpm.factors === "object" && !Array.isArray(item.rpm.factors)) {
-      try {
-        const arr = Object.entries(item.rpm.factors).map(([k, v]) => ({
-          name: k,
-          factor: k,
-          value: typeof v?.value === "number" ? v.value : undefined,
-          rationale: v?.rationale || ""
-        }));
-        item.rpm.parameters = arr;
-        delete item.rpm.factors;
-      } catch {}
-    }
-  }
-
-  // media.images is already okay; no transformation needed
-  return item;
+function normalizeDoc(docObj) {
+  const d = { ...docObj };
+  // ensure an id
+  d.id = d.id || d.ID || d.name || d.uuid || d.slug || d.title || "";
+  if (!d.id) throw new Error("Each doc must include an 'id' or a unique key.");
+  return d;
 }
 
-btnValidate.addEventListener("click", () => {
-  clearLog();
+function chunk(arr, n) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
+async function listAllDocIds(colPath) {
+  const snap = await getDocs(collection(db, colPath));
+  return snap.docs.map(d => d.id);
+}
+
+// Actions
+btnValidate.addEventListener("click", async () => {
+  clearLog(); setStatus("Validating…");
   try {
-    const items = parseInputJson(jsonInput.value).map(transformItem);
-    parsedCountEl.textContent = `${items.length} item(s) parsed`;
-    if (!items.length) { setStatus("No items parsed."); return; }
-    const sample = JSON.stringify(items[0], null, 2);
-    setStatus("JSON looks valid and normalized for UI.");
-    log(`Parsed ${items.length} item(s). First item (normalized):\n${sample}`);
+    const arr = await readJsonFromInputs();
+    if (!Array.isArray(arr)) throw new Error("Top-level JSON must be an array of documents.");
+    const sample = arr.slice(0, 3).map(normalizeDoc);
+    setStatus(`Valid JSON. ${arr.length} record(s).`);
+    log(JSON.stringify(sample, null, 2));
   } catch (e) {
-    setStatus("Validation failed.");
-    log(String(e?.message || e));
+    setStatus(e.message || String(e));
   }
 });
 
 btnExportPrimary.addEventListener("click", async () => {
-  clearLog();
-  const path = primaryPathInput.value.trim();
-  if (!path) { setStatus("Enter the primary collection path."); return; }
-  setStatus("Exporting primary collection...");
+  clearLog(); setStatus("Exporting primary…");
+  const col = primaryPathInput.value.trim();
   try {
-    const colRef = collection(db, path);
-    const snap = await getDocs(colRef);
-    const arr = [];
-    snap.forEach(d => { arr.push({ id: d.id, ...d.data() }); });
-    const blob = new Blob([JSON.stringify(arr, null, 2)], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    const snap = await getDocs(collection(db, col));
+    const out = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
-    a.href = url; a.download = (path.replace(/[^\w.-]+/g, "_") || "export") + ".json";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setStatus(`Exported ${arr.length} document(s).`);
+    a.href = URL.createObjectURL(blob);
+    a.download = "primary-export.json";
+    a.click();
+    setStatus(`Exported ${out.length} record(s).`);
   } catch (e) {
-    setStatus("Export failed.");
-    log(String(e?.message || e));
+    setStatus("Export failed: " + (e?.message || e));
   }
 });
 
-// Append (no delete) – creates new docs, skips existing ids
 btnAppendPrimary.addEventListener("click", async () => {
-  clearLog();
-  const path = primaryPathInput.value.trim();
-  if (!path) { setStatus("Enter the primary collection path."); return; }
-  let items;
+  clearLog(); setStatus("Appending to primary…");
+  const col = primaryPathInput.value.trim();
   try {
-    items = parseInputJson(jsonInput.value).map(transformItem);
+    const arr = await readJsonFromInputs();
+    const docs = arr.map(normalizeDoc);
+    let done = 0;
+    for (const d of docs) {
+      await setDoc(doc(db, col, d.id), d, { merge: true });
+      done++;
+      if (done % 25 === 0) setStatus(`Appended ${done}/${docs.length}…`);
+    }
+    setStatus(`Append complete: ${done} record(s).`);
   } catch (e) {
-    setStatus("Invalid JSON.");
-    log(String(e?.message || e));
-    return;
-  }
-  if (!items.length) { setStatus("No items to import."); return; }
-
-  setStatus("Appending into primary (skipping existing ids)...");
-  try {
-    const result = await importItemsAppend(path, items);
-    setStatus(`Append complete. Created ${result.created} new document(s). Skipped ${result.skipped} existing id(s).`);
-    log(`Created: ${result.created}, Skipped: ${result.skipped}, Without-ID created: ${result.createdWithoutId}`);
-  } catch (e) {
-    setStatus("Append failed.");
-    log(String(e?.message || e));
+    setStatus("Append failed: " + (e?.message || e));
   }
 });
 
 btnReplacePrimary.addEventListener("click", async () => {
-  await doReplacePrimary(false);
+  clearLog(); setStatus("Replacing primary (delete + import)…");
+  const col = primaryPathInput.value.trim();
+  try {
+    const arr = await readJsonFromInputs();
+    const docs = arr.map(normalizeDoc);
+
+    // Delete all current docs in batches
+    const ids = await listAllDocIds(col);
+    for (const group of chunk(ids, 400)) {
+      const batch = writeBatch(db);
+      for (const id of group) batch.delete(doc(db, col, id));
+      await batch.commit();
+    }
+    log(`Deleted ${ids.length} existing doc(s).`);
+
+    // Import new docs in batches
+    for (const group of chunk(docs, 400)) {
+      const batch = writeBatch(db);
+      for (const d of group) batch.set(doc(db, col, d.id), d, { merge: false });
+      await batch.commit();
+    }
+    setStatus(`Replace complete: imported ${docs.length} doc(s).`);
+
+  } catch (e) {
+    setStatus("Replace failed: " + (e?.message || e));
+  }
 });
 
 btnDeleteSecondary.addEventListener("click", async () => {
-  clearLog();
-  const path = secondaryPathInput.value.trim();
-  if (!path) { setStatus("Enter the secondary collection path."); return; }
-  if (!confirm(`Delete ALL documents in "${path}"? This cannot be undone.`)) { setStatus("Canceled."); return; }
-  setStatus("Deleting secondary collection...");
+  clearLog(); setStatus("Deleting secondary…");
+  const col = secondaryPathInput.value.trim();
   try {
-    await deleteAllInCollection(path);
-    setStatus("Secondary collection deleted.");
+    const ids = await listAllDocIds(col);
+    for (const group of chunk(ids, 400)) {
+      const batch = writeBatch(db);
+      for (const id of group) batch.delete(doc(db, col, id));
+      await batch.commit();
+    }
+    setStatus(`Deleted ${ids.length} from secondary.`);
   } catch (e) {
-    setStatus("Delete failed.");
-    log(String(e?.message || e));
+    setStatus("Delete failed: " + (e?.message || e));
   }
 });
 
 btnReplaceAndDelete.addEventListener("click", async () => {
-  clearLog();
-  const sec = secondaryPathInput.value.trim();
-  const pri = primaryPathInput.value.trim();
-  if (!pri || !sec) { setStatus("Enter both primary and secondary paths."); return; }
-  if (!confirm(`This will DELETE ALL documents in "${sec}" and REPLACE "${pri}" with your JSON. Continue?`)) { setStatus("Canceled."); return; }
-
+  clearLog(); setStatus("Replacing primary AND deleting secondary…");
+  const primary = primaryPathInput.value.trim();
+  const secondary = secondaryPathInput.value.trim();
   try {
-    setStatus("Deleting secondary collection...");
-    await deleteAllInCollection(sec);
-    log("Secondary collection deleted.");
+    // Replace primary
+    const arr = await readJsonFromInputs();
+    const docs = arr.map(normalizeDoc);
+
+    const ids = await listAllDocIds(primary);
+    for (const group of chunk(ids, 400)) {
+      const batch = writeBatch(db);
+      for (const id of group) batch.delete(doc(db, primary, id));
+      await batch.commit();
+    }
+    log(`Deleted ${ids.length} existing doc(s) in primary.`);
+
+    for (const group of chunk(docs, 400)) {
+      const batch = writeBatch(db);
+      for (const d of group) batch.set(doc(db, primary, d.id), d, { merge: false });
+      await batch.commit();
+    }
+    log(`Imported ${docs.length} into primary.`);
+
+    // Delete secondary
+    const sids = await listAllDocIds(secondary);
+    for (const group of chunk(sids, 400)) {
+      const batch = writeBatch(db);
+      for (const id of group) batch.delete(doc(db, secondary, id));
+      await batch.commit();
+    }
+    setStatus(`Done. Primary replaced with ${docs.length}, secondary deleted ${sids.length}.`);
   } catch (e) {
-    setStatus("Delete of secondary failed.");
-    log(String(e?.message || e));
-    return;
+    setStatus("Replace and delete failed: " + (e?.message || e));
   }
-  await doReplacePrimary(true);
 });
 
-async function doReplacePrimary(skipConfirm) {
+// NEW: Backfill cache for primary
+btnCachePrimary.addEventListener("click", async () => {
   clearLog();
   const path = primaryPathInput.value.trim();
   if (!path) { setStatus("Enter the primary collection path."); return; }
-  let items;
+  setStatus("Caching media for primary collection… requires billing to fetch external images.");
   try {
-    items = parseInputJson(jsonInput.value).map(transformItem);
+    const res = await callCacheCollection({ appId: "guardian", collectionPath: path, limit: 1000 });
+    const out = res?.data || {};
+    setStatus(`Cache finished. Processed ${out.processed || 0} doc(s); cached ${out.created || 0} image(s), skipped ${out.skipped || 0}.`);
+    log(JSON.stringify(out, null, 2));
   } catch (e) {
-    setStatus("Invalid JSON.");
-    log(String(e?.message || e));
-    return;
+    setStatus("Cache failed: " + (e?.message || e));
   }
-  if (!items.length) { setStatus("No items to import."); return; }
+});
 
-  if (!skipConfirm && !confirm(`This will DELETE ALL documents in "${path}" and import ${items.length} item(s). Continue?`)) {
-    setStatus("Canceled.");
-    return;
-  }
-
-  setStatus("Deleting existing documents in primary...");
-  try {
-    await deleteAllInCollection(path);
-    setStatus("Importing new documents into primary...");
-    await importItemsReplace(path, items);
-    setStatus("Replace complete.");
-    log(`Imported ${items.length} item(s) into ${path}.`);
-  } catch (e) {
-    setStatus("Replace failed.");
-    log(String(e?.message || e));
-  }
-}
-
-// Helpers
-async function deleteAllInCollection(path) {
-  const colRef = collection(db, path);
-  const snap = await getDocs(colRef);
-  const docs = [];
-  snap.forEach(d => docs.push(d));
-  if (!docs.length) return;
-
-  let processed = 0;
-  while (processed < docs.length) {
-    const batch = writeBatch(db);
-    const chunk = docs.slice(processed, processed + 400);
-    for (const d of chunk) batch.delete(doc(db, path, d.id));
-    await batch.commit();
-    processed += chunk.length;
-    log(`Deleted ${processed}/${docs.length}`);
-  }
-}
-
-function pickDocId(obj) {
-  const s = (v) => (typeof v === "string" && v.trim()) ? v.trim() : null;
-  return s(obj?.id) || s(obj?.docId) || s(obj?.slug) || null;
-}
-
-// Replace mode
-async function importItemsReplace(path, items) {
-  const colRef = collection(db, path);
-  let idx = 0;
-  while (idx < items.length) {
-    const batch = writeBatch(db);
-    const chunk = items.slice(idx, idx + 400);
-    for (const raw of chunk) {
-      const payload = transformItem(raw);
-      const id = pickDocId(payload) || undefined;
-      const ref = id ? doc(db, path, id) : doc(colRef);
-
-      if (!payload.id) payload.id = ref.id;
-      if (!payload.createdAt) payload.createdAt = serverTimestamp();
-      batch.set(ref, payload, { merge: false });
-    }
-    await batch.commit();
-    idx += chunk.length;
-    log(`Imported ${Math.min(idx, items.length)}/${items.length}`);
-  }
-}
-
-// Append mode
-async function importItemsAppend(path, items) {
-  const colRef = collection(db, path);
-  const normalized = items.map(transformItem);
-
-  const withId = normalized.filter(it => !!pickDocId(it));
-  const withoutId = normalized.filter(it => !pickDocId(it));
-
-  let created = 0;
-  let skipped = 0;
-  let createdWithoutId = 0;
-
-  const CHUNK = 150;
-  for (let i = 0; i < withId.length; i += CHUNK) {
-    const chunk = withId.slice(i, i + CHUNK);
-    const refs = chunk.map(it => ({ it, id: pickDocId(it), ref: doc(db, path, pickDocId(it)) }));
-    const snaps = await Promise.all(refs.map(r => getDoc(r.ref)));
-    const toCreate = [];
-    snaps.forEach((snap, idx) => {
-      const r = refs[idx];
-      if (snap.exists()) skipped++;
-      else toCreate.push(r);
-    });
-    for (let j = 0; j < toCreate.length; j += 400) {
-      const sub = toCreate.slice(j, j + 400);
-      const batch = writeBatch(db);
-      for (const { it, id, ref } of sub) {
-        const payload = { ...it, id };
-        if (!payload.createdAt) payload.createdAt = serverTimestamp();
-        batch.set(ref, payload, { merge: false });
-      }
-      await batch.commit();
-      created += sub.length;
-      log(`Created with id: +${sub.length} (total ${created}), skipped so far: ${skipped}`);
-    }
-  }
-
-  for (let i = 0; i < withoutId.length; i += 400) {
-    const chunk = withoutId.slice(i, i + 400);
-    const batch = writeBatch(db);
-    for (const it of chunk) {
-      const ref = doc(colRef);
-      const payload = { ...it };
-      payload.id = payload.id || ref.id;
-      if (!payload.createdAt) payload.createdAt = serverTimestamp();
-      batch.set(ref, payload, { merge: false });
-    }
-    await batch.commit();
-    created += chunk.length;
-    createdWithoutId += chunk.length;
-    log(`Created without id: +${chunk.length} (total ${created})`);
-  }
-
-  return { created, skipped, createdWithoutId };
-}
-
-// Auth state
-onAuthStateChanged(auth, async (user) => {
+// Auth gate: show a note if user isn't logged in
+onAuthStateChanged(auth, (user) => {
   if (!user) {
-    signedInAs.textContent = "Not signed in – open the main app and sign in first, then reload this page.";
-    roleBadge.textContent = "—";
-    btnReplacePrimary.disabled = true;
-    btnExportPrimary.disabled = true;
-    btnAppendPrimary.disabled = true;
-    btnDeleteSecondary.disabled = true;
-    btnReplaceAndDelete.disabled = true;
-    return;
+    setStatus("Note: You are not signed in. Importing/backfill will fail unless authenticated.");
+  } else {
+    setStatus(`Signed in as ${user.email || user.uid}`);
   }
-  signedInAs.textContent = user.email || user.uid;
-  const role = await fetchRoleFor(user.uid);
-  roleBadge.textContent = role;
-  const isAdmin = role === "admin";
-  const isContributor = isAdmin || role === "contributor";
-
-  // Contributors/Admins
-  btnExportPrimary.disabled = !isContributor;
-  btnAppendPrimary.disabled = !isContributor;
-
-  // Admin-only destructive operations
-  btnReplacePrimary.disabled = !isAdmin;
-  btnDeleteSecondary.disabled = !isAdmin;
-  btnReplaceAndDelete.disabled = !isAdmin;
 });

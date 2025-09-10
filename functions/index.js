@@ -1,6 +1,6 @@
 // Firebase Functions v2 — permanent no-hotlinking for reference media.
 // Caches media.images into Firebase Storage and surfaces them in phase2.assets (source:"reference").
-// Node 18+ is required (global fetch available).
+// IMPORTANT: Outbound HTTP to external hosts requires billing (Blaze) on Firebase.
 
 import { onCall } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -13,6 +13,13 @@ import { v4 as uuidv4 } from "uuid";
 initializeApp();
 const db = getFirestore();
 const storage = getStorage();
+
+// fetch compatibility: Node 18+ has global fetch; otherwise dynamic import node-fetch
+async function getFetch() {
+  if (typeof globalThis.fetch === "function") return globalThis.fetch;
+  const mod = await import("node-fetch");
+  return mod.default;
+}
 
 function sanitizeFileName(name = "") {
   return String(name).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 140) || `file_${Date.now()}`;
@@ -37,6 +44,7 @@ async function downloadAndSaveImage(bucket, basePath, img) {
   const originalUrl = String(img?.url || "").trim();
   if (!originalUrl) return null;
 
+  const fetch = await getFetch();
   let resp;
   try {
     resp = await fetch(originalUrl, {
@@ -47,22 +55,30 @@ async function downloadAndSaveImage(bucket, basePath, img) {
   } catch {
     return null;
   }
-  if (!resp.ok) return null;
+  if (!resp || !resp.ok) return null;
 
-  const ct = resp.headers.get("content-type") || "";
-  if (!ct.startsWith("image/")) {
-    // Only store images
-    return null;
+  // Consume body (arrayBuffer for web fetch, buffer() for node-fetch)
+  let buffer;
+  try {
+    const ab = await resp.arrayBuffer();
+    buffer = Buffer.from(ab);
+  } catch {
+    try {
+      buffer = await resp.buffer();
+    } catch {
+      return null;
+    }
   }
-  const ab = await resp.arrayBuffer();
-  const buffer = Buffer.from(ab);
-  const clen = buffer.byteLength;
+
+  const ct = resp.headers?.get ? (resp.headers.get("content-type") || "") : "";
+  if (ct && !ct.startsWith("image/")) return null;
 
   const urlExt = guessExtFromUrl(originalUrl);
   const ctExt = extFromContentType(ct);
   const ext = (urlExt || ctExt || ".jpg").toLowerCase();
 
-  const baseName = sanitizeFileName(img?.title || originalUrl.split("/").pop() || "image").replace(/\.(png|jpe?g|webp|gif|bmp|tif|tiff|svg)$/i, "");
+  const baseName = sanitizeFileName(img?.title || originalUrl.split("/").pop() || "image")
+    .replace(/\.(png|jpe?g|webp|gif|bmp|tif|tiff|svg)$/i, "");
   const filePath = `${basePath}/${Date.now()}_${baseName}${ext}`;
   const file = bucket.file(filePath);
   const token = uuidv4();
@@ -79,7 +95,7 @@ async function downloadAndSaveImage(bucket, basePath, img) {
     path: filePath,
     url,
     contentType: ct || "",
-    bytes: clen || undefined,
+    bytes: buffer.byteLength || undefined,
     uploadedAtMs: Date.now(),
     source: "reference",
     originalUrl,
@@ -95,8 +111,7 @@ function uniqueBy(arr, keyFn) {
   const out = [];
   for (const it of arr) {
     const k = keyFn(it);
-    if (!k) continue;
-    if (seen.has(k)) continue;
+    if (!k || seen.has(k)) continue;
     seen.add(k);
     out.push(it);
   }
@@ -127,7 +142,7 @@ async function cacheImagesForDoc({ appId, docPath, docId }) {
     return { created: 0, skipped: imgs.length };
   }
 
-  const bucket = storage.bucket(); // default bucket
+  const bucket = storage.bucket();
   const basePath = `artifacts/${appId}/public/uploads/${docId}/reference`;
 
   let created = 0;
@@ -152,17 +167,17 @@ async function cacheImagesForDoc({ appId, docPath, docId }) {
   return { created, skipped };
 }
 
-// Admin/Contrib callable — on-demand caching for a single doc
-export const cacheReferenceMedia = onCall(
-  { region: "us-central1", cors: true, memory: "512MiB", timeoutSeconds: 120 },
+// Admin/Contrib callable — backfill a whole collection after import
+export const cacheCollectionReferenceMedia = onCall(
+  { region: "us-central1", cors: true, memory: "1GiB", timeoutSeconds: 540 },
   async (req) => {
-    const { appId, docId, docPath } = req.data || {};
+    const { appId, collectionPath, limit = 300 } = req.data || {};
     const uid = req.auth?.uid || null;
 
     if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
-    if (!appId || !docId || !docPath) throw new HttpsError("invalid-argument", "Missing appId, docId, or docPath.");
+    if (!appId || !collectionPath) throw new HttpsError("invalid-argument", "Missing appId or collectionPath.");
 
-    // Best-effort role gate: allow admin or contributor
+    // Role gate: admin or contributor
     try {
       const allowRef = db.doc(`system/allowlist/users/${uid}`);
       const allowSnap = await allowRef.get();
@@ -174,12 +189,22 @@ export const cacheReferenceMedia = onCall(
       }
     } catch {}
 
-    return await cacheImagesForDoc({ appId, docPath, docId });
+    const colRef = db.collection(collectionPath);
+    const snap = await colRef.limit(Math.max(1, Math.min(2000, Number(limit) || 300))).get();
+
+    let processed = 0, created = 0, skipped = 0;
+    for (const docSnap of snap.docs) {
+      const docId = docSnap.id;
+      const res = await cacheImagesForDoc({ appId, docPath: collectionPath, docId });
+      processed++;
+      created += res.created || 0;
+      skipped += res.skipped || 0;
+    }
+    return { processed, created, skipped };
   }
 );
 
-// Automatic Firestore trigger — caches on create/update without any user action
-// Matches both guardian and guardian-agent-default collections.
+// Automatic Firestore trigger — caches on create/update without user action
 export const autoCacheReferenceMedia = onDocumentWritten(
   {
     region: "us-central1",
@@ -194,9 +219,8 @@ export const autoCacheReferenceMedia = onDocumentWritten(
     const appNs = event.params.appNs; // e.g., guardian OR guardian-agent-default
     const docId = event.params.docId;
     const docPath = `artifacts/${appNs}/public/data/werpassessments`;
-    const appId = "guardian"; // keep your appId stable for Storage pathing
+    const appId = "guardian"; // Keep stable pathing in Storage
 
-    // If media.images exists and we don't have cachedAt or cached assets, run caching
     const hasImages = Array.isArray(after?.media?.images) && after.media.images.length > 0;
     if (!hasImages) return;
 
@@ -209,7 +233,6 @@ export const autoCacheReferenceMedia = onDocumentWritten(
     try {
       await cacheImagesForDoc({ appId, docPath, docId });
     } catch (e) {
-      // swallow; will retry on next write
       console.error("autoCacheReferenceMedia error", docPath, docId, e?.message || e);
     }
   }

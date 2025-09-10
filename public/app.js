@@ -1,10 +1,13 @@
-// App — no-hotlinking: render only from Storage (phase2.assets). If none cached, show placeholder.
-// Adds renderFeedbackList back, ensures marker thumbnail box always shows, and sets monitoring wreckId on open.
+// App — no-hotlinking: render only from Storage (phase2.assets).
+// Includes: renderFeedbackList, monitoring button fix, placeholder thumbnails, export handlers, email/password auth.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection, onSnapshot, arrayUnion
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail, signOut
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, onSnapshot, arrayUnion, deleteDoc, getDocs
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL
@@ -28,8 +31,9 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
-let callable = { cacheReferenceMedia: null, reassessWerps: null, repairWerps: null };
+let callable = { cacheReferenceMedia: null, cacheCollectionReferenceMedia: null, reassessWerps: null, repairWerps: null };
 try { callable.cacheReferenceMedia = httpsCallable(functions, "cacheReferenceMedia"); } catch {}
+try { callable.cacheCollectionReferenceMedia = httpsCallable(functions, "cacheCollectionReferenceMedia"); } catch {}
 try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
 try { callable.repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
 
@@ -47,6 +51,13 @@ const userNameSpan = document.getElementById("userName");
 const signOutBtn = document.getElementById("signOutBtn");
 const roleBadge = document.getElementById("roleBadge");
 const contribHint = document.getElementById("contribHint");
+
+const emailInput = document.getElementById("emailInput");
+const passwordInput = document.getElementById("passwordInput");
+const signInEmailBtn = document.getElementById("signInEmailBtn");
+const createAccountBtn = document.getElementById("createAccountBtn");
+const resetPasswordBtn = document.getElementById("resetPasswordBtn");
+const authMessage = document.getElementById("authMessage");
 
 const analyzeBtn = document.getElementById("analyzeBtn");
 const analyzeText = document.getElementById("analyzeText");
@@ -75,13 +86,11 @@ const reportTitle = document.getElementById("reportTitle");
 const reportContent = document.getElementById("reportContent");
 const benchLegend = document.getElementById("benchLegend");
 
-// Galleries
 const uploadGalleryGrid = document.getElementById("uploadGalleryGrid");
 const uploadGalleryEmpty = document.getElementById("uploadGalleryEmpty");
 const referenceMediaGrid = document.getElementById("referenceMediaGrid");
 const referenceMediaEmpty = document.getElementById("referenceMediaEmpty");
 
-// Phase 2
 const phase2Input = document.getElementById("phase2Input");
 const phase2Files = document.getElementById("phase2Files");
 const savePhase2Btn = document.getElementById("savePhase2Btn");
@@ -90,17 +99,17 @@ const uploadFilesBtn = document.getElementById("uploadFilesBtn");
 const phase2Status = document.getElementById("phase2Status");
 const uploadStatus = document.getElementById("uploadStatus");
 
-// Feedback
 const feedbackInput = document.getElementById("feedbackInput");
 const saveFeedbackBtn = document.getElementById("saveFeedbackBtn");
 const feedbackStatus = document.getElementById("feedbackStatus");
 const feedbackList = document.getElementById("feedbackList");
 
-// Export
 const exportPdfBtn = document.getElementById("exportPdfBtn");
 const exportHtmlBtn = document.getElementById("exportHtmlBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
+
+const monitoringBtn = document.getElementById("monitoringBtn");
 
 // State
 let currentRole = "user";
@@ -210,7 +219,7 @@ function upsertMarker(item) {
 }
 function clearMarkers() { for (const m of markers.values()) { try { map.removeLayer(m); } catch {} } markers = new Map(); }
 
-// Scores/helpers
+// Scoring/helpers
 function readNumberByPaths(obj, paths) {
   for (const p of paths) {
     const v = deepGet(obj, p);
@@ -342,7 +351,7 @@ function getSeverityValue(item) {
   return computeFormulaSeverity(item);
 }
 
-// Overview sections
+// Overview sections / report HTML
 const fmt = {
   int: (v) => Number.isFinite(Number(v)) ? String(Number(v)) : "",
   date: (s) => { if (!s && s !== 0) return ""; try { const d = new Date(s); if (!isNaN(d)) return d.toISOString().slice(0,10); } catch {} return String(s); },
@@ -392,7 +401,7 @@ function buildConfidenceHtml(item) {
   const c = item?.confidence || {};
   const parts = [];
   if (isFiniteNum(c?.value)) parts.push(`<div><strong>Value:</strong> ${Number(c.value).toFixed(2)}</div>`);
-  if (getText(c?.confidenceLabel)) parts.push(`<div><strong>Label:</strong> ${escapeHtml(c.basis || c.confidenceLabel)}</div>`);
+  if (getText(c?.confidenceLabel)) parts.push(`<div><strong>Label:</strong> ${escapeHtml(c.confidenceLabel)}</div>`);
   if (getText(c?.basis)) parts.push(`<div><strong>Basis:</strong> ${escapeHtml(c.basis)}</div>`);
   if (!parts.length) return "";
   return `<section><h3>Confidence</h3><div class="text-sm space-y-1">${parts.join("")}</div></section>`;
@@ -662,6 +671,130 @@ saveFeedbackBtn?.addEventListener("click", async () => {
   }
 });
 
+// Export helpers and bindings
+function downloadFile(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function buildReportMarkdown(item) {
+  const lines = [];
+  const vessel = getVesselName(item);
+  lines.push(`# ${vessel}`);
+  lines.push("\n## Factor Scores Summary");
+  if (hasUnifiedV2(item)) {
+    const v = v2Totals(item);
+    lines.push(`- WCS: ${v.wcs.toFixed(2)} / 20`);
+    lines.push(`- PHS: ${v.phs.toFixed(2)} / 10 (weighted)`);
+    lines.push(`- ESI: ${v.esi.toFixed(2)} / ${v.esiMax}`);
+    lines.push(`- RPM: ${v.rpm.toFixed(2)}×`);
+  } else {
+    const W = readNumberByPaths(item, ["wcs","scores.WCS","WCS"]) ?? 0;
+    const P = readNumberByPaths(item, ["phs","scores.PHS","PHS"]) ?? 0;
+    const E = readNumberByPaths(item, ["esi","scores.ESI","ESI"]) ?? 0;
+    const R = resolveRPMMultiplier(item);
+    lines.push(`- WCS: ${W.toFixed(2)} / 20`);
+    lines.push(`- PHS: ${P.toFixed(2)} / 10`);
+    lines.push(`- ESI: ${E.toFixed(2)} / 30–40`);
+    lines.push(`- RPM: ${R.toFixed(2)}×`);
+  }
+  const src = Array.isArray(item?.sources) ? item.sources : [];
+  if (src.length) {
+    lines.push("\n## Sources");
+    for (const s of src) lines.push(`- ${s}`);
+  }
+  return lines.join("\n");
+}
+function getCurrentHtml() {
+  if (!currentItem) return "";
+  if (hasUnifiedV2(currentItem)) return lastRenderedHtml || renderReportV2HTML(currentItem);
+  return lastRenderedHtml || buildReportHtml(currentItem);
+}
+function onExportHtml() {
+  if (!currentItem) return;
+  const vessel = getVesselName(currentItem) || "assessment";
+  const html = getCurrentHtml();
+  const docHtml = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${html}</body></html>`;
+  downloadFile(`${vessel.replace(/\s+/g,"_")}.html`, new Blob([docHtml], { type: "text/html;charset=utf-8" }));
+}
+function onExportMarkdown() {
+  if (!currentItem) return;
+  const vessel = getVesselName(currentItem) || "assessment";
+  const md = buildReportMarkdown(currentItem);
+  downloadFile(`${vessel.replace(/\s+/g,"_")}.md`, new Blob([md], { type: "text/markdown;charset=utf-8" }));
+}
+function onExportJson() {
+  if (!currentItem) return;
+  const vessel = getVesselName(currentItem) || "assessment";
+  const json = JSON.stringify(currentItem, null, 2);
+  downloadFile(`${vessel.replace(/\s+/g,"_")}.json`, new Blob([json], { type: "application/json;charset=utf-8" }));
+}
+function onExportPdf() {
+  if (!currentItem) return;
+  const vessel = getVesselName(currentItem) || "assessment";
+
+  // Chart image
+  let chartImg = "";
+  try {
+    const cnv = document.getElementById("werSpiderChart");
+    chartImg = cnv?.toDataURL("image/png") || "";
+  } catch {}
+
+  // Gather up to 9 images from cached/uploaded assets
+  const webExt = /\.(png|jpe?g|webp|gif)$/i;
+  const assets = Array.isArray(currentItem?.phase2?.assets) ? currentItem.phase2.assets : [];
+  const urls = assets.filter(a => a?.url && webExt.test(String(a?.name || a?.path || ""))).map(a => a.url).slice(0, 9);
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title>
+    <style>
+      body { font-family: Inter, Arial, sans-serif; color:#111; line-height:1.5; padding:24px; }
+      .pdf-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+      .pdf-header img { height: 72px; width: auto; }
+      h1 { font-size: 20px; margin: 8px 0 14px; text-align:center; }
+      h2,h3,h4 { margin: 10px 0 6px; }
+      table { width:100%; border-collapse: collapse; margin: 8px 0; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
+      th { background:#f5f5f5; }
+      .gallery { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 10px 0; }
+      .gallery img { width:100%; height:120px; object-fit:cover; border:1px solid #e5e7eb; border-radius:6px; }
+      @media print { body { -webkit-print-color-adjust: exact; } }
+    </style></head><body>
+      <div class="pdf-header">
+        <img src="${LOGO_LEFT}" alt="Logo left">
+        <div style="font-weight:600; font-size:14px;">Project Guardian – WERP Reports</div>
+        <img src="${LOGO_RIGHT}" alt="Logo right">
+      </div>
+      <h1>${escapeHtml(vessel)}</h1>
+
+      ${getCurrentHtml()}
+      ${chartImg ? `<h3>WERP Risk Profile</h3><img src="${chartImg}" alt="Radar chart" style="max-width:100%;border:1px solid #e5e7eb;border-radius:6px">` : ""}
+
+      ${urls.length ? `<h3>Gallery</h3><div class="gallery">${urls.map(u => `<img src="${u}" alt="Gallery image">`).join("")}</div>` : ""}
+    </body></html>`;
+
+  const w = window.open("", "_blank");
+  if (w) {
+    w.document.open(); w.document.write(html); w.document.close();
+    w.addEventListener("load", () => { try { w.focus(); w.print(); } catch {} });
+    setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 500);
+  }
+}
+exportPdfBtn?.addEventListener("click", onExportPdf);
+exportHtmlBtn?.addEventListener("click", onExportHtml);
+exportMdBtn?.addEventListener("click", onExportMarkdown);
+exportJsonBtn?.addEventListener("click", onExportJson);
+
+// Monitoring button: if a report is open, scroll in-page; also update href to include wreckId
+monitoringBtn?.addEventListener("click", (e) => {
+  if (currentDocId) {
+    e.preventDefault();
+    const panel = document.getElementById("monitoring-panel");
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
+
 // Open report — set monitoring wreckId, trigger caching if needed
 async function maybeRequestCaching(item) {
   if (!callable.cacheReferenceMedia) return;
@@ -690,12 +823,14 @@ function openReport(item) {
   const vessel = getVesselName(item);
   if (reportTitle) reportTitle.textContent = vessel || "Assessment";
 
-  // Set monitoring wreckId for downstream listeners
+  // Set monitoring wreckId and tweak header link
   const mon = document.getElementById("monitoring-panel");
   if (mon) {
     mon.setAttribute("data-wreck-id", currentDocId || "");
-    // Dispatch a custom event in case monitoring-init.js listens dynamically
     document.dispatchEvent(new CustomEvent("wreck-change", { detail: { wreckId: currentDocId } }));
+  }
+  if (monitoringBtn && currentDocId) {
+    monitoringBtn.href = `/monitoring.html?wreckId=${encodeURIComponent(currentDocId)}`;
   }
 
   if (hasUnifiedV2(item)) {
@@ -812,108 +947,104 @@ function drawList(container, items) {
   }
 }
 
-// Misc helpers
-function getVesselName(it) {
-  const direct = [
-    it.vesselName, it.name, it.title, it.displayName, it.label,
-    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
-    it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName
-  ];
-  for (const c of direct) { const t = getText(c); if (t) return t; }
-  return getText(it.id) || "Unknown";
-}
-function normalizeDoc(d) {
-  const out = { ...d };
-  if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
-  if (d && typeof d.payload === "object" && d.payload) Object.assign(out, d.payload);
-  if (d && typeof d.attributes === "object" && d.attributes) Object.assign(out, d.attributes);
-  if (d && typeof d.details === "object" && d.details) Object.assign(out, d.details);
-  if (d && typeof d.meta === "object" && d.meta) out.meta = { ...d.meta };
-  if (d && typeof d.metadata === "object" && d.metadata) out.metadata = { ...d.metadata };
-  return out;
-}
-function isWerpAssessment(d) {
-  const t = String(d?.type ?? d?.recordType ?? d?.category ?? d?.kind ?? d?.meta?.type ?? "").toUpperCase();
-  const et = String(d?.eventType ?? d?.events?.type ?? "").toUpperCase();
-  const name = String(d?.name ?? d?.title ?? d?.id ?? "").toUpperCase();
-  const looksSeismic =
-    t === "SEISMIC_EVENT" || et === "SEISMIC_EVENT" ||
-    (t.includes("SEISMIC") && t.includes("EVENT")) || (et.includes("SEISMIC") && et.includes("EVENT")) ||
-    name.includes("SEISMIC_EVENT");
-  if (looksSeismic) return false;
-  return true;
-}
-
-// Auth => load data
-onAuthStateChanged(auth, async (user) => {
-  for (const u of dataUnsubs) { try { u(); } catch {} }
-  dataUnsubs = [];
-
-  if (!user) {
-    signedOutContainer.classList.remove("hidden");
-    appContainer.classList.add("hidden");
-    importDataBtn?.classList.add("hidden");
-    userNameSpan.classList.add("hidden");
-    signOutBtn.classList.add("hidden");
-    roleBadge.textContent = "Role: —";
-    analyzeBtn && (analyzeBtn.disabled = true);
-    contribHint?.classList.remove("hidden");
-    return;
+// Analyze (unchanged behavior)
+const analyzeFunctionNames = ["analyzeWreck", "analyzeWerps", "ingestWerps", "createWerpsAssessment", "createAssessmentFromName"];
+function getCallableByName(name) { try { return httpsCallable(functions, name); } catch { return null; } }
+analyzeBtn?.addEventListener("click", async () => {
+  const name = vesselNameInput?.value?.trim();
+  if (!name) { statusMessage.textContent = "Enter a vessel name to analyze."; return; }
+  analyzeBtn.disabled = true;
+  analyzeText.textContent = "Analyzing...";
+  statusMessage.textContent = "Submitting analysis request...";
+  let fn = null, fnName = "";
+  for (const n of analyzeFunctionNames) { const c = getCallableByName(n); if (c) { fn = c; fnName = n; break; } }
+  if (!fn) {
+    statusMessage.textContent = "No analysis function deployed.";
+    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck"; return;
   }
-
-  signedOutContainer.classList.add("hidden");
-  appContainer.classList.remove("hidden");
-  userNameSpan.textContent = user.email || user.uid;
-  userNameSpan.classList.remove("hidden");
-  signOutBtn.classList.remove("hidden");
-
-  currentRole = await (async function fetchRoleFor(uid) {
-    try {
-      const allow = await getDoc(doc(db, "system", "allowlist", "users", uid));
-      if (allow.exists()) {
-        const d = allow.data() || {};
-        let r = d.role ?? d.Role ?? d.ROLE;
-        if (typeof r === "string" && r.trim()) {
-          r = r.trim().toLowerCase();
-          if (r.startsWith("admin")) return "admin";
-          if (r.startsWith("contrib")) return "contributor";
-          if (["user","reader","viewer"].includes(r)) return "user";
-        }
-        if (d.admin === true) return "admin";
-        if (d.contributor === true) return "contributor";
-        if (d.allowed === true) return "user";
-      }
-    } catch {}
-    try {
-      const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
-      if (legacy.exists()) {
-        const d = legacy.data() || {};
-        let r = d.role ?? d.Role ?? d.ROLE;
-        if (typeof r === "string" && r.trim()) {
-          r = r.trim().toLowerCase();
-          if (r.startsWith("admin")) return "admin";
-          if (r.startsWith("contrib")) return "contributor";
-          if (["user","reader","viewer"].includes(r)) return "user";
-        }
-        if (d.admin === true) return "admin";
-        if (d.contributor === true) return "contributor";
-      }
-    } catch {}
-    return "user";
-  })(user.uid);
-
-  roleBadge.textContent = `Role: ${currentRole}`;
-  const isAdmin = currentRole === "admin";
-  const isContributor = isAdmin || currentRole === "contributor";
-  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden");
-  if (analyzeBtn) analyzeBtn.disabled = !isContributor;
-  if (!isContributor) contribHint?.classList.remove("hidden"); else contribHint?.classList.add("hidden");
-
-  initMap();
-  await startData();
+  try {
+    const payload = { name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source: "web-app" };
+    await fn(payload);
+    statusMessage.textContent = `Analysis requested via ${fnName}. It will appear shortly.`;
+    vesselNameInput.value = "";
+  } catch (e) {
+    statusMessage.textContent = `Analysis failed: ${e?.message || String(e)}`;
+  } finally {
+    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck";
+  }
 });
 
-// Data listeners
+// Auth UI handlers
+signInEmailBtn?.addEventListener("click", async () => {
+  authMessage.textContent = "Signing in…";
+  try {
+    await signInWithEmailAndPassword(auth, emailInput.value.trim(), passwordInput.value);
+    authMessage.textContent = "Signed in.";
+    setTimeout(() => authMessage.textContent = "", 1200);
+  } catch (e) {
+    authMessage.textContent = e?.message || "Sign-in failed.";
+  }
+});
+createAccountBtn?.addEventListener("click", async () => {
+  authMessage.textContent = "Creating account…";
+  try {
+    await createUserWithEmailAndPassword(auth, emailInput.value.trim(), passwordInput.value);
+    authMessage.textContent = "Account created.";
+    setTimeout(() => authMessage.textContent = "", 1200);
+  } catch (e) {
+    authMessage.textContent = e?.message || "Create account failed.";
+  }
+});
+resetPasswordBtn?.addEventListener("click", async () => {
+  const email = emailInput.value.trim();
+  if (!email) { authMessage.textContent = "Enter your email first."; return; }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    authMessage.textContent = "Password reset email sent.";
+    setTimeout(() => authMessage.textContent = "", 2000);
+  } catch (e) {
+    authMessage.textContent = e?.message || "Reset failed.";
+  }
+});
+signOutBtn?.addEventListener("click", async () => {
+  try { await signOut(auth); } catch {}
+});
+
+// Roles, listeners
+async function fetchRoleFor(uid) {
+  try {
+    const allow = await getDoc(doc(db, "system", "allowlist", "users", uid));
+    if (allow.exists()) {
+      const d = allow.data() || {};
+      let r = d.role ?? d.Role ?? d.ROLE;
+      if (typeof r === "string" && r.trim()) {
+        r = r.trim().toLowerCase();
+        if (r.startsWith("admin")) return "admin";
+        if (r.startsWith("contrib")) return "contributor";
+        if (["user","reader","viewer"].includes(r)) return "user";
+      }
+      if (d.admin === true) return "admin";
+      if (d.contributor === true) return "contributor";
+      if (d.allowed === true) return "user";
+    }
+  } catch {}
+  try {
+    const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
+    if (legacy.exists()) {
+      const d = legacy.data() || {};
+      let r = d.role ?? d.Role ?? d.ROLE;
+      if (typeof r === "string" && r.trim()) {
+        r = r.trim().toLowerCase();
+        if (r.startsWith("admin")) return "admin";
+        if (r.startsWith("contrib")) return "contributor";
+        if (["user","reader","viewer"].includes(r)) return "user";
+      }
+      if (d.admin === true) return "admin";
+      if (d.contributor === true) return "contributor";
+    }
+  } catch {}
+  return "user";
+}
 async function loadChartConfig() {
   const paths = [
     `artifacts/${appId}/public/config/werpChart`,
@@ -966,3 +1097,68 @@ async function startData() {
     } catch (e) { console.error("Listener error", p, e); }
   }
 }
+function normalizeDoc(d) {
+  const out = { ...d };
+  if (d && typeof d.data === "object" && d.data) Object.assign(out, d.data);
+  if (d && typeof d.payload === "object" && d.payload) Object.assign(out, d.payload);
+  if (d && typeof d.attributes === "object" && d.attributes) Object.assign(out, d.attributes);
+  if (d && typeof d.details === "object" && d.details) Object.assign(out, d.details);
+  if (d && typeof d.meta === "object" && d.meta) out.meta = { ...d.meta };
+  if (d && typeof d.metadata === "object" && d.metadata) out.metadata = { ...d.metadata };
+  return out;
+}
+function isWerpAssessment(d) {
+  const t = String(d?.type ?? d?.recordType ?? d?.category ?? d?.kind ?? d?.meta?.type ?? "").toUpperCase();
+  const et = String(d?.eventType ?? d?.events?.type ?? "").toUpperCase();
+  const name = String(d?.name ?? d?.title ?? d?.id ?? "").toUpperCase();
+  const looksSeismic =
+    t === "SEISMIC_EVENT" || et === "SEISMIC_EVENT" ||
+    (t.includes("SEISMIC") && t.includes("EVENT")) || (et.includes("SEISMIC") && et.includes("EVENT")) ||
+    name.includes("SEISMIC_EVENT");
+  if (looksSeismic) return false;
+  return true;
+}
+function getVesselName(it) {
+  const direct = [
+    it.vesselName, it.name, it.title, it.displayName, it.label,
+    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
+    it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName
+  ];
+  for (const c of direct) { const t = getText(c); if (t) return t; }
+  return getText(it.id) || "Unknown";
+}
+
+// Auth => load data
+onAuthStateChanged(auth, async (user) => {
+  for (const u of dataUnsubs) { try { u(); } catch {} }
+  dataUnsubs = [];
+
+  if (!user) {
+    signedOutContainer.classList.remove("hidden");
+    appContainer.classList.add("hidden");
+    importDataBtn?.classList.add("hidden");
+    userNameSpan.classList.add("hidden");
+    signOutBtn.classList.add("hidden");
+    roleBadge.textContent = "Role: —";
+    analyzeBtn && (analyzeBtn.disabled = true);
+    contribHint?.classList.remove("hidden");
+    return;
+  }
+
+  signedOutContainer.classList.add("hidden");
+  appContainer.classList.remove("hidden");
+  userNameSpan.textContent = user.email || user.uid;
+  userNameSpan.classList.remove("hidden");
+  signOutBtn.classList.remove("hidden");
+
+  currentRole = await fetchRoleFor(user.uid);
+  roleBadge.textContent = `Role: ${currentRole}`;
+  const isAdmin = currentRole === "admin";
+  const isContributor = isAdmin || currentRole === "contributor";
+  if (isContributor) importDataBtn?.classList.remove("hidden"); else importDataBtn?.classList.add("hidden");
+  if (analyzeBtn) analyzeBtn.disabled = !isContributor;
+  if (!isContributor) contribHint?.classList.remove("hidden"); else contribHint?.classList.add("hidden");
+
+  initMap();
+  await startData();
+});
