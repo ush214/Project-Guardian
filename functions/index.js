@@ -14,13 +14,6 @@ initializeApp();
 const db = getFirestore();
 const storage = getStorage();
 
-// fetch compatibility: Node 18+ has global fetch; otherwise dynamic import node-fetch
-async function getFetch() {
-  if (typeof globalThis.fetch === "function") return globalThis.fetch;
-  const mod = await import("node-fetch");
-  return mod.default;
-}
-
 function sanitizeFileName(name = "") {
   return String(name).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 140) || `file_${Date.now()}`;
 }
@@ -44,7 +37,7 @@ async function downloadAndSaveImage(bucket, basePath, img) {
   const originalUrl = String(img?.url || "").trim();
   if (!originalUrl) return null;
 
-  const fetch = await getFetch();
+  // Node.js 20+ has global fetch
   let resp;
   try {
     resp = await fetch(originalUrl, {
@@ -57,17 +50,12 @@ async function downloadAndSaveImage(bucket, basePath, img) {
   }
   if (!resp || !resp.ok) return null;
 
-  // Consume body (arrayBuffer for web fetch, buffer() for node-fetch)
   let buffer;
   try {
     const ab = await resp.arrayBuffer();
     buffer = Buffer.from(ab);
   } catch {
-    try {
-      buffer = await resp.buffer();
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   const ct = resp.headers?.get ? (resp.headers.get("content-type") || "") : "";
