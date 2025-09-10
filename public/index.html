@@ -43,7 +43,6 @@
     .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
     .pill.unknown { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
 
-    /* Report content — compact for tables */
     .report-prose { max-width: none; font-size: 0.92rem; line-height: 1.45; color: #111827; }
     .report-prose h1 { font-size: 1.25rem; }
     .report-prose h2 { font-size: 1.1rem; }
@@ -62,9 +61,6 @@
       word-break: break-word;
     }
     .report-prose th { background: #f9fafb; font-weight: 600; white-space: nowrap; }
-
-    .report-prose pre { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb; }
-    .report-prose blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid #e5e7eb; color:#374151; }
 
     #reportScroll { max-height: 75vh; overflow-y: auto; padding-right: 4px; }
     #reportScroll::-webkit-scrollbar { width: 8px; }
@@ -91,10 +87,8 @@
         <h1 class="text-lg sm:text-xl font-semibold">Project Guardian – WERP Reports</h1>
       </div>
       <div class="flex items-center justify-end gap-2">
-        <!-- New: Import Data (contributors + admins) -->
+        <a id="monitoringBtn" href="/monitoring.html" class="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-1.5 rounded">Monitoring</a>
         <a id="importDataBtn" href="/import.html" class="hidden bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs px-3 py-1.5 rounded border border-indigo-200">Import Data</a>
-        <!-- Existing: Admin Tools (admins only) -->
-        <a id="adminToolsBtn" href="/admin-tools.html" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded">Admin Tools</a>
         <span id="userName" class="hidden text-xs text-indigo-200"></span>
         <button id="signOutBtn" class="hidden bg-gray-600 hover:bg-gray-500 text-white text-xs px-3 py-1.5 rounded">Sign out</button>
       </div>
@@ -218,7 +212,7 @@
           </div>
         </div>
 
-        <!-- Top row: chart + gallery -->
+        <!-- Top row: chart + galleries -->
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
           <div class="lg:col-span-3">
             <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
@@ -227,10 +221,18 @@
             </div>
             <div id="benchLegend" class="mt-2 text-xs text-gray-600 text-center"></div>
           </div>
-          <div class="lg:col-span-2">
-            <h3 class="text-base font-bold mb-3 text-gray-900">Image Gallery</h3>
-            <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
-            <p id="galleryEmpty" class="text-xs text-gray-500 mt-1 hidden">No images uploaded yet.</p>
+
+          <div class="lg:col-span-2 space-y-4">
+            <div>
+              <h3 class="text-base font-bold mb-3 text-gray-900">Uploaded Files</h3>
+              <div id="uploadGalleryGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+              <p id="uploadGalleryEmpty" class="text-xs text-gray-500 mt-1 hidden">No uploads yet.</p>
+            </div>
+            <div>
+              <h3 class="text-base font-bold mb-3 text-gray-900">Reference Media</h3>
+              <div id="referenceMediaGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+              <p id="referenceMediaEmpty" class="text-xs text-gray-500 mt-1 hidden">No reference media provided.</p>
+            </div>
           </div>
         </div>
 

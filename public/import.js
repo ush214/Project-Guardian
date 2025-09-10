@@ -28,7 +28,7 @@ const secondaryPathInput = el("secondaryPath");
 const jsonInput = el("jsonInput");
 const btnValidate = el("btnValidate");
 const btnExportPrimary = el("btnExportPrimary");
-const btnAppendPrimary = el("btnAppendPrimary"); // NEW
+const btnAppendPrimary = el("btnAppendPrimary");
 const btnReplacePrimary = el("btnReplacePrimary");
 const btnDeleteSecondary = el("btnDeleteSecondary");
 const btnReplaceAndDelete = el("btnReplaceAndDelete");
@@ -99,11 +99,11 @@ function parseInputJson(raw) {
   return [];
 }
 
-// Map weights, coordinates, rpm factors for UI compatibility
+// Schema normalization for UI
 function transformItem(raw) {
   const item = { ...raw };
 
-  // Ensure id if provided by source
+  // Ensure id if provided
   item.id = item.id || item.docId || item.slug || "";
 
   // Coordinates to top-level {lat, lng}
@@ -124,7 +124,7 @@ function transformItem(raw) {
     });
   }
 
-  // RPM factors: object -> array of parameters (for display table), then remove factors (safeguard)
+  // RPM factors: object -> array of parameters; remove object (safeguard)
   if (item?.rpm && !Array.isArray(item.rpm.parameters)) {
     if (item.rpm.factors && typeof item.rpm.factors === "object" && !Array.isArray(item.rpm.factors)) {
       try {
@@ -135,11 +135,12 @@ function transformItem(raw) {
           rationale: v?.rationale || ""
         }));
         item.rpm.parameters = arr;
-        delete item.rpm.factors; // SAFEGUARD
+        delete item.rpm.factors;
       } catch {}
     }
   }
 
+  // media.images is already okay; no transformation needed
   return item;
 }
 
@@ -181,7 +182,7 @@ btnExportPrimary.addEventListener("click", async () => {
   }
 });
 
-// NEW: Append (no delete) – creates new docs, skips any incoming ids that already exist
+// Append (no delete) – creates new docs, skips existing ids
 btnAppendPrimary.addEventListener("click", async () => {
   clearLog();
   const path = primaryPathInput.value.trim();
@@ -288,7 +289,7 @@ async function deleteAllInCollection(path) {
   let processed = 0;
   while (processed < docs.length) {
     const batch = writeBatch(db);
-    const chunk = docs.slice(processed, processed + 400); // keep under 500 ops
+    const chunk = docs.slice(processed, processed + 400);
     for (const d of chunk) batch.delete(doc(db, path, d.id));
     await batch.commit();
     processed += chunk.length;
@@ -301,7 +302,7 @@ function pickDocId(obj) {
   return s(obj?.id) || s(obj?.docId) || s(obj?.slug) || null;
 }
 
-// Replace mode (used by Replace primary operations)
+// Replace mode
 async function importItemsReplace(path, items) {
   const colRef = collection(db, path);
   let idx = 0;
@@ -315,7 +316,7 @@ async function importItemsReplace(path, items) {
 
       if (!payload.id) payload.id = ref.id;
       if (!payload.createdAt) payload.createdAt = serverTimestamp();
-      batch.set(ref, payload, { merge: false }); // full replace per doc
+      batch.set(ref, payload, { merge: false });
     }
     await batch.commit();
     idx += chunk.length;
@@ -323,12 +324,11 @@ async function importItemsReplace(path, items) {
   }
 }
 
-// Append mode: create new docs; skip if incoming id already exists
+// Append mode
 async function importItemsAppend(path, items) {
   const colRef = collection(db, path);
   const normalized = items.map(transformItem);
 
-  // Separate items with and without id
   const withId = normalized.filter(it => !!pickDocId(it));
   const withoutId = normalized.filter(it => !pickDocId(it));
 
@@ -336,30 +336,22 @@ async function importItemsAppend(path, items) {
   let skipped = 0;
   let createdWithoutId = 0;
 
-  // Handle items WITH id: check existence, create only if missing
-  const CHUNK = 150; // reasonable parallelism for getDoc
+  const CHUNK = 150;
   for (let i = 0; i < withId.length; i += CHUNK) {
     const chunk = withId.slice(i, i + CHUNK);
     const refs = chunk.map(it => ({ it, id: pickDocId(it), ref: doc(db, path, pickDocId(it)) }));
     const snaps = await Promise.all(refs.map(r => getDoc(r.ref)));
-
     const toCreate = [];
     snaps.forEach((snap, idx) => {
       const r = refs[idx];
-      if (snap.exists()) {
-        skipped++;
-      } else {
-        toCreate.push(r);
-      }
+      if (snap.exists()) skipped++;
+      else toCreate.push(r);
     });
-
-    // Write creations in batches of 400
     for (let j = 0; j < toCreate.length; j += 400) {
       const sub = toCreate.slice(j, j + 400);
       const batch = writeBatch(db);
       for (const { it, id, ref } of sub) {
-        const payload = { ...it };
-        payload.id = id; // ensure stored "id" matches document id
+        const payload = { ...it, id };
         if (!payload.createdAt) payload.createdAt = serverTimestamp();
         batch.set(ref, payload, { merge: false });
       }
@@ -369,7 +361,6 @@ async function importItemsAppend(path, items) {
     }
   }
 
-  // Handle items WITHOUT id: always create new docs (generate ids)
   for (let i = 0; i < withoutId.length; i += 400) {
     const chunk = withoutId.slice(i, i + 400);
     const batch = writeBatch(db);
@@ -404,13 +395,15 @@ onAuthStateChanged(auth, async (user) => {
   signedInAs.textContent = user.email || user.uid;
   const role = await fetchRoleFor(user.uid);
   roleBadge.textContent = role;
-  const isContributor = role === "admin" || role === "contributor";
-  btnReplacePrimary.disabled = !isContributor;
+  const isAdmin = role === "admin";
+  const isContributor = isAdmin || role === "contributor";
+
+  // Contributors/Admins
   btnExportPrimary.disabled = !isContributor;
   btnAppendPrimary.disabled = !isContributor;
-  btnDeleteSecondary.disabled = !isContributor;
-  btnReplaceAndDelete.disabled = !isContributor;
-  if (!isContributor) {
-    setStatus("You need contributor or admin role to modify collections.");
-  }
+
+  // Admin-only destructive operations
+  btnReplacePrimary.disabled = !isAdmin;
+  btnDeleteSecondary.disabled = !isAdmin;
+  btnReplaceAndDelete.disabled = !isAdmin;
 });

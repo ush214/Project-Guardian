@@ -15,7 +15,10 @@
   <header class="bg-gray-900 text-white">
     <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
       <h1 class="text-base sm:text-lg font-semibold">Import/Replace Data</h1>
-      <a href="/index.html" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded">Back to App</a>
+      <div class="flex items-center gap-2">
+        <a href="/monitoring.html" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded">Monitoring</a>
+        <a href="/index.html" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded">Back to App</a>
+      </div>
     </div>
   </header>
 
@@ -60,12 +63,11 @@
         <button id="btnValidate" class="bg-gray-100 hover:bg-gray-200 text-gray-900 text-sm px-3 py-2 rounded border border-gray-300">Validate JSON</button>
         <button id="btnExportPrimary" class="bg-white hover:bg-gray-50 text-gray-900 text-sm px-3 py-2 rounded border border-gray-300">Export primary (backup)</button>
 
-        <!-- New append option -->
         <button id="btnAppendPrimary" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-2 rounded">Append to primary (no delete)</button>
 
-        <button id="btnReplacePrimary" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-2 rounded">Replace primary (delete + import)</button>
-        <button id="btnDeleteSecondary" class="bg-amber-600 hover:bg-amber-500 text-white text-sm px-3 py-2 rounded">Delete secondary</button>
-        <button id="btnReplaceAndDelete" class="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-2 rounded">Replace primary AND delete secondary</button>
+        <button id="btnReplacePrimary" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-2 rounded">Replace primary (delete + import) <span class="text-[10px] align-super">(Admin)</span></button>
+        <button id="btnDeleteSecondary" class="bg-amber-600 hover:bg-amber-500 text-white text-sm px-3 py-2 rounded">Delete secondary <span class="text-[10px] align-super">(Admin)</span></button>
+        <button id="btnReplaceAndDelete" class="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-2 rounded">Replace primary AND delete secondary <span class="text-[10px] align-super">(Admin)</span></button>
       </div>
 
       <p class="text-xs text-gray-600">
