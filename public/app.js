@@ -55,9 +55,10 @@ const auth = getAuth(app);
 const functions = getFunctions(app, "us-central1");
 
 // Optional callable functions (probe safely)
-const callable = { reassessWerps: null, repairWerps: null };
+const callable = { reassessWerps: null, repairWerps: null, cacheReferenceMedia: null };
 try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
 try { callable.repairWerps = httpsCallable(functions, "repairWerps"); } catch {}
+try { callable.cacheReferenceMedia = httpsCallable(functions, "cacheReferenceMedia"); } catch {}
 
 // READ from these collections
 const READ_COLLECTIONS = [
@@ -110,6 +111,7 @@ const uploadGalleryGrid = document.getElementById("uploadGalleryGrid");
 const uploadGalleryEmpty = document.getElementById("uploadGalleryEmpty");
 const referenceMediaGrid = document.getElementById("referenceMediaGrid");
 const referenceMediaEmpty = document.getElementById("referenceMediaEmpty");
+const cacheMediaBtn = document.getElementById("cacheMediaBtn");
 
 // Phase 2 inputs
 const phase2Input = document.getElementById("phase2Input");
@@ -513,30 +515,57 @@ function markerIconFor(band) {
   });
 }
 
+// Host preference for reliable thumbnails
+const HOST_PREFERENCE = [
+  "oceanexplorer.noaa.gov",
+  "upload.wikimedia.org",
+  "commons.wikimedia.org",
+  "wikipedia.org",
+  "noaa.gov",
+  "sanctuaries.noaa.gov"
+];
+const HOST_BLOCKLIST = [
+  "nmssanctuaries.blob.core.windows.net"
+];
+function hostFromUrl(u) { try { return new URL(String(u)).hostname.replace(/^www\./, ""); } catch { return ""; } }
+function sortByHostPreference(urls) {
+  return urls.slice().sort((a, b) => {
+    const ha = hostFromUrl(a), hb = hostFromUrl(b);
+    const ia = HOST_BLOCKLIST.includes(ha) ? 999 : Math.max(HOST_PREFERENCE.indexOf(ha), 50);
+    const ib = HOST_BLOCKLIST.includes(hb) ? 999 : Math.max(HOST_PREFERENCE.indexOf(hb), 50);
+    return ia - ib;
+  });
+}
+
 // Choose a thumbnail image for the marker popup
 function getMarkerImageUrl(item) {
-  // Prefer uploaded assets first
-  const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
   const webExt = /\.(png|jpe?g|webp|gif)$/i;
-  const imgAsset = assets.find(a => webExt.test(a?.name || a?.path || ""));
-  if (imgAsset?.url) return imgAsset.url;
+  const urls = [];
 
-  // Then prefer reference media representative image
+  // Uploaded assets (includes cached reference)
+  const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
+  for (const a of assets) {
+    const n = a?.name || a?.path || "";
+    if (a?.url && webExt.test(String(n))) urls.push(a.url);
+  }
+
+  // Reference media (representative first)
   const mediaImages = Array.isArray(item?.media?.images) ? item.media.images : [];
-  const rep = mediaImages.find(m => m?.representative && m?.url);
-  if (rep?.url) return rep.url;
-  const firstMedia = mediaImages.find(m => m?.url && webExt.test(String(m.url)));
-  if (firstMedia?.url) return firstMedia.url;
+  const rep = mediaImages.filter(m => m?.url && m?.representative);
+  const nonrep = mediaImages.filter(m => m?.url && !m?.representative);
+  for (const m of rep) if (webExt.test(String(m.url))) urls.push(m.url);
+  for (const m of nonrep) if (webExt.test(String(m.url))) urls.push(m.url);
 
-  // Fallback to known top-level image fields
+  // Fallback top-level fields
   const candidates = [
     item?.thumbnailUrl, item?.imageUrl, item?.coverImage, item?.coverPhoto,
     item?.image, item?.photo, item?.thumbnail, item?.bannerImage
   ].filter(Boolean);
-  for (const u of candidates) {
-    try { const s = String(u); if (webExt.test(s)) return s; } catch {}
-  }
-  return null;
+  for (const u of candidates) { try { const s = String(u); if (webExt.test(s)) urls.push(s); } catch {} }
+
+  if (!urls.length) return null;
+  const preferred = sortByHostPreference(urls)[0];
+  return preferred || null;
 }
 
 function upsertMarker(item) {
@@ -554,7 +583,7 @@ function upsertMarker(item) {
 
   const imgUrl = getMarkerImageUrl(item);
   const imgHtml = imgUrl
-    ? `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" style="width:220px;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" loading="lazy"></div>`
+    ? `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" style="width:220px;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" loading="lazy"></div>`
     : "";
 
   const popupHtml = `
@@ -625,6 +654,34 @@ function renderRadarGeneric(item) {
   };
   if (radarChart) radarChart.destroy();
   radarChart = new Chart(ctx, { type:"radar", data, options });
+  renderBenchLegend();
+}
+
+// v2 radar
+function renderRadarV2(item) {
+  const ctx = document.getElementById("werSpiderChart")?.getContext("2d"); if (!ctx) return;
+  const v = v2Totals(item);
+  const wcs20 = Math.max(0, Math.min(20, v.wcs));
+  const phs20 = Math.max(0, Math.min(20, (v.phs / 10) * 20));
+  const esi20 = Math.max(0, Math.min(20, (v.esi / (v.esiMax || 30)) * 20));
+  const rpm20 = Math.max(0, Math.min(20, ((Math.min(Math.max(v.rpm, 0.5), 2.5) - 0.5) / 2.0) * 20));
+  const profile = [wcs20, phs20, esi20, rpm20];
+  const lowCap = [6,6,6,6], medCap = [12,12,12,12], highCap = [20,20,20,20];
+
+  if (radarChart) radarChart.destroy();
+  radarChart = new Chart(ctx, {
+    type: "radar",
+    data: {
+      labels: ["WCS","PHS","ESI","RPM"],
+      datasets: [
+        { label:"Low benchmark", data: lowCap, backgroundColor:"rgba(16,185,129,0.18)", borderColor:"rgba(16,185,129,0.45)", pointRadius:0, order:1 },
+        { label:"Medium benchmark", data: medCap, backgroundColor:"rgba(245,158,11,0.14)", borderColor:"rgba(245,158,11,0.45)", pointRadius:0, fill:"-1", order:2 },
+        { label:"High benchmark", data: highCap, backgroundColor:"rgba(239,68,68,0.12)", borderColor:"rgba(239,68,68,0.45)", pointRadius:0, fill:"-1", order:3 },
+        { label:"Risk Profile", data: profile, backgroundColor:"rgba(30,64,175,0.22)", borderColor:"rgba(30,64,175,1)", pointBackgroundColor:"rgba(30,64,175,1)", order:4 }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } }, scales:{ r:{ suggestedMin:0, suggestedMax:20, ticks:{ stepSize:4 } } } }
+  });
   renderBenchLegend();
 }
 
@@ -748,315 +805,15 @@ function factorSummaryTable(item) {
     <table><thead><tr><th>Factor</th><th>Score</th><th>Scale</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
 }
 
-// Report renderers (no Summary/Recommendations)
-function buildReportHtml(item) {
-  const blocks = [];
-  const overview = buildOverviewHtml(item);
-  if (overview) blocks.push(overview);
-  blocks.push(factorSummaryTable(item));
-
-  const W = readNumberByPaths(item, ["wcs","scores.WCS","WCS"]) ?? 0;
-  const P = readNumberByPaths(item, ["phs","scores.PHS","PHS"]) ?? 0;
-  const E = readNumberByPaths(item, ["esi","scores.ESI","ESI"]) ?? 0;
-  const R = resolveRPMMultiplier(item);
-  blocks.push(`
-    <h3>Factor Scores and Rationale</h3>
-    <table>
-      <thead><tr><th>Factor</th><th>Score</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><th>WCS</th><td>${W.toFixed(2)}</td><td></td></tr>
-        <tr><th>PHS</th><td>${P.toFixed(2)}</td><td></td></tr>
-        <tr><th>ESI</th><td>${E.toFixed(2)}</td><td></td></tr>
-        <tr><th>RPM</th><td>${R.toFixed(2)}×</td><td></td></tr>
-      </tbody>
-    </table>
-  `);
-
-  const sources = buildSourcesHtml(item);
-  const assumptions = buildAssumptionsHtml(item);
-  const confidence = buildConfidenceHtml(item);
-  if (sources) blocks.push(sources);
-  if (assumptions) blocks.push(assumptions);
-  if (confidence) blocks.push(confidence);
-
-  return blocks.join("\n");
-}
-
-function renderReportV2HTML(item) {
-  const v = v2Totals(item);
-  const overview = buildOverviewHtml(item);
-
-  const wcsTable = `
-    <table>
-      <thead>
-        <tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr>
-      </thead>
-      <tbody>
-        ${v.wcsRows.map(r => `
-          <tr>
-            <td>${escapeHtml(r.title)}</td>
-            <td>${escapeHtml(r.rationale)}</td>
-            <td>${(Number(r.normalized) || 0).toFixed(2)}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
-    <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
-    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
-  `;
-
-  const phsRowsHtml = (v.phsRows || []).map(r => `
-    <tr>
-      <td>${escapeHtml(r.name)}</td>
-      <td>${escapeHtml(r.rationale)}</td>
-      <td>${r.weightPct.toFixed(0)}%</td>
-      <td>${r.score.toFixed(2)}</td>
-      <td>${r.weighted.toFixed(2)}</td>
-    </tr>
-  `).join("");
-
-  const esiParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
-  const esiRowsHtml = esiParams.map(p => `
-    <tr>
-      <td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td>
-      <td>${escapeHtml(p?.rationale ?? "")}</td>
-      <td>${escapeHtml(String(p?.score ?? ""))}</td>
-    </tr>
-  `).join("");
-
-  const rpmList = Array.isArray(item?.rpm?.parameters)
-    ? item.rpm.parameters
-    : Array.isArray(item?.rpm?.factors)
-      ? item.rpm.factors
-      : [];
-  const rpmRowsHtml = rpmList.map(f => `
-    <tr>
-      <td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td>
-      <td>${escapeHtml(f?.rationale ?? "Not specified.")}</td>
-      <td>${escapeHtml(String(f?.value ?? ""))}</td>
-    </tr>
-  `).join("");
-
-  const sources = buildSourcesHtml(item);
-  const assumptions = buildAssumptionsHtml(item);
-  const confidence = buildConfidenceHtml(item);
-
-  return `
-    ${overview || ""}
-
-    ${factorSummaryTable(item)}
-
-    <section>
-      <h3>Phase 3: WCS (Hull & Structure)</h3>
-      ${wcsTable}
-    </section>
-
-    <section>
-      <h3>Phase 3: PHS (Pollution Hazard)</h3>
-      <p class="text-xs text-gray-600 mb-2">
-        Weights are treated as percentages and normalized to sum to 100%.
-        Scores are on 0–10; Weighted Score = Score × Weight.
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Parameter</th>
-            <th>Rationale</th>
-            <th>Weight (%)</th>
-            <th>Score (0–10)</th>
-            <th>Weighted Score</th>
-          </tr>
-        </thead>
-        <tbody>${phsRowsHtml}</tbody>
-      </table>
-      <p class="mt-2"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
-      ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: Input weights did not sum to 100%; normalized for consistency.</p>' : ''}
-    </section>
-
-    <section>
-      <h3>Phase 3: ESI (Environmental Sensitivity)</h3>
-      <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
-      <p class="mt-2"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
-    </section>
-
-    <section>
-      <h3>Phase 3: RPM (Release Probability Modifier)</h3>
-      ${rpmRowsHtml ? `<table><thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead><tbody>${rpmRowsHtml}</tbody></table>` : '<p class="text-gray-600">No factor breakdown provided.</p>'}
-      <p class="mt-2"><strong>Final Multiplier:</strong> ${v.rpm.toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
-    </section>
-
-    ${sources || ""}
-    ${assumptions || ""}
-    ${confidence || ""}
-  `;
-}
-
-// Markdown export
-function buildReportMarkdown(item) {
-  const lines = [];
-  const vessel = getVesselName(item);
-  lines.push(`# ${vessel}`);
-
-  lines.push("\n## Factor Scores Summary");
-  if (hasUnifiedV2(item)) {
-    const v = v2Totals(item);
-    lines.push(`- WCS: ${v.wcs.toFixed(2)} / 20`);
-    lines.push(`- PHS: ${v.phs.toFixed(2)} / 10 (weighted; weights treated as percentages and normalized)`);
-    lines.push(`- ESI: ${v.esi.toFixed(2)} / ${v.esiMax}`);
-    lines.push(`- RPM: ${v.rpm.toFixed(2)}×`);
-  } else {
-    const W = readNumberByPaths(item, ["wcs","scores.WCS","WCS"]) ?? 0;
-    const P = readNumberByPaths(item, ["phs","scores.PHS","PHS"]) ?? 0;
-    const E = readNumberByPaths(item, ["esi","scores.ESI","ESI"]) ?? 0;
-    const R = resolveRPMMultiplier(item);
-    lines.push(`- WCS: ${W.toFixed(2)} / 20`);
-    lines.push(`- PHS: ${P.toFixed(2)} / 10`);
-    lines.push(`- ESI: ${E.toFixed(2)} / 30–40`);
-    lines.push(`- RPM: ${R.toFixed(2)}×`);
-  }
-
-  const src = Array.isArray(item?.sources) ? item.sources : [];
-  if (src.length) {
-    lines.push("\n## Sources");
-    for (const s of src) lines.push(`- ${s}`);
-  }
-
-  return lines.join("\n");
-}
-
-// Data listeners
-async function startData() {
-  for (const u of dataUnsubs) { try { u(); } catch {} }
-  dataUnsubs = [];
-
-  await loadChartConfig();
-
-  const byKey = new Map();
-  const applySnap = (snap, basePath) => {
-    snap.forEach(docSnap => {
-      const raw = docSnap.data() || {};
-      const d = { ...normalizeDoc(raw), id: raw?.id || docSnap.id, _path: basePath };
-      if (!isWerpAssessment(d)) return;
-      const sv = getSeverityValue(d);
-      d.severity = { ...(d.severity || {}), value: sv, band: d.severity?.band || bandFromValue(sv) };
-      byKey.set(`${basePath}::${d.id}`, d);
-    });
-    allItems = Array.from(byKey.values());
-    render();
-  };
-
-  for (const p of READ_COLLECTIONS) {
-    try {
-      const un = onSnapshot(collection(db, p),
-        (snap) => applySnap(snap, p),
-        (err) => console.error(`Snapshot error (${p})`, err)
-      );
-      dataUnsubs.push(un);
-    } catch (e) { console.error("Listener error", p, e); }
-  }
-}
-
-// Filters
-[sevHigh, sevMedium, sevLow].forEach(cb => cb && cb.addEventListener("change", render));
-searchBox?.addEventListener("input", render);
-clearSearch?.addEventListener("click", () => { searchBox.value = ""; render(); });
-
-function getVisibleItems() {
-  const activeBands = new Set();
-  if (sevHigh?.checked) activeBands.add("high");
-  if (sevMedium?.checked) activeBands.add("medium");
-  if (sevLow?.checked) activeBands.add("low");
-  const term = searchBox?.value?.trim().toLowerCase() || '';
-  return allItems.filter(it => {
-    const band = it?.severity?.band || 'unknown';
-    if (!activeBands.has(band) && band !== 'unknown') return false;
-    if (term && !getVesselName(it).toLowerCase().includes(term)) return false;
-    return true;
-  });
-}
-
-function render() {
-  const filtered = getVisibleItems();
-
-  const initial = [], completed = [], reassessArr = [];
-  for (const it of filtered) {
-    const phase2HasNotes = !!getText(it?.phase2?.summary);
-    const phase2CompletedFlag = (it?.phase2?.status === 'completed') || (it?.phase2?.completed === true);
-    const completedExplicit = (it?.completed === true) || (it?.status === "completed") || !!it?.phase3 || !!it?.finalizedAt;
-    const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes;
-
-    const alerts = Array.isArray(it?.alerts) ? it.alerts : [];
-    const hasUnackedAlert = alerts.some(a => a && a.acknowledged === false);
-    const seismicFlag = it?.seismicEvent === true;
-    const events = it?.events;
-    const hasSeismicEvent =
-      (events?.seismic != null) ||
-      (Array.isArray(events) && events.some(e => /seismic/i.test(e?.type || "")));
-    const reqReassess = Boolean(it?.needsReassessment || hasUnackedAlert || seismicFlag || hasSeismicEvent);
-
-    if (reqReassess) reassessArr.push(it);
-    else if (isCompleted) completed.push(it);
-    else initial.push(it);
-  }
-
-  const valOf = (o) => isFiniteNum(o?.severity?.value) ? o.severity.value : -Infinity;
-  const bySeverityDesc = (a, b) => valOf(b) - valOf(a);
-
-  initial.sort(bySeverityDesc);
-  completed.sort(bySeverityDesc);
-  reassessArr.sort(bySeverityDesc);
-
-  drawList(initialList, initial);
-  drawList(completedList, completed);
-  drawList(reassessList, reassessArr);
-
-  if (initialCount) initialCount.textContent = String(initial.length);
-  if (completedCount) completedCount.textContent = String(completed.length);
-  if (reassessCount) reassessCount.textContent = String(reassessArr.length);
-
-  document.getElementById("noDataBanner")?.classList.toggle("hidden", allItems.length !== 0);
-  noInitial?.classList.toggle("hidden", initial.length !== 0);
-  noCompleted?.classList.toggle("hidden", completed.length !== 0);
-  noReassess?.classList.toggle("hidden", reassessArr.length !== 0);
-
-  clearMarkers();
-  for (const it of filtered) upsertMarker(it);
-
-  if (visibleCounts) visibleCounts.textContent = `${filtered.length} of ${allItems.length}`;
-}
-
-function drawList(container, items) {
-  if (!container) return;
-  container.innerHTML = "";
-  for (const it of items) {
-    const li = document.createElement("div");
-    li.className = "list-item flex items-center justify-between gap-3";
-    const band = it?.severity?.band || "unknown";
-    const vessel = escapeHtml(getVesselName(it));
-    const sv = it?.severity?.value;
-    const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : "N/A";
-    li.innerHTML = `
-      <div class="min-w-0">
-        <div class="text-sm font-semibold text-gray-900 truncate">${vessel || "Unknown"}</div>
-        <div class="text-xs text-gray-500">Severity: ${band.toUpperCase()} ${svTxt}</div>
-      </div>
-      <span class="pill ${band}">${band.toUpperCase()}</span>
-    `;
-    li.addEventListener("click", () => openReport(it));
-    container.appendChild(li);
-  }
-}
-
-// Vessel naming
-function getVesselName(it) {
-  const direct = [
-    it.vesselName, it.name, it.title, it.displayName, it.label,
-    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
-    it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName
-  ];
-  for (const c of direct) { const t = getText(c); if (t) return t; }
-  return getText(it.id) || "Unknown";
-}
+// Placeholder for broken images (SVG)
+const PLACEHOLDER_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="400" height="240">
+    <rect width="100%" height="100%" fill="#f1f5f9"/>
+    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">
+      Image unavailable
+    </text>
+  </svg>
+`);
 
 // Galleries
 function renderUploadsFromDoc() {
@@ -1074,7 +831,15 @@ function renderUploadsFromDoc() {
     const tile = document.createElement("div");
     tile.className = "gallery-tile";
     if (isImg && url) {
-      tile.innerHTML = `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(name)}" loading="lazy"></a>`;
+      const link = document.createElement("a");
+      link.href = url; link.target = "_blank"; link.rel = "noopener";
+      const img = document.createElement("img");
+      img.src = url; img.alt = escapeHtml(name);
+      img.loading = "lazy";
+      img.referrerPolicy = "no-referrer";
+      img.onerror = () => { img.src = PLACEHOLDER_SVG; };
+      link.appendChild(img);
+      tile.appendChild(link);
     } else {
       tile.innerHTML = `<a class="file-tile" href="${url}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`;
     }
@@ -1091,12 +856,21 @@ function renderReferenceMedia() {
   const media = imgs.filter(m => m?.url && /\.(png|jpe?g|gif|webp)$/i.test(String(m.url)));
   if (!media.length) { referenceMediaEmpty?.classList.remove("hidden"); return; }
 
-  for (const m of media) {
-    const url = String(m.url);
-    const title = getText(m.title) || "";
+  const sorted = sortByHostPreference(media.map(m => String(m.url)));
+
+  for (const u of sorted) {
+    const url = String(u);
     const tile = document.createElement("div");
     tile.className = "gallery-tile";
-    tile.innerHTML = `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(title)}" loading="lazy"></a>`;
+    const link = document.createElement("a");
+    link.href = url; link.target = "_blank"; link.rel = "noopener";
+    const img = document.createElement("img");
+    img.src = url; img.alt = "Reference media";
+    img.loading = "lazy";
+    img.referrerPolicy = "no-referrer";
+    img.onerror = () => { img.src = PLACEHOLDER_SVG; };
+    link.appendChild(img);
+    tile.appendChild(link);
     referenceMediaGrid.appendChild(tile);
   }
 }
@@ -1126,6 +900,11 @@ function openReport(item) {
   renderUploadsFromDoc();
   renderReferenceMedia();
   renderFeedbackList(item);
+
+  // Show cache button for contributors/admins if media exists
+  const hasRefMedia = Array.isArray(item?.media?.images) && item.media.images.length > 0;
+  const canCache = currentRole === "admin" || currentRole === "contributor";
+  if (cacheMediaBtn) cacheMediaBtn.classList.toggle("hidden", !(canCache && hasRefMedia));
 
   reportContainer.classList.remove("hidden");
   reportContainer.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1190,6 +969,30 @@ uploadFilesBtn?.addEventListener("click", async () => {
     setTimeout(() => uploadStatus.textContent = "", 1500);
   } catch (e) {
     uploadStatus.textContent = `Upload failed: ${e?.message || "403/permission? Check Storage rules."}`;
+  }
+});
+
+// NEW: Cache reference media (server-side download + storage)
+cacheMediaBtn?.addEventListener("click", async () => {
+  if (!currentDocId || !callable.cacheReferenceMedia) return;
+  cacheMediaBtn.disabled = true;
+  const oldText = cacheMediaBtn.textContent;
+  cacheMediaBtn.textContent = "Caching...";
+  try {
+    const payload = { appId, docId: currentDocId, docPath: currentDocPath };
+    const res = await callable.cacheReferenceMedia(payload);
+    const result = res?.data || {};
+    // Re-fetch doc and re-open to refresh galleries and marker thumbnails
+    const snap = await getDoc(doc(db, currentDocPath, currentDocId));
+    if (snap.exists()) {
+      currentItem = { ...currentItem, ...snap.data(), id: currentDocId, _path: currentDocPath };
+      openReport(currentItem);
+    }
+    cacheMediaBtn.textContent = result?.created ? `Cached ${result.created} image(s)` : "Cached";
+    setTimeout(() => { cacheMediaBtn.textContent = oldText; cacheMediaBtn.disabled = false; }, 1500);
+  } catch (e) {
+    cacheMediaBtn.textContent = "Failed";
+    setTimeout(() => { cacheMediaBtn.textContent = oldText; cacheMediaBtn.disabled = false; }, 1500);
   }
 });
 
@@ -1290,12 +1093,7 @@ analyzeBtn?.addEventListener("click", async () => {
   }
 
   try {
-    const payload = {
-      name,
-      appId,
-      targetPath: DEFAULT_WRITE_COLLECTION,
-      source: "web-app"
-    };
+    const payload = { name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source: "web-app" };
     await fn(payload);
     statusMessage.textContent = `Analysis requested via ${fnName}. It will appear in the lists when ready.`;
     vesselNameInput.value = "";
@@ -1469,6 +1267,140 @@ exportPdfBtn?.addEventListener("click", onExportPdf);
 exportHtmlBtn?.addEventListener("click", onExportHtml);
 exportMdBtn?.addEventListener("click", onExportMarkdown);
 exportJsonBtn?.addEventListener("click", onExportJson);
+
+// Data listeners
+async function startData() {
+  for (const u of dataUnsubs) { try { u(); } catch {} }
+  dataUnsubs = [];
+
+  await loadChartConfig();
+
+  const byKey = new Map();
+  const applySnap = (snap, basePath) => {
+    snap.forEach(docSnap => {
+      const raw = docSnap.data() || {};
+      const d = { ...normalizeDoc(raw), id: raw?.id || docSnap.id, _path: basePath };
+      if (!isWerpAssessment(d)) return;
+      const sv = getSeverityValue(d);
+      d.severity = { ...(d.severity || {}), value: sv, band: d.severity?.band || bandFromValue(sv) };
+      byKey.set(`${basePath}::${d.id}`, d);
+    });
+    allItems = Array.from(byKey.values());
+    render();
+  };
+
+  for (const p of READ_COLLECTIONS) {
+    try {
+      const un = onSnapshot(collection(db, p),
+        (snap) => applySnap(snap, p),
+        (err) => console.error(`Snapshot error (${p})`, err)
+      );
+      dataUnsubs.push(un);
+    } catch (e) { console.error("Listener error", p, e); }
+  }
+}
+
+// Filters
+[sevHigh, sevMedium, sevLow].forEach(cb => cb && cb.addEventListener("change", render));
+searchBox?.addEventListener("input", render);
+clearSearch?.addEventListener("click", () => { searchBox.value = ""; render(); });
+
+function getVisibleItems() {
+  const activeBands = new Set();
+  if (sevHigh?.checked) activeBands.add("high");
+  if (sevMedium?.checked) activeBands.add("medium");
+  if (sevLow?.checked) activeBands.add("low");
+  const term = searchBox?.value?.trim().toLowerCase() || '';
+  return allItems.filter(it => {
+    const band = it?.severity?.band || 'unknown';
+    if (!activeBands.has(band) && band !== 'unknown') return false;
+    if (term && !getVesselName(it).toLowerCase().includes(term)) return false;
+    return true;
+  });
+}
+
+function render() {
+  const filtered = getVisibleItems();
+
+  const initial = [], completed = [], reassessArr = [];
+  for (const it of filtered) {
+    const phase2HasNotes = !!getText(it?.phase2?.summary);
+    const phase2CompletedFlag = (it?.phase2?.status === 'completed') || (it?.phase2?.completed === true);
+    const completedExplicit = (it?.completed === true) || (it?.status === "completed") || !!it?.phase3 || !!it?.finalizedAt;
+    const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes;
+
+    const alerts = Array.isArray(it?.alerts) ? it.alerts : [];
+    const hasUnackedAlert = alerts.some(a => a && a.acknowledged === false);
+    const seismicFlag = it?.seismicEvent === true;
+    const events = it?.events;
+    const hasSeismicEvent =
+      (events?.seismic != null) ||
+      (Array.isArray(events) && events.some(e => /seismic/i.test(e?.type || "")));
+    const reqReassess = Boolean(it?.needsReassessment || hasUnackedAlert || seismicFlag || hasSeismicEvent);
+
+    if (reqReassess) reassessArr.push(it);
+    else if (isCompleted) completed.push(it);
+    else initial.push(it);
+  }
+
+  const valOf = (o) => isFiniteNum(o?.severity?.value) ? o.severity.value : -Infinity;
+  const bySeverityDesc = (a, b) => valOf(b) - valOf(a);
+
+  initial.sort(bySeverityDesc);
+  completed.sort(bySeverityDesc);
+  reassessArr.sort(bySeverityDesc);
+
+  drawList(initialList, initial);
+  drawList(completedList, completed);
+  drawList(reassessList, reassessArr);
+
+  if (initialCount) initialCount.textContent = String(initial.length);
+  if (completedCount) completedCount.textContent = String(completed.length);
+  if (reassessCount) reassessCount.textContent = String(reassessArr.length);
+
+  document.getElementById("noDataBanner")?.classList.toggle("hidden", allItems.length !== 0);
+  noInitial?.classList.toggle("hidden", initial.length !== 0);
+  noCompleted?.classList.toggle("hidden", completed.length !== 0);
+  noReassess?.classList.toggle("hidden", reassessArr.length !== 0);
+
+  clearMarkers();
+  for (const it of filtered) upsertMarker(it);
+
+  if (visibleCounts) visibleCounts.textContent = `${filtered.length} of ${allItems.length}`;
+}
+
+function drawList(container, items) {
+  if (!container) return;
+  container.innerHTML = "";
+  for (const it of items) {
+    const li = document.createElement("div");
+    li.className = "list-item flex items-center justify-between gap-3";
+    const band = it?.severity?.band || "unknown";
+    const vessel = escapeHtml(getVesselName(it));
+    const sv = it?.severity?.value;
+    const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : "N/A";
+    li.innerHTML = `
+      <div class="min-w-0">
+        <div class="text-sm font-semibold text-gray-900 truncate">${vessel || "Unknown"}</div>
+        <div class="text-xs text-gray-500">Severity: ${band.toUpperCase()} ${svTxt}</div>
+      </div>
+      <span class="pill ${band}">${band.toUpperCase()}</span>
+    `;
+    li.addEventListener("click", () => openReport(it));
+    container.appendChild(li);
+  }
+}
+
+// Vessel naming
+function getVesselName(it) {
+  const direct = [
+    it.vesselName, it.name, it.title, it.displayName, it.label,
+    it.vessel?.name, it.ship?.name, it.wreck?.name, it.wreckName, it.shipName,
+    it.meta?.vesselName, it.metadata?.vesselName, it.phase1?.screening?.vesselName
+  ];
+  for (const c of direct) { const t = getText(c); if (t) return t; }
+  return getText(it.id) || "Unknown";
+}
 
 // Flatten helper
 function normalizeDoc(d) {

@@ -224,12 +224,17 @@
 
           <div class="lg:col-span-2 space-y-4">
             <div>
-              <h3 class="text-base font-bold mb-3 text-gray-900">Uploaded Files</h3>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-base font-bold text-gray-900">Uploaded Files</h3>
+              </div>
               <div id="uploadGalleryGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
               <p id="uploadGalleryEmpty" class="text-xs text-gray-500 mt-1 hidden">No uploads yet.</p>
             </div>
             <div>
-              <h3 class="text-base font-bold mb-3 text-gray-900">Reference Media</h3>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-base font-bold text-gray-900">Reference Media</h3>
+                <button id="cacheMediaBtn" class="hidden text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded">Cache reference media</button>
+              </div>
               <div id="referenceMediaGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
               <p id="referenceMediaEmpty" class="text-xs text-gray-500 mt-1 hidden">No reference media provided.</p>
             </div>
@@ -245,7 +250,7 @@
         <div id="monitoring-panel" class="mt-6"></div>
 
         <!-- Phase 2 inputs -->
-        <div id="phase2Section" class="mt-6 border-t pt-4">
+        <div id="phase2Section" class="mt-6 border-top pt-4">
           <h3 class="text-base font-semibold text-gray-800 mb-2">Phase 2: In-Situ Assessment (Recommended)</h3>
           <p class="text-xs text-gray-500 mb-3">Provide UT readings, ROV imagery, and diver logs to finalize classification.</p>
 
