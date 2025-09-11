@@ -18,1170 +18,1121 @@
       }
     }
   </script>
-  <!-- Leaflet -->
+  <!-- Leaflet (no integrity to avoid blocking) -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-sA+4J1rj0zJfCfeU3E1G7QJdG4sPKeLJg1j0z6bYf8M="
     crossorigin=""
   />
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-o9N1j8Mk3tXv64j5vQ5R6Z0wweAV2Xp1eml6G8Z8d4M="
     crossorigin=""
   ></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- html2pdf -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-YcsIP5Z5s7k1Slb2nsbYh3H2lH2v0k6vT+1b6tfk3hQ8r6l1i6JtVZQvJ7cLrGoJq9wqz7Qy0f3h5m7rU0fPGQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <!-- Firebase -->
-  <script type="module">
-    /*********************************************************
-     * Firebase + App Core
-     *********************************************************/
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import {
-      getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-      sendPasswordResetEmail, signOut
-    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import {
-      getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection,
-      onSnapshot, arrayUnion
-    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-    import {
-      getStorage, ref as storageRef, uploadBytes, getDownloadURL
-    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-    import {
-      getFunctions, httpsCallable
-    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+  <!-- html2pdf (no integrity to avoid SRI mismatch) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" referrerpolicy="no-referrer"></script>
 
-    /****************** CONFIG ******************/
-    const firebaseConfig = {
-      apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
-      authDomain: "project-guardian-agent.firebaseapp.com",
-      projectId: "project-guardian-agent",
-      storageBucket: "project-guardian-agent.firebasestorage.app",
-      messagingSenderId: "84395007243",
-      appId: "1:84395007243:web:b07e5f4c4264d27611160e",
-      measurementId: "G-NRLH3WSCQ9"
-    };
-    const appId = "guardian";
-    const READ_COLLECTIONS = [
-      "artifacts/guardian/public/data/werpassessments",
-      "artifacts/guardian-agent-default/public/data/werpassessments"
-    ];
-    const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
-
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-    const storage = getStorage(app);
-    const functions = getFunctions(app, "us-central1");
-
-    let callable = {
-      analyzeWerps: null,
-      reassessWerps: null
-    };
-    try { callable.analyzeWerps = httpsCallable(functions, "analyzeWerps"); } catch {}
-    try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
-
-    /****************** STATE ******************/
-    const state = {
-      wrecks: [],
-      byIdPath: new Map(), // id -> Firestore collection path
-      currentRoute: null,
-      currentWreck: null,
-      filters: {
-        band: 'all',      // risk band
-        stage: 'all',     // assessment stage
-        search: ''
-      },
-      uploads: new Map(),
-      notes: new Map(),
-      role: 'user',
-      user: null,
-      listeners: []
-    };
-
-    const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
-
-    /****************** UTILS ******************/
-    const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="100%" height="100%" fill="#0f172a"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="16" font-family="Arial, sans-serif">No image available</text></svg>'
-    );
-    const $ = sel => document.querySelector(sel);
-    function escapeHtml(s){ return String(s || "").replace(/[&<>\"']/g,c=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c])); }
-    const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
-    const getText = v => { if (v==null) return ""; const s=String(v).trim(); return s; };
-
-    function vesselName(it){
-      return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown");
-    }
-    function vesselSummary(it){
-      return getText(it?.historical?.circumstancesOfLoss) ||
-             getText(it?.historical?.summary) ||
-             getText(it?.phase2?.summary) ||
-             "No summary available.";
-    }
-
-    function resolveCoordinates(item){
-      const toNumL = v=>{const n=Number(v);return Number.isFinite(n)?n:null;};
-      function extract(obj){
-        if(!obj) return null;
-        if(Array.isArray(obj)&&obj.length>=2){
-          const lngA=toNumL(obj[0]); const latA=toNumL(obj[1]);
-          if(latA!=null && lngA!=null) return {lat:latA,lng:lngA};
-          const latB=toNumL(obj[0]); const lngB=toNumL(obj[1]);
-          if(latB!=null && lngB!=null) return {lat:latB,lng:lngB};
-          return null;
-        }
-        if(obj.coordinates){
-          const nested=extract(obj.coordinates);
-            if(nested) return nested;
-        }
-        const lat=toNumL(obj.latitude ?? obj.lat ?? obj.y);
-        const lng=toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
-        if(lat!=null && lng!=null) return {lat,lng};
-        if(obj.latlng){
-          const ll=extract(obj.latlng);
-          if(ll) return ll;
-        }
-        return null;
-      }
-      const cands = [
-        item?.phase1?.screening?.coordinates,
-        item?.coordinates,
-        item?.location?.coordinates,
-        item?.historical?.location?.coordinates,
-        item?.location,
-        item?.geo,
-        item?.position,
-        item?.geometry?.coordinates,
-        item?.geometry
-      ];
-      for(const c of cands){
-        const got=extract(c);
-        if(got) return got;
-      }
-      return null;
-    }
-
-    function severityBandFromValue(val){
-      const v=Number(val);
-      if(!Number.isFinite(v)) return 'stable';
-      if(v>=50) return 'alert';
-      if(v>=25) return 'warning';
-      return 'stable';
-    }
-    function riskBand(item){
-      const b = (item?.severity?.band || "").toLowerCase();
-      if(b==='high') return 'alert';
-      if(b==='medium') return 'warning';
-      if(b==='low') return 'stable';
-      return severityBandFromValue(item?.severity?.value);
-    }
-
-    function stageFromItem(it){
-      const phase2HasNotes = !!getText(it?.phase2?.summary);
-      const phase2CompletedFlag = it?.phase2?.status === 'completed' || it?.phase2?.completed === true;
-      const completedExplicit = it?.completed === true || it?.status === 'completed' || !!it?.phase3 || !!it?.finalizedAt;
-      const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes;
-      const isReassess = Boolean(
-        it?.needsReassessment === true ||
-        it?.seismicEvent === true ||
-        (it?.events && (
-          it.events.seismic != null ||
-          (Array.isArray(it.events) && it.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
-        ))
-      );
-      if(isReassess) return 'reassess';
-      return isCompleted ? 'completed' : 'initial';
-    }
-
-    function showToast(msg,type='info'){
-      const stack = $('#toast-stack');
-      if(!stack) return;
-      const color = type==='success'?'bg-emerald-600': type==='error'?'bg-rose-600':'bg-slate-700';
-      const div = document.createElement('div');
-      div.className=`${color} text-white px-4 py-2 rounded-lg shadow-soft border border-white/10 transition`;
-      div.textContent=msg;
-      stack.appendChild(div);
-      setTimeout(()=>{
-        div.classList.add('opacity-0','-translate-y-1');
-        setTimeout(()=>div.remove(),250);
-      },2800);
-    }
-
-    /****************** AUTH UI ******************/
-    function updateAuthUI(){
-      const signedIn = !!state.user;
-      $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
-      $('#auth-role') && ($('#auth-role').textContent = state.role);
-      document.querySelectorAll('[data-auth-visible]').forEach(el=>{
-        el.classList.toggle('hidden', !signedIn);
-      });
-      document.querySelectorAll('[data-auth-hidden]').forEach(el=>{
-        el.classList.toggle('hidden', signedIn);
-      });
-
-      // gating
-      const isContributor = ['admin','contributor'].includes(state.role);
-      $('#analyze-form')?.querySelectorAll('input,button').forEach(el=>{
-        if(el.id!=='analysis-input') el.disabled = !isContributor;
-      });
-      $('#btn-reassess') && ($('#btn-reassess').disabled = !isContributor);
-      $('#phase2-notes') && ($('#phase2-notes').disabled = !isContributor);
-      $('#btn-save-phase2') && ($('#btn-save-phase2').disabled = !isContributor);
-      $('#btn-select-files') && ($('#btn-select-files').disabled = !isContributor);
-    }
-
-    async function fetchRoleFor(uid){
-      try{
-        const allow = await getDoc(doc(db,"system","allowlist","users",uid));
-        if(allow.exists()){
-          const d=allow.data()||{};
-          let r=d.role ?? d.Role ?? d.ROLE;
-          if(typeof r==='string' && r.trim()){
-            r=r.trim().toLowerCase();
-            if(r.startsWith('admin')) return 'admin';
-            if(r.startsWith('contrib')) return 'contributor';
-            if(['user','reader','viewer'].includes(r)) return 'user';
-          }
-          if(d.admin===true) return 'admin';
-          if(d.contributor===true) return 'contributor';
-          if(d.allowed===true) return 'user';
-        }
-      }catch{}
-      try{
-        const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
-        if(legacy.exists()){
-          const d=legacy.data()||{};
-            let r=d.role ?? d.Role ?? d.ROLE;
-            if(typeof r==='string' && r.trim()){
-              r=r.trim().toLowerCase();
-              if(r.startsWith('admin')) return 'admin';
-              if(r.startsWith('contrib')) return 'contributor';
-              if(['user','reader','viewer'].includes(r)) return 'user';
-            }
-            if(d.admin===true) return 'admin';
-            if(d.contributor===true) return 'contributor';
-        }
-      }catch{}
-      return 'user';
-    }
-
-    /****************** DATA LISTENERS ******************/
-    function detachListeners(){
-      for(const u of state.listeners){
-        try{u();}catch{}
-      }
-      state.listeners=[];
-    }
-
-    function normalizeDoc(d){
-      const out={...d};
-      if(d && typeof d.data==='object') Object.assign(out,d.data);
-      if(d && typeof d.payload==='object') Object.assign(out,d.payload);
-      if(d && typeof d.attributes==='object') Object.assign(out,d.attributes);
-      if(d && typeof d.details==='object') Object.assign(out,d.details);
-      return out;
-    }
-
-    async function startData(){
-      detachListeners();
-      const byKey = new Map();
-      const applySnap = (snap, basePath)=>{
-        snap.forEach(docSnap=>{
-          const raw = docSnap.data()||{};
-          const d = { ...normalizeDoc(raw), id: raw.id || docSnap.id, _path: basePath };
-          // filter out seismic events (like original logic)
-          const t = String(d?.type||d?.recordType||"").toUpperCase();
-          if(t.includes('SEISMIC_EVENT')) return;
-          // compute severity fallback
-          if(!d.severity || typeof d.severity!=='object'){
-            d.severity={};
-          }
-          if(d.severity.value==null){
-            d.severity.value = raw?.severity?.value ?? raw?.severityValue;
-          }
-          if(!d.severity.band){
-            d.severity.band = d.severity.band || severityBandFromValue(d.severity.value);
-          }
-          byKey.set(`${basePath}::${d.id}`, d);
-          state.byIdPath.set(d.id, basePath);
-        });
-        state.wrecks = Array.from(byKey.values());
-        renderApp(); // re-render views
-      };
-      for(const p of READ_COLLECTIONS){
-        try{
-          const un = onSnapshot(collection(db,p),
-            snap=>applySnap(snap,p),
-            err=>console.error("Listener error",p,err)
-          );
-          state.listeners.push(un);
-        }catch(e){
-          console.error("Failed to listen",p,e);
-        }
-      }
-    }
-
-    /****************** MAP (Leaflet) ******************/
-    let leafletMap = null;
-    let leafletMarkers = new Map();
-
-    function initLeafletMap(){
-      if(leafletMap) return;
-      leafletMap = L.map('map-canvas',{ zoomControl:true, attributionControl:true }).setView([10,150],3);
-      L.tileLayer(
-        `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,
-        {
-          tileSize:512,
-          zoomOffset:-1,
-          attribution:'&copy; OpenStreetMap &copy; Mapbox'
-        }
-      ).addTo(leafletMap);
-    }
-
-    function iconForBand(band){
-      const color = band==='alert' ? 'red' : band==='warning' ? 'orange' : 'green';
-      return L.icon({
-        iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
-        shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
-        iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
-      });
-    }
-
-    function refreshMapMarkers(){
-      if(!leafletMap) return;
-      // remove old
-      for(const m of leafletMarkers.values()){
-        try{ leafletMap.removeLayer(m);}catch{}
-      }
-      leafletMarkers.clear();
-
-      // filter
-      const riskFilter = state.filters.band;
-      const stageFilter = state.filters.stage;
-      const term = state.filters.search.toLowerCase();
-
-      const filtered = state.wrecks.filter(it=>{
-        const rb = riskBand(it);
-        if(riskFilter!=='all' && rb!==riskFilter) return false;
-        const st = stageFromItem(it);
-        if(stageFilter!=='all' && st!==stageFilter) return false;
-        if(term && !vesselName(it).toLowerCase().includes(term)) return false;
-        return resolveCoordinates(it)!=null;
-      });
-
-      filtered.forEach(it=>{
-        const coord = resolveCoordinates(it);
-        if(!coord) return;
-        const b = riskBand(it);
-        const marker = L.marker([coord.lat, coord.lng], { icon: iconForBand(b) });
-        const thumb = (it.media?.images?.[0]?.url) || (Array.isArray(it.media?.images) && typeof it.media.images[0]==='string' ? it.media.images[0] : PLACEHOLDER_SVG);
-        const popupHtml = `
-          <div style="min-width:200px">
-            <div style="font-weight:600">${escapeHtml(vesselName(it))}</div>
-            <div style="font-size:12px;color:#444">Stage: ${stageFromItem(it)}</div>
-            <div style="margin:6px 0">
-              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:140px;object-fit:cover;border:1px solid #ccc;border-radius:4px"/>
-            </div>
-            <a href="#/wreck/${encodeURIComponent(it.id)}" style="color:#2563eb;text-decoration:underline;font-size:13px;">Open Report</a>
-          </div>
-        `;
-        marker.bindPopup(popupHtml);
-        marker.addTo(leafletMap);
-        leafletMarkers.set(it.id, marker);
-      });
-    }
-
-    /****************** ROUTER ******************/
-    const routes = {
-      home: /^#\/?$/,
-      report: /^#\/wreck\/([^/]+)$/,
-      list: /^#\/list\/?$/
-    };
-    function parseRoute(){
-      const h = location.hash || '#/';
-      if(routes.home.test(h)) return { name:'home' };
-      const mReport = h.match(routes.report);
-      if(mReport) return { name:'report', id: decodeURIComponent(mReport[1]) };
-      if(routes.list.test(h)) return { name:'list' };
-      return { name:'home' };
-    }
-    window.addEventListener('hashchange', ()=>renderApp());
-
-    /****************** VIEW HELPERS ******************/
-    function setActiveNav(route){
-      const map = {
-        home: '#nav-home',
-        list: '#nav-list',
-        report: '#nav-current-report'
-      };
-      document.querySelectorAll('nav a').forEach(a=>{
-        a.classList.remove('ring-2','ring-cyan-500');
-        a.removeAttribute('aria-current');
-      });
-      const sel = map[route.name];
-      if(sel){
-        const el = document.querySelector(sel);
-        if(el){
-          el.classList.add('ring-2','ring-cyan-500');
-          el.setAttribute('aria-current','page');
-        }
-      }
-      if(route.name==='report' && state.currentWreck){
-        const cr = document.querySelector('#nav-current-report');
-        cr?.classList.remove('hidden');
-        cr.href = `#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
-      }
-    }
-
-    function buildAuthPanel(){
-      return `
-        <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
-          <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-cyan-200">Authentication</h2>
-            <button id="toggle-auth" class="text-sm text-cyan-300 hover:text-cyan-200 transition">Toggle</button>
-          </div>
-          <div id="auth-body" class="p-4 grid md:grid-cols-2 gap-6">
-            <div data-auth-hidden>
-              <label class="block text-sm mb-1">Email</label>
-              <input id="login-email" type="email" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="you@example.com"/>
-              <label class="block text-sm mt-3 mb-1">Password</label>
-              <input id="login-pass" type="password" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-              <div class="flex gap-2 mt-4 flex-wrap">
-                <button id="btn-signin" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Sign In</button>
-                <button id="btn-create" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">Create Account</button>
-                <button id="btn-reset" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">Reset Password</button>
-              </div>
-              <div id="auth-msg" class="text-xs text-slate-400 mt-2 h-5"></div>
-            </div>
-            <div data-auth-visible class="hidden space-y-3">
-              <div class="text-sm">
-                <div><span class="font-medium text-slate-300">Signed in as:</span> <span id="auth-email" class="text-cyan-300"></span></div>
-                <div><span class="font-medium text-slate-300">Role:</span> <span id="auth-role" class="text-cyan-300"></span></div>
-              </div>
-              <button id="btn-signout" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm">Sign Out</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function buildAnalyzePanel(){
-      const isContributor = ['admin','contributor'].includes(state.role);
-      return `
-        <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
-          <div class="px-4 py-3 border-b border-white/10">
-            <h2 class="text-lg font-semibold text-cyan-200">Assessment Actions</h2>
-            <p class="text-slate-400 text-sm mt-1">Submit new assessments or request a reassessment (contributors/admin only).</p>
-          </div>
-          <div class="p-4 space-y-4">
-            <form id="analyze-form" class="flex flex-col md:flex-row gap-3">
-              <input id="analysis-input" type="text" placeholder="Vessel name to analyze..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-              <div class="flex gap-2">
-                <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Analyze</button>
-                <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Reassess</button>
-              </div>
-            </form>
-            <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
-          </div>
-        </div>
-      `;
-    }
-
-    function buildMapCard(){
-      return `
-        <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
-          <div class="p-4 md:p-5 border-b border-white/10 flex flex-col lg:flex-row gap-4 lg:items-center">
-            <div class="flex items-center gap-1 text-sm flex-wrap">
-              <span class="mr-2 font-medium text-slate-200">Risk:</span>
-              <button data-filter-risk="all" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">All</button>
-              <button data-filter-risk="alert" class="px-3 py-1.5 rounded-lg border border-white/10 bg-rose-500/20 hover:bg-rose-500/25 text-rose-200">Alert</button>
-              <button data-filter-risk="warning" class="px-3 py-1.5 rounded-lg border border-white/10 bg-amber-400/20 hover:bg-amber-400/25 text-amber-200">Warning</button>
-              <button data-filter-risk="stable" class="px-3 py-1.5 rounded-lg border border-white/10 bg-emerald-400/20 hover:bg-emerald-400/25 text-emerald-200">Stable</button>
-            </div>
-            <div class="flex items-center gap-1 text-sm flex-wrap">
-              <span class="mr-2 font-medium text-slate-200">Stage:</span>
-              <button data-filter-stage="all" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">All</button>
-              <button data-filter-stage="initial" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">Initial</button>
-              <button data-filter-stage="completed" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">Completed</button>
-              <button data-filter-stage="reassess" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">Reassess</button>
-            </div>
-            <div class="lg:ml-auto w-full lg:w-72">
-              <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-            </div>
-          </div>
-          <div class="relative">
-            <div id="map-canvas" class="w-full h-[550px] bg-slate-800"></div>
-          </div>
-          <div class="p-4 border-t border-white/10">
-            <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
-            <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderReassessList(){
-      const wrap = $('#reassess-list');
-      if(!wrap) return;
-      wrap.innerHTML='';
-      const list = state.wrecks.filter(w=>{
-        return w?.needsReassessment === true ||
-               w?.seismicEvent === true ||
-               (w?.events && (
-                 w.events.seismic != null ||
-                 (Array.isArray(w.events) && w.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
-               ));
-      });
-      if(!list.length){
-        wrap.innerHTML = `<div class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300">None currently.</div>`;
-        return;
-      }
-      list.forEach(it=>{
-        const band = riskBand(it);
-        const badge = band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
-                      band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
-                      'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
-        const div = document.createElement('a');
-        div.href = `#/wreck/${encodeURIComponent(it.id)}`;
-        div.className='block rounded-lg bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition p-3 space-y-2';
-        div.innerHTML=`
-          <div class="flex items-center justify-between gap-3">
-            <div class="font-medium truncate">${escapeHtml(vesselName(it))}</div>
-            <span class="px-2 py-0.5 text-xs rounded-md border ${badge}">${band.toUpperCase()}</span>
-          </div>
-          <div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>
-        `;
-        wrap.appendChild(div);
-      });
-    }
-
-    function renderHome(){
-      const app = $('#app');
-      app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
-
-      // Auth toggles
-      $('#toggle-auth')?.addEventListener('click',()=>{
-        $('#auth-body')?.classList.toggle('hidden');
-      });
-
-      // Auth actions
-      $('#btn-signin')?.addEventListener('click', async ()=>{
-        const email=$('#login-email').value.trim();
-        const pass=$('#login-pass').value;
-        $('#auth-msg').textContent='Signing in...';
-        try{
-          await signInWithEmailAndPassword(auth,email,pass);
-          $('#auth-msg').textContent='Signed in.';
-        }catch(e){
-          $('#auth-msg').textContent=e?.message||'Failed.';
-        }
-      });
-      $('#btn-create')?.addEventListener('click', async ()=>{
-        const email=$('#login-email').value.trim();
-        const pass=$('#login-pass').value;
-        $('#auth-msg').textContent='Creating...';
-        try{
-          await createUserWithEmailAndPassword(auth,email,pass);
-          $('#auth-msg').textContent='Account created.';
-        }catch(e){
-          $('#auth-msg').textContent=e?.message||'Failed.';
-        }
-      });
-      $('#btn-reset')?.addEventListener('click', async ()=>{
-        const email=$('#login-email').value.trim();
-        if(!email){ $('#auth-msg').textContent='Enter email first.'; return;}
-        try{
-          await sendPasswordResetEmail(auth,email);
-          $('#auth-msg').textContent='Reset email sent.';
-        }catch(e){
-          $('#auth-msg').textContent=e?.message||'Failed.';
-        }
-      });
-      $('#btn-signout')?.addEventListener('click', async ()=>{
-        try{ await signOut(auth);}catch{}
-      });
-
-      // Analyze / reassess
-      $('#analyze-form')?.addEventListener('submit', async e=>{
-        e.preventDefault();
-        const isContributor = ['admin','contributor'].includes(state.role);
-        if(!isContributor){ showToast("Insufficient role","error"); return; }
-        const name = getText($('#analysis-input').value);
-        if(!name){ showToast("Enter vessel name","error"); return; }
-        $('#analyze-status').textContent='Requesting analysis...';
-        try{
-          if(!callable.analyzeWerps) throw new Error("analyzeWerps not deployed");
-          await callable.analyzeWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
-          $('#analysis-input').value="";
-          $('#analyze-status').textContent='Analysis requested.';
-          showToast("Analysis requested","success");
-        }catch(e){
-          $('#analyze-status').textContent='Error: '+(e?.message||'failed');
-          showToast("Analysis failed","error");
-        }
-      });
-      $('#btn-reassess')?.addEventListener('click', async ()=>{
-        const isContributor = ['admin','contributor'].includes(state.role);
-        if(!isContributor){ showToast("Insufficient role","error"); return; }
-        const name = getText($('#analysis-input').value);
-        if(!name){ showToast("Enter vessel name","error"); return; }
-        $('#analyze-status').textContent='Requesting reassessment...';
-        try{
-          if(!callable.reassessWerps) throw new Error("reassessWerps not deployed");
-          await callable.reassessWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
-          $('#analysis-input').value="";
-          $('#analyze-status').textContent='Reassessment requested.';
-          showToast("Reassessment requested","success");
-        }catch(e){
-          $('#analyze-status').textContent='Error: '+(e?.message||'failed');
-          showToast("Reassessment failed","error");
-        }
-      });
-
-      // Map
-      initLeafletMap();
-      refreshMapMarkers();
-      renderReassessList();
-
-      // Wire filters
-      document.querySelectorAll('[data-filter-risk]').forEach(btn=>{
-        btn.addEventListener('click',()=>{
-          state.filters.band = btn.getAttribute('data-filter-risk');
-          refreshMapMarkers();
-        });
-      });
-      document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
-        btn.addEventListener('click',()=>{
-          state.filters.stage = btn.getAttribute('data-filter-stage');
-          refreshMapMarkers();
-        });
-      });
-      $('#map-search')?.addEventListener('input', e=>{
-        state.filters.search = e.target.value || '';
-        refreshMapMarkers();
-      });
-
-      updateAuthUI();
-    }
-
-    /****************** REPORT VIEW ******************/
-    function readRPMFactors(it){
-      const rpm=it?.rpm;
-      if(!rpm) return [];
-      if(Array.isArray(rpm.parameters)) return rpm.parameters;
-      if(Array.isArray(rpm.factors)) return rpm.factors;
-      if(Array.isArray(rpm.breakdown)) return rpm.breakdown;
-      if(Array.isArray(rpm.factorBreakdown)) return rpm.factorBreakdown;
-      const maps=["factors","parameters","breakdown","factorMap"];
-      for(const k of maps){
-        const obj=rpm[k];
-        if(obj && typeof obj==='object'){
-          return Object.entries(obj).map(([name,v])=>{
-            if(v && typeof v === 'object')
-              return { name, rationale: v.rationale ?? v.reason ?? "", value: v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" };
-            return { name, rationale:"", value:v??""};
-          });
-        }
-      }
-      const skip=new Set(["finalMultiplier","multiplier","notes","rationale","comment","comments","factors","parameters"]);
-      if(rpm && typeof rpm==='object'){
-        return Object.entries(rpm)
-          .filter(([k])=>!skip.has(k))
-          .map(([name,v])=> v&&typeof v==='object'?{name,rationale:v.rationale??v.reason??"",value:v.value??v.multiplier??v.weight??v.score??""}:{name,rationale:"",value:v??""});
-      }
-      return [];
-    }
-    function rpmFinalMultiplier(it){
-      const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
-      return Number.isFinite(m)?m:1;
-    }
-
-    function renderReport(route){
-      const app=$('#app');
-      const it = state.wrecks.find(w=>String(w.id)===String(route.id));
-      state.currentWreck = it || null;
-      if(!it){
-        app.innerHTML = `<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>`;
-        return;
-      }
-
-      const wcsParams = Array.isArray(it?.wcs?.parameters)?it.wcs.parameters:[];
-      const phsParams = Array.isArray(it?.phs?.parameters)?it.phs.parameters:[];
-      const esiParams = Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
-      const rpmFactors = readRPMFactors(it);
-
-      const vWCS = toNum(it?.totals?.wcs) ?? (wcsParams.reduce((s,p)=>s+(toNum(p.score)||0),0));
-      // approximate PHS (if not given)
-      const vPHS = toNum(it?.totals?.phs) ?? (phsParams.length? Math.min(10, phsParams.reduce((s,p)=>s+(toNum(p.score)||0),0)/phsParams.length):0);
-      const vESI = toNum(it?.totals?.esi) ?? (esiParams.reduce((s,p)=>s+(toNum(p.score)||0),0));
-      const vRPM = rpmFinalMultiplier(it);
-
-      function tableRows(list, withWeight=false){
-        if(!list.length) return `<tr><td class="py-2 text-slate-400" colspan="${withWeight?4:3}">No data.</td></tr>`;
-        return list.map(p=>{
-          const w = p.weightPercent ?? p.weightPct ?? p.percentage ?? p.percent ?? p.weight;
-          return `
-          <tr class="border-t border-white/5">
-            <td class="py-2 pr-3">${escapeHtml(p.name||p.parameter||'')}</td>
-            <td class="py-2 pr-3 text-slate-300">${escapeHtml(p.rationale||'')}</td>
-            ${withWeight? `<td class="py-2 pr-3 text-right">${w!=null?Number(w).toFixed(0)+'%':''}</td>`:''}
-            <td class="py-2 pr-3 text-right tabular-nums">${toNum(p.score)?.toFixed(2) ?? ''}</td>
-          </tr>`;
-        }).join("");
-      }
-
-      function rpmRows(){
-        if(!rpmFactors.length) return `<tr><td class="py-2 text-slate-400" colspan="3">No factor breakdown supplied.</td></tr>`;
-        return rpmFactors.map(f=>`
-          <tr class="border-t border-white/5">
-            <td class="py-2 pr-3">${escapeHtml(f.name||f.factor||'')}</td>
-            <td class="py-2 pr-3 text-slate-300">${escapeHtml(f.rationale||'Not specified.')}</td>
-            <td class="py-2 pr-3 text-right tabular-nums">${escapeHtml(String(f.value??f.multiplier??''))}</td>
-          </tr>
-        `).join("");
-      }
-
-      const coords = resolveCoordinates(it);
-      const coordLine = coords? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : '';
-
-      app.innerHTML = `
-        <div class="flex flex-wrap items-center gap-3 mb-6">
-          <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-200">← Home</a>
-          <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-200">All Wrecks</a>
-          <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
-        </div>
-
-        <section class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
-          <div class="p-5 border-b border-white/10 flex flex-col md:flex-row md:items-end gap-4 justify-between">
-            <div>
-              <h1 class="text-2xl font-semibold text-cyan-200">${escapeHtml(vesselName(it))}</h1>
-              <p class="text-slate-300 text-sm mt-1">${escapeHtml(vesselSummary(it))}</p>
-              ${coordLine? `<p class="text-xs text-slate-500 mt-1">Coordinates: ${coordLine}</p>`:''}
-            </div>
-            <div class="flex gap-2">
-              <button id="btn-export-pdf" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Export PDF</button>
-              <button id="btn-export-html" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">HTML</button>
-              <button id="btn-export-md" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">MD</button>
-              <button id="btn-export-json" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">JSON</button>
-            </div>
-          </div>
-
-          <div class="p-5 grid grid-cols-1 lg:grid-cols-3 gap-6" id="report-export-root">
-            <!-- LEFT: Historical + Phase 2 -->
-            <div class="space-y-6 lg:col-span-1">
-              <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-                <h3 class="font-medium mb-3">Historical</h3>
-                <p class="text-xs text-slate-400 mb-3">Basic vessel details (subset).</p>
-                <ul class="text-sm space-y-1 text-slate-300">
-                  ${it?.historical?.vesselType? `<li><span class="text-slate-400">Type:</span> ${escapeHtml(it.historical.vesselType)}</li>`:''}
-                  ${it?.historical?.vesselSizeTonnage? `<li><span class="text-slate-400">Size:</span> ${escapeHtml(it.historical.vesselSizeTonnage)}</li>`:''}
-                  ${it?.historical?.ageAndSinking?.launchedYear!=null? `<li><span class="text-slate-400">Launched:</span> ${escapeHtml(String(it.historical.ageAndSinking.launchedYear))}</li>`:''}
-                  ${it?.historical?.ageAndSinking?.sunkDate? `<li><span class="text-slate-400">Sunk:</span> ${escapeHtml(String(it.historical.ageAndSinking.sunkDate))}</li>`:''}
-                  ${it?.historical?.location?.depthMeters!=null? `<li><span class="text-slate-400">Depth (m):</span> ${escapeHtml(String(it.historical.location.depthMeters))}</li>`:''}
-                  ${coordLine? `<li><span class="text-slate-400">Coords:</span> ${coordLine}</li>`:''}
-                </ul>
-              </div>
-
-              <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-                <h3 class="font-medium mb-3">Phase 2: In-situ</h3>
-                <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Survey notes...">${escapeHtml(getText(it?.phase2?.summary)||state.notes.get(it.id)||"")}</textarea>
-                <div class="flex gap-2 mt-3 flex-wrap">
-                  <input id="phase2-files" type="file" multiple class="hidden" />
-                  <button id="btn-select-files" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm">Select Files</button>
-                  <button id="btn-save-phase2" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Save Notes</button>
-                  <span id="phase2-status" class="text-xs text-slate-400 self-center"></span>
-                </div>
-                <div id="upload-gallery" class="grid grid-cols-2 gap-2 mt-4"></div>
-              </div>
-            </div>
-
-            <!-- RIGHT: Risk Synthesis -->
-            <div class="space-y-6 lg:col-span-2">
-              <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-                <h3 class="font-medium mb-3">Risk Radar</h3>
-                <canvas id="werp-radar" class="w-full h-64"></canvas>
-                <p class="mt-2 text-xs text-slate-400">
-                  WCS: ${Number(vWCS||0).toFixed(2)} • PHS: ${Number(vPHS||0).toFixed(2)} • ESI: ${Number(vESI||0).toFixed(2)} • RPM: ${Number(vRPM||1).toFixed(2)}×
-                </p>
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-                  <h4 class="font-medium mb-3">WCS</h4>
-                  <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                      <thead class="text-left text-slate-300">
-                        <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score</th></tr>
-                      </thead>
-                      <tbody>${tableRows(wcsParams,false)}</tbody>
-                    </table>
-                  </div>
-                  <p class="text-sm text-slate-300 mt-2">Total: <span class="font-semibold">${Number(vWCS||0).toFixed(2)}</span></p>
-                </div>
-
-                <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-                  <h4 class="font-medium mb-3">RPM</h4>
-                  <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                      <thead class="text-left text-slate-300">
-                        <tr><th class="pr-3 pb-2">Factor</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Value</th></tr>
-                      </thead>
-                      <tbody>${rpmRows()}</tbody>
-                    </table>
-                  </div>
-                  <p class="text-sm text-slate-300 mt-2">Final Multiplier: <span class="font-semibold">${Number(vRPM||1).toFixed(2)}×</span></p>
-                </div>
-              </div>
-
-              <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-                <h4 class="font-medium mb-3">PHS (Pollution Hazard)</h4>
-                <div class="overflow-x-auto">
-                  <table class="min-w-full text-sm">
-                    <thead class="text-left text-slate-300">
-                      <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Weight (%)</th><th class="text-right pb-2">Score</th></tr>
-                    </thead>
-                    <tbody>${tableRows(phsParams,true)}</tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-                <h4 class="font-medium mb-3">ESI (Environmental Sensitivity)</h4>
-                <div class="overflow-x-auto">
-                  <table class="min-w-full text-sm">
-                    <thead class="text-left text-slate-300">
-                      <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score</th></tr>
-                    </thead>
-                    <tbody>${tableRows(esiParams,false)}</tbody>
-                  </table>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </section>
-      `;
-
-      // Render uploads gallery from phase2.assets
-      renderUploadsGallery(it);
-
-      // Radar
-      setTimeout(()=>{
-        const ctx=document.getElementById('werp-radar');
-        if(!ctx) return;
-        const max=20;
-        const dataset = [
-          Math.max(0,Math.min(20,Number(vWCS||0))),
-          Math.max(0,Math.min(20,(Number(vPHS||0)/10)*20)),
-          Math.max(0,Math.min(20,(Number(vESI||0)/40)*20)),
-          Math.max(0,Math.min(20,((Math.min(Math.max(Number(vRPM||1),0.5),2.5)-0.5)/2.0)*20))
-        ];
-        new Chart(ctx,{
-          type:'radar',
-            data:{
-              labels:['WCS','PHS','ESI','RPM'],
-              datasets:[
-                { label:'Risk Profile', data: dataset, backgroundColor:'rgba(34,197,94,0.25)', borderColor:'rgba(34,197,94,1)', borderWidth:2, pointBackgroundColor:'rgba(34,197,94,1)'},
-                { label:'High', data:[20,20,20,20], backgroundColor:'rgba(239,68,68,0.1)', borderColor:'rgba(239,68,68,0.6)', pointRadius:0 },
-                { label:'Medium', data:[12,12,12,12], backgroundColor:'rgba(245,158,11,0.1)', borderColor:'rgba(245,158,11,0.6)', pointRadius:0 },
-                { label:'Low', data:[6,6,6,6], backgroundColor:'rgba(16,185,129,0.1)', borderColor:'rgba(16,185,129,0.6)', pointRadius:0 }
-              ]
-            },
-            options:{
-              responsive:true,
-              maintainAspectRatio:false,
-              scales:{ r:{ beginAtZero:true, min:0, max, ticks:{ stepSize:4 }, grid:{ color:'rgba(148,163,184,0.25)' }, angleLines:{ color:'rgba(148,163,184,0.25)' } } },
-              plugins:{ legend:{ position:'bottom', labels:{ color:'#cbd5e1' } } }
-            }
-        });
-      },0);
-
-      // Export buttons
-      $('#btn-export-pdf')?.addEventListener('click', ()=>exportPdf(it));
-      $('#btn-export-html')?.addEventListener('click', ()=>exportHtml(it));
-      $('#btn-export-md')?.addEventListener('click', ()=>exportMarkdown(it));
-      $('#btn-export-json')?.addEventListener('click', ()=>exportJson(it));
-
-      // Phase 2 actions
-      const isContributor = ['admin','contributor'].includes(state.role);
-      if(!isContributor){
-        $('#phase2-notes')?.setAttribute('disabled','true');
-        $('#btn-save-phase2')?.setAttribute('disabled','true');
-        $('#btn-select-files')?.setAttribute('disabled','true');
-      } else {
-        $('#btn-save-phase2')?.addEventListener('click', savePhase2Summary);
-        $('#btn-select-files')?.addEventListener('click', ()=>{
-          $('#phase2-files').value="";
-          $('#phase2-files').click();
-        });
-        $('#phase2-files')?.addEventListener('change', handleUploadSelection);
-      }
-    }
-
-    function renderUploadsGallery(it){
-      const wrap = $('#upload-gallery');
-      if(!wrap) return;
-      wrap.innerHTML='';
-      const assets = Array.isArray(it?.phase2?.assets)?it.phase2.assets:[];
-      const imgs = assets.filter(a=>a?.url && /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(String(a?.name||a?.path||'')));
-      if(!imgs.length){
-        wrap.innerHTML='<div class="col-span-2 text-xs text-slate-500">No uploaded images.</div>';
-        return;
-      }
-      imgs.slice(0,12).forEach(a=>{
-        const div=document.createElement('div');
-        div.className='relative group rounded-lg overflow-hidden border border-white/10';
-        div.innerHTML=`<img src="${a.url}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-28 object-cover group-hover:opacity-90" alt="asset">`;
-        wrap.appendChild(div);
-      });
-    }
-
-    async function savePhase2Summary(){
-      if(!state.currentWreck) return;
-      const path = state.byIdPath.get(state.currentWreck.id);
-      if(!path){ showToast("Path not found","error"); return; }
-      const val = getText($('#phase2-notes').value);
-      $('#phase2-status').textContent='Saving...';
-      try{
-        await updateDoc(doc(db,path,state.currentWreck.id),{
-          "phase2.summary": val,
-          "phase2.updatedAt": serverTimestamp()
-        });
-        $('#phase2-status').textContent='Saved.';
-        showToast("Phase 2 updated","success");
-      }catch(e){
-        $('#phase2-status').textContent='Error';
-        showToast(e?.message||"Save failed","error");
-      } finally {
-        setTimeout(()=>$('#phase2-status').textContent='',2000);
-      }
-    }
-
-    function sanitizeFileName(name=""){
-      return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`;
-    }
-
-    async function handleUploadSelection(e){
-      const files = Array.from(e.target.files||[]);
-      if(!files.length) return;
-      if(!state.currentWreck) return;
-      const path = state.byIdPath.get(state.currentWreck.id);
-      if(!path){ showToast("Path not found","error"); return; }
-      $('#phase2-status').textContent=`Uploading ${files.length} file(s)...`;
-      const basePath = `artifacts/${appId}/public/uploads/${state.currentWreck.id}/user`;
-      let ok=0, fail=0;
-      for(const f of files){
-        try{
-          if(!/^image\//i.test(f.type)){ fail++; continue; }
-          const safe = sanitizeFileName(f.name);
-            const storRef = storageRef(storage, `${basePath}/${Date.now()}_${safe}`);
-            await uploadBytes(storRef, f, { contentType: f.type });
-            const url = await getDownloadURL(storRef);
-            const asset = {
-              name: f.name,
-              path: `${basePath}/${Date.now()}_${safe}`,
-              url,
-              contentType: f.type,
-              bytes: f.size,
-              source: 'upload',
-              uploadedAtMs: Date.now()
-            };
-            await updateDoc(doc(db,path,state.currentWreck.id),{
-              "phase2.assets": arrayUnion(asset),
-              "phase2.assetsUpdatedAt": serverTimestamp()
-            });
-            ok++;
-        }catch(ex){
-          console.error("Upload failed", ex);
-          fail++;
-        }
-      }
-      $('#phase2-status').textContent = ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
-      showToast($('#phase2-status').textContent, ok?'success':'error');
-      setTimeout(()=>$('#phase2-status').textContent='',3000);
-    }
-
-    /****************** EXPORT HELPERS ******************/
-    function exportHtml(it){
-      const node = $('#report-export-root');
-      if(!node) return;
-      const vessel = vesselName(it);
-      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${node.outerHTML}</body></html>`;
-      downloadBlob(`${vessel.replace(/\s+/g,'_')}.html`, new Blob([html],{type:'text/html;charset=utf-8'}));
-    }
-    function exportMarkdown(it){
-      const vessel = vesselName(it);
-      const lines = [
-        `# ${vessel}`,
-        '',
-        `- WCS: ${toNum(it?.totals?.wcs)?.toFixed(2) ?? ''}`,
-        `- PHS: ${toNum(it?.totals?.phs)?.toFixed(2) ?? ''}`,
-        `- ESI: ${toNum(it?.totals?.esi)?.toFixed(2) ?? ''}`,
-        `- RPM: ${rpmFinalMultiplier(it).toFixed(2)}×`
-      ];
-      downloadBlob(`${vessel.replace(/\s+/g,'_')}.md`, new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'}));
-    }
-    function exportJson(it){
-      const vessel=vesselName(it);
-      downloadBlob(`${vessel.replace(/\s+/g,'_')}.json`, new Blob([JSON.stringify(it,null,2)],{type:'application/json;charset=utf-8'}));
-    }
-    function exportPdf(it){
-      const node = $('#report-export-root');
-      if(!node) return;
-      const vessel = vesselName(it);
-      const opt = {
-        margin:0.4,
-        filename:`${vessel.replace(/\s+/g,'_')}_Report.pdf`,
-        image:{type:'jpeg',quality:0.95},
-        html2canvas:{scale:2, backgroundColor:'#050816'},
-        jsPDF:{unit:'in', format:'a4', orientation:'portrait'}
-      };
-      html2pdf().from(node).set(opt).save();
-    }
-    function downloadBlob(filename, blob){
-      const url = URL.createObjectURL(blob);
-      const a=document.createElement('a');
-      a.href=url; a.download=filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-    }
-
-    /****************** RENDER ROOT ******************/
-    function renderApp(){
-      const route = parseRoute();
-      state.currentRoute = route;
-      setActiveNav(route);
-
-      if(route.name==='home'){
-        renderHome();
-      } else if(route.name==='report'){
-        renderReport(route);
-      } else if(route.name==='list'){
-        renderList();
-      } else {
-        renderHome();
-      }
-      updateAuthUI();
-      if(route.name==='home'){
-        refreshMapMarkers();
-        renderReassessList();
-      }
-    }
-
-    function renderList(){
-      const app=$('#app');
-      const term = state.filters.search.toLowerCase();
-      const items = state.wrecks.filter(it=>vesselName(it).toLowerCase().includes(term));
-      app.innerHTML = `
-        <div class="flex flex-wrap items-center gap-3 mb-6">
-          <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-200">← Home</a>
-          <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
-        </div>
-        <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
-          <div class="p-4 border-b border-white/10 flex flex-col md:flex-row md:items-center gap-3">
-            <div class="text-lg font-semibold text-cyan-200">All Wrecks</div>
-            <div class="md:ml-auto w-full md:w-80">
-              <input id="list-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-            </div>
-          </div>
-          <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="list-grid">
-            ${items.map(it=>{
-              const band=riskBand(it);
-              const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
-                           band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
-                           'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
-              const thumb = (it.media?.images?.[0]?.url) || (Array.isArray(it.media?.images) && typeof it.media.images[0]==='string' ? it.media.images[0] : PLACEHOLDER_SVG);
-              return `
-                <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
-                  <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
-                  <div class="p-3">
-                    <div class="flex items-center justify-between gap-3">
-                      <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
-                      <span class="px-2 py-0.5 rounded-md text-xs border ${badge}">${band.toUpperCase()}</span>
-                    </div>
-                    <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
-                  </div>
-                </a>
-              `;
-            }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
-          </div>
-        </div>
-      `;
-      $('#list-search')?.addEventListener('input', e=>{
-        state.filters.search = e.target.value || '';
-        renderList();
-      });
-    }
-
-    /****************** AUTH STATE HANDLER ******************/
-    onAuthStateChanged(auth, async (user)=>{
-      state.user = user;
-      if(!user){
-        state.role='user';
-        updateAuthUI();
-        return;
-      }
-      state.role = await fetchRoleFor(user.uid);
-      updateAuthUI();
-      // Start listeners after auth (if not already)
-      startData();
-    });
-
-    // Initial render (unauth)
-    renderApp();
-
-    /****************** PUBLIC API (optional external loads) ******************/
-    window.ProjectGuardian = {
-      loadData(payload){
-        if(!payload || !Array.isArray(payload.wrecks)) return;
-        state.wrecks = payload.wrecks.map(w=>({...w, id:w.id || w.name || crypto.randomUUID()}));
-        renderApp();
-      },
-      setFilters({ band, stage, search }={}){
-        if(band) state.filters.band=band;
-        if(stage) state.filters.stage=stage;
-        if(typeof search==='string') state.filters.search=search;
-        renderApp();
-      },
-      getState(){
-        return {
-          wrecks: state.wrecks.slice(),
-          filters: {...state.filters},
-          role: state.role,
-          user: state.user?.email || null
-        };
-      }
-    };
-  </script>
   <style>
-    /* Tailwind only mandated; minor scrollbar styling optional */
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: #0f172a; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 6px; }
     ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    .fade-enter { opacity:0; transform:translateY(4px); }
+    .fade-enter-active { transition:all .28s; opacity:1; transform:translateY(0); }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
-  <header class="sticky top-0 z-50 backdrop-blur bg-[#050816]/90 border-b border-white/10">
-    <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4">
-      <a href="#/" class="text-xl md:text-2xl font-semibold tracking-tight text-cyan-200 hover:text-cyan-300 transition">Project Guardian: WW2 Wreck Analysis and Monitoring Platform</a>
-      <nav class="ml-auto flex items-center gap-2 md:gap-3">
-        <a id="nav-home" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Home</a>
-        <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
-        <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
-      </nav>
+<header class="sticky top-0 z-50 backdrop-blur bg-[#050816]/90 border-b border-white/10">
+  <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4">
+    <a href="#/" class="text-xl md:text-2xl font-semibold tracking-tight text-cyan-200 hover:text-cyan-300 transition">
+      Project Guardian: WW2 Wreck Analysis and Monitoring Platform
+    </a>
+    <nav class="ml-auto flex items-center gap-2 md:gap-3">
+      <a id="nav-home" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Home</a>
+      <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
+      <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
+    </nav>
+  </div>
+</header>
+
+<main id="app" class="max-w-7xl mx-auto px-4 py-6 md:py-10"></main>
+<div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
+
+<script type="module">
+/* ---------- Configuration & Constants ---------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+  authDomain: "project-guardian-agent.firebaseapp.com",
+  projectId: "project-guardian-agent",
+  storageBucket: "project-guardian-agent.firebasestorage.app",
+  messagingSenderId: "84395007243",
+  appId: "1:84395007243:web:b07e5f4c4264d27611160e",
+  measurementId: "G-NRLH3WSCQ9"
+};
+const appId = "guardian";
+const READ_COLLECTIONS = [
+  "artifacts/guardian/public/data/werpassessments",
+  "artifacts/guardian-agent-default/public/data/werpassessments"
+];
+const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
+const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
+
+/* Toggle this to true to re-enable SRI (make sure hashes are validated in your environment) */
+const STRICT_SRI_MODE = false;
+
+/* ---------- Imports ---------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail, signOut
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection,
+  onSnapshot, arrayUnion
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+import {
+  getFunctions, httpsCallable
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+/* ---------- Firebase Init ---------- */
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+const auth = getAuth(firebaseApp);
+const storage = getStorage(firebaseApp);
+const functions = getFunctions(firebaseApp, "us-central1");
+
+let callable = {
+  analyzeWerps: null,
+  reassessWerps: null
+};
+try { callable.analyzeWerps = httpsCallable(functions, "analyzeWerps"); } catch {}
+try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
+
+/* ---------- State ---------- */
+const state = {
+  wrecks: [],
+  byIdPath: new Map(),
+  currentRoute: null,
+  currentWreck: null,
+  filters: { band: 'all', stage: 'all', search: '' },
+  role: 'user',
+  user: null,
+  listeners: [],
+  map: null,
+  mapMarkers: new Map(),
+  mapReady: false,
+  mapInitTried: false
+};
+
+/* ---------- Utilities ---------- */
+const $ = sel => document.querySelector(sel);
+function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
+const getText = v => v==null?"":String(v).trim();
+function showToast(msg, type='info'){
+  const stack = $('#toast-stack'); if(!stack) return;
+  const color = type==='success'?'bg-emerald-600': type==='error'?'bg-rose-600':'bg-slate-700';
+  const div = document.createElement('div');
+  div.className=`${color} text-white px-4 py-2 rounded-lg shadow-soft border border-white/10 transition fade-enter`;
+  div.textContent=msg;
+  stack.appendChild(div);
+  requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
+  setTimeout(()=>{
+    div.classList.add('opacity-0','-translate-y-1');
+    setTimeout(()=>div.remove(),260);
+  },2800);
+}
+
+const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="100%" height="100%" fill="#0f172a"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="16" font-family="Arial, sans-serif">No image available</text></svg>'
+);
+
+/* ---------- Severity & Stage ---------- */
+function severityBandFromValue(val){
+  const v=Number(val);
+  if(!Number.isFinite(v)) return 'stable';
+  if(v>=50) return 'alert';
+  if(v>=25) return 'warning';
+  return 'stable';
+}
+function riskBand(item){
+  const b=(item?.severity?.band||"").toLowerCase();
+  if(b==='high') return 'alert';
+  if(b==='medium') return 'warning';
+  if(b==='low') return 'stable';
+  return severityBandFromValue(item?.severity?.value);
+}
+function stageFromItem(it){
+  const phase2HasNotes = !!getText(it?.phase2?.summary);
+  const phase2CompletedFlag = it?.phase2?.status === 'completed' || it?.phase2?.completed === true;
+  const completedExplicit = it?.completed === true || it?.status === 'completed' || !!it?.phase3 || !!it?.finalizedAt;
+  const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes;
+  const isReassess = Boolean(
+    it?.needsReassessment === true ||
+    it?.seismicEvent === true ||
+    (it?.events && (
+      it.events.seismic != null ||
+      (Array.isArray(it.events) && it.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
+    ))
+  );
+  if(isReassess) return 'reassess';
+  return isCompleted ? 'completed' : 'initial';
+}
+
+/* ---------- Data Helpers ---------- */
+function vesselName(it){
+  return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown");
+}
+function vesselSummary(it){
+  return getText(it?.historical?.circumstancesOfLoss) ||
+         getText(it?.historical?.summary) ||
+         getText(it?.phase2?.summary) ||
+         "No summary available.";
+}
+function resolveCoordinates(item){
+  const toNumL = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
+  function extract(obj){
+    if(!obj) return null;
+    if(Array.isArray(obj) && obj.length>=2){
+      const lngA=toNumL(obj[0]); const latA=toNumL(obj[1]);
+      if(latA!=null && lngA!=null) return {lat:latA,lng:lngA};
+      const latB=toNumL(obj[0]); const lngB=toNumL(obj[1]);
+      if(latB!=null && lngB!=null) return {lat:latB,lng:lngB};
+      return null;
+    }
+    if(obj.coordinates){
+      const nested = extract(obj.coordinates);
+      if(nested) return nested;
+    }
+    const lat = toNumL(obj.latitude ?? obj.lat ?? obj.y);
+    const lng = toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
+    if(lat!=null && lng!=null) return {lat,lng};
+    if(obj.latlng){
+      const ll = extract(obj.latlng);
+      if(ll) return ll;
+    }
+    return null;
+  }
+  const cands = [
+    item?.phase1?.screening?.coordinates,
+    item?.coordinates,
+    item?.location?.coordinates,
+    item?.historical?.location?.coordinates,
+    item?.location,
+    item?.geo,
+    item?.position,
+    item?.geometry?.coordinates,
+    item?.geometry
+  ];
+  for(const c of cands){
+    const got=extract(c);
+    if(got) return got;
+  }
+  return null;
+}
+
+/* ---------- Auth & Roles ---------- */
+async function fetchRoleFor(uid){
+  try{
+    const allow = await getDoc(doc(db,"system","allowlist","users",uid));
+    if(allow.exists()){
+      const d=allow.data()||{};
+      let r=d.role ?? d.Role ?? d.ROLE;
+      if(typeof r==='string' && r.trim()){
+        r=r.trim().toLowerCase();
+        if(r.startsWith('admin')) return 'admin';
+        if(r.startsWith('contrib')) return 'contributor';
+        if(['user','reader','viewer'].includes(r)) return 'user';
+      }
+      if(d.admin===true) return 'admin';
+      if(d.contributor===true) return 'contributor';
+      if(d.allowed===true) return 'user';
+    }
+  }catch{}
+  try{
+    const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
+    if(legacy.exists()){
+      const d=legacy.data()||{};
+      let r=d.role ?? d.Role ?? d.ROLE;
+      if(typeof r==='string' && r.trim()){
+        r=r.trim().toLowerCase();
+        if(r.startsWith('admin')) return 'admin';
+        if(r.startsWith('contrib')) return 'contributor';
+        if(['user','reader','viewer'].includes(r)) return 'user';
+      }
+      if(d.admin===true) return 'admin';
+      if(d.contributor===true) return 'contributor';
+    }
+  }catch{}
+  return 'user';
+}
+
+/* ---------- Firestore Listeners ---------- */
+function detachListeners(){
+  for(const u of state.listeners){ try{u();}catch{} }
+  state.listeners=[];
+}
+function normalizeDoc(d){
+  const out={...d};
+  if(d && typeof d.data==='object') Object.assign(out,d.data);
+  if(d && typeof d.payload==='object') Object.assign(out,d.payload);
+  if(d && typeof d.attributes==='object') Object.assign(out,d.attributes);
+  if(d && typeof d.details==='object') Object.assign(out,d.details);
+  return out;
+}
+async function startData(){
+  detachListeners();
+  const byKey = new Map();
+  const applySnap=(snap, basePath)=>{
+    snap.forEach(docSnap=>{
+      const raw=docSnap.data()||{};
+      const d={...normalizeDoc(raw), id:raw.id||docSnap.id, _path:basePath};
+      const t=String(d?.type||"").toUpperCase();
+      if(t.includes("SEISMIC_EVENT")) return;
+      d.severity = d.severity && typeof d.severity==='object' ? d.severity : {};
+      if(d.severity.value==null) d.severity.value = raw?.severity?.value ?? raw?.severityValue;
+      if(!d.severity.band) d.severity.band = severityBandFromValue(d.severity.value);
+      byKey.set(`${basePath}::${d.id}`, d);
+      state.byIdPath.set(d.id, basePath);
+    });
+    state.wrecks = Array.from(byKey.values());
+    renderApp();
+    refreshMapMarkers();
+  };
+  for(const p of READ_COLLECTIONS){
+    try{
+      const un = onSnapshot(collection(db,p),
+        (snap)=>applySnap(snap,p),
+        err=>console.error("Snapshot error",p,err)
+      );
+      state.listeners.push(un);
+    }catch(e){
+      console.error("Listener error",p,e);
+    }
+  }
+}
+
+/* ---------- Map (Leaflet) ---------- */
+function iconForBand(band){
+  const color = band==='alert'?'red':band==='warning'?'orange':'green';
+  return L.icon({
+    iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+    shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+    iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+  });
+}
+function initLeafletMap(){
+  if(state.mapInitTried) return;
+  state.mapInitTried=true;
+  const tryInit = () => {
+    if(typeof L === 'undefined'){
+      console.warn("Leaflet not yet available, retrying...");
+      setTimeout(tryInit, 300);
+      return;
+    }
+    if(state.map) { state.mapReady=true; return; }
+    state.map = L.map('map-canvas',{ zoomControl:true, attributionControl:true }).setView([10,150],3);
+    L.tileLayer(
+      `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,
+      { tileSize:512, zoomOffset:-1, attribution:'&copy; OpenStreetMap &copy; Mapbox' }
+    ).addTo(state.map);
+    state.mapReady=true;
+    refreshMapMarkers();
+  };
+  tryInit();
+}
+function refreshMapMarkers(){
+  if(!state.mapReady || !state.map) return;
+  // Clear
+  for(const m of state.mapMarkers.values()){
+    try{ state.map.removeLayer(m);}catch{}
+  }
+  state.mapMarkers.clear();
+  const riskFilter = state.filters.band;
+  const stageFilter= state.filters.stage;
+  const term = state.filters.search.toLowerCase();
+  const filtered = state.wrecks.filter(it=>{
+    const rb=riskBand(it);
+    if(riskFilter!=='all' && rb!==riskFilter) return false;
+    const st=stageFromItem(it);
+    if(stageFilter!=='all' && st!==stageFilter) return false;
+    if(term && !vesselName(it).toLowerCase().includes(term)) return false;
+    return resolveCoordinates(it)!=null;
+  });
+  filtered.forEach(it=>{
+    const coord = resolveCoordinates(it);
+    if(!coord) return;
+    const b=riskBand(it);
+    const marker=L.marker([coord.lat,coord.lng],{ icon:iconForBand(b) });
+    const thumb = (it.media?.images?.[0]?.url) ||
+                  (Array.isArray(it.media?.images) && typeof it.media.images[0]==='string'?it.media.images[0]: PLACEHOLDER_SVG);
+    marker.bindPopup(`
+      <div style="min-width:200px">
+        <div style="font-weight:600">${escapeHtml(vesselName(it))}</div>
+        <div style="font-size:12px;color:#444">Stage: ${stageFromItem(it)}</div>
+        <div style="margin:6px 0">
+          <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:140px;object-fit:cover;border:1px solid #ccc;border-radius:4px"/>
+        </div>
+        <a href="#/wreck/${encodeURIComponent(it.id)}" style="color:#2563eb;text-decoration:underline;font-size:13px;">Open Report</a>
+      </div>
+    `);
+    marker.addTo(state.map);
+    state.mapMarkers.set(it.id, marker);
+  });
+}
+
+/* ---------- Router ---------- */
+const routes = {
+  home: /^#\/?$/,
+  report: /^#\/wreck\/([^/]+)$/,
+  list: /^#\/list\/?$/
+};
+function parseRoute(){
+  const h=location.hash || '#/';
+  if(routes.home.test(h)) return { name:'home' };
+  const mReport = h.match(routes.report);
+  if(mReport) return { name:'report', id: decodeURIComponent(mReport[1]) };
+  if(routes.list.test(h)) return { name:'list' };
+  return { name:'home' };
+}
+window.addEventListener('hashchange', ()=>renderApp());
+
+function setActiveNav(route){
+  const map = { home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
+  document.querySelectorAll('nav a').forEach(a=>{
+    a.classList.remove('ring-2','ring-cyan-500');
+    a.removeAttribute('aria-current');
+  });
+  const sel=map[route.name];
+  if(sel){
+    const el=document.querySelector(sel);
+    if(el){
+      el.classList.add('ring-2','ring-cyan-500');
+      el.setAttribute('aria-current','page');
+    }
+  }
+  if(route.name==='report' && state.currentWreck){
+    const cr = document.querySelector('#nav-current-report');
+    cr?.classList.remove('hidden');
+    cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
+  }
+}
+
+/* ---------- UI Pieces ---------- */
+function buildAuthPanel(){
+  return `
+    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+      <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-cyan-200">Authentication</h2>
+        <button id="toggle-auth" class="text-sm text-cyan-300 hover:text-cyan-200 transition">Toggle</button>
+      </div>
+      <div id="auth-body" class="p-4 grid md:grid-cols-2 gap-6">
+        <form id="auth-form" data-auth-hidden class="">
+          <label class="block text-sm mb-1">Email</label>
+          <input id="login-email" type="email" autocomplete="username" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="you@example.com"/>
+          <label class="block text-sm mt-3 mb-1">Password</label>
+          <input id="login-pass" type="password" autocomplete="current-password" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+          <div class="flex gap-2 mt-4 flex-wrap">
+            <button type="button" id="btn-signin" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Sign In</button>
+            <button type="button" id="btn-create" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">Create Account</button>
+            <button type="button" id="btn-reset" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">Reset Password</button>
+          </div>
+          <div id="auth-msg" class="text-xs text-slate-400 mt-2 h-5"></div>
+        </form>
+        <div data-auth-visible class="hidden space-y-3">
+          <div class="text-sm">
+            <div><span class="font-medium text-slate-300">Signed in as:</span> <span id="auth-email" class="text-cyan-300"></span></div>
+            <div><span class="font-medium text-slate-300">Role:</span> <span id="auth-role" class="text-cyan-300"></span></div>
+          </div>
+          <button id="btn-signout" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm">Sign Out</button>
+        </div>
+      </div>
     </div>
-  </header>
+  `;
+}
+function buildAnalyzePanel(){
+  const isContributor = ['admin','contributor'].includes(state.role);
+  return `
+    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
+      <div class="px-4 py-3 border-b border-white/10">
+        <h2 class="text-lg font-semibold text-cyan-200">Assessment Actions</h2>
+        <p class="text-slate-400 text-sm mt-1">Submit new or request reassessment (contributors/admin only).</p>
+      </div>
+      <div class="p-4 space-y-4">
+        <form id="analyze-form" class="flex flex-col md:flex-row gap-3">
+          <input id="analysis-input" type="text" placeholder="Vessel name..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+          <div class="flex gap-2">
+            <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Analyze</button>
+            <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Reassess</button>
+          </div>
+        </form>
+        <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
+      </div>
+    </div>
+  `;
+}
+function buildMapCard(){
+  return `
+    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
+      <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
+        <div class="flex items-center gap-1 text-sm flex-wrap">
+          <span class="mr-2 font-medium text-slate-200">Risk:</span>
+          ${['all','alert','warning','stable'].map(r=>`<button data-filter-risk="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+        </div>
+        <div class="flex items-center gap-1 text-sm flex-wrap">
+          <span class="mr-2 font-medium text-slate-200">Stage:</span>
+          ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+        </div>
+        <div class="xl:ml-auto w-full xl:w-72">
+          <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        </div>
+      </div>
+      <div class="relative">
+        <div id="map-canvas" class="w-full h-[550px] bg-slate-800 flex items-center justify-center">
+          <div class="text-slate-400 text-sm" id="map-loading">Loading map...</div>
+        </div>
+      </div>
+      <div class="p-4 border-t border-white/10">
+        <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
+        <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+      </div>
+    </div>
+  `;
+}
 
-  <main id="app" class="max-w-7xl mx-auto px-4 py-6 md:py-10"></main>
+/* ---------- Debounce ---------- */
+function debounce(fn, ms=250){
+  let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
+}
 
-  <div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
+/* ---------- Home View ---------- */
+function renderReassessList(){
+  const wrap=$('#reassess-list'); if(!wrap) return;
+  wrap.innerHTML='';
+  const list=state.wrecks.filter(w=>
+    w?.needsReassessment===true ||
+    w?.seismicEvent===true ||
+    (w?.events && (
+      w.events.seismic != null ||
+      (Array.isArray(w.events) && w.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
+    ))
+  );
+  if(!list.length){
+    wrap.innerHTML='<div class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300">None currently.</div>';
+    return;
+  }
+  list.forEach(it=>{
+    const band=riskBand(it);
+    const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+    const a=document.createElement('a');
+    a.href=`#/wreck/${encodeURIComponent(it.id)}`;
+    a.className='block rounded-lg bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition p-3 space-y-2';
+    a.innerHTML=`
+      <div class="flex items-center justify-between gap-3">
+        <div class="font-medium truncate">${escapeHtml(vesselName(it))}</div>
+        <span class="px-2 py-0.5 text-xs rounded-md border ${badge}">${band.toUpperCase()}</span>
+      </div>
+      <div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>
+    `;
+    wrap.appendChild(a);
+  });
+}
+
+function updateAuthUI(){
+  const signedIn=!!state.user;
+  $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
+  $('#auth-role') && ($('#auth-role').textContent = state.role);
+  document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
+  document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
+
+  const isContributor = ['admin','contributor'].includes(state.role);
+  // Gate buttons
+  ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
+    const b=$('#'+id);
+    if(b){
+      if(!isContributor) { b.disabled=true; b.classList.add('opacity-50','cursor-not-allowed'); }
+      else { b.disabled=false; b.classList.remove('opacity-50','cursor-not-allowed'); }
+    }
+  });
+  const notes=$('#phase2-notes');
+  if(notes){
+    if(!isContributor) notes.setAttribute('disabled','true'); else notes.removeAttribute('disabled');
+  }
+}
+
+function renderHome(){
+  const app=$('#app');
+  app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
+
+  // Auth toggling
+  $('#toggle-auth')?.addEventListener('click',()=>{
+    $('#auth-body')?.classList.toggle('hidden');
+  });
+
+  // Auth actions
+  $('#btn-signin')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim();
+    const pass=$('#login-pass').value;
+    $('#auth-msg').textContent='Signing in...';
+    try{
+      await signInWithEmailAndPassword(auth,email,pass);
+      $('#auth-msg').textContent='Signed in.';
+    }catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-create')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim();
+    const pass=$('#login-pass').value;
+    $('#auth-msg').textContent='Creating...';
+    try{
+      await createUserWithEmailAndPassword(auth,email,pass);
+      $('#auth-msg').textContent='Account created.';
+    }catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-reset')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim();
+    if(!email){ $('#auth-msg').textContent='Enter email first.'; return;}
+    try{
+      await sendPasswordResetEmail(auth,email);
+      $('#auth-msg').textContent='Reset email sent.';
+    }catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOut(auth);}catch{} });
+
+  // Analyze / Reassess
+  $('#analyze-form')?.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const isContributor=['admin','contributor'].includes(state.role);
+    if(!isContributor){ showToast("Insufficient role","error"); return; }
+    const name=getText($('#analysis-input').value);
+    if(!name){ showToast("Enter vessel name","error"); return; }
+    $('#analyze-status').textContent='Requesting analysis...';
+    try{
+      if(!callable.analyzeWerps) throw new Error("analyzeWerps not deployed");
+      await callable.analyzeWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
+      $('#analysis-input').value="";
+      $('#analyze-status').textContent='Analysis requested.';
+      showToast("Analysis requested","success");
+    }catch(e){
+      $('#analyze-status').textContent='Error: '+(e?.message||'failed');
+      showToast("Analysis failed","error");
+    }
+  });
+  $('#btn-reassess')?.addEventListener('click', async ()=>{
+    const isContributor=['admin','contributor'].includes(state.role);
+    if(!isContributor){ showToast("Insufficient role","error"); return; }
+    const name=getText($('#analysis-input').value);
+    if(!name){ showToast("Enter vessel name","error"); return; }
+    $('#analyze-status').textContent='Requesting reassessment...';
+    try{
+      if(!callable.reassessWerps) throw new Error("reassessWerps not deployed");
+      await callable.reassessWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
+      $('#analysis-input').value="";
+      $('#analyze-status').textContent='Reassessment requested.';
+      showToast("Reassessment requested","success");
+    }catch(e){
+      $('#analyze-status').textContent='Error: '+(e?.message||'failed');
+      showToast("Reassessment failed","error");
+    }
+  });
+
+  // Filters
+  document.querySelectorAll('[data-filter-risk]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      state.filters.band = btn.getAttribute('data-filter-risk');
+      refreshMapMarkers();
+    });
+  });
+  document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      state.filters.stage = btn.getAttribute('data-filter-stage');
+      refreshMapMarkers();
+    });
+  });
+  const debouncedSearch=debounce(val=>{
+    state.filters.search=val;
+    refreshMapMarkers();
+  },300);
+  $('#map-search')?.addEventListener('input', e=>debouncedSearch(e.target.value||''));
+
+  // Init map
+  initLeafletMap();
+  renderReassessList();
+  updateAuthUI();
+}
+
+/* ---------- Report View ---------- */
+function readRPMFactors(it){
+  const rpm=it?.rpm;
+  if(!rpm) return [];
+  if(Array.isArray(rpm.parameters)) return rpm.parameters;
+  if(Array.isArray(rpm.factors)) return rpm.factors;
+  if(Array.isArray(rpm.breakdown)) return rpm.breakdown;
+  if(Array.isArray(rpm.factorBreakdown)) return rpm.factorBreakdown;
+  const maps=['factors','parameters','breakdown','factorMap'];
+  for(const k of maps){
+    const obj=rpm[k];
+    if(obj && typeof obj==='object'){
+      return Object.entries(obj).map(([name,v])=>{
+        if(v && typeof v==='object')
+          return { name, rationale:v.rationale??v.reason??"", value:v.value??v.multiplier??v.weight??v.score??"" };
+        return { name, rationale:"", value:v??"" };
+      });
+    }
+  }
+  const skip=new Set(["finalMultiplier","multiplier","notes","rationale","comment","comments","factors","parameters"]);
+  if(rpm && typeof rpm==='object'){
+    return Object.entries(rpm)
+      .filter(([k])=>!skip.has(k))
+      .map(([name,v])=> v&&typeof v==='object'?{name,rationale:v.rationale??v.reason??"",value:v.value??v.multiplier??v.weight??v.score??""}:{name,rationale:"",value:v??""});
+  }
+  return [];
+}
+function rpmFinalMultiplier(it){
+  const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
+  return Number.isFinite(m)?m:1;
+}
+
+function renderReport(route){
+  const app=$('#app');
+  const it=state.wrecks.find(w=>String(w.id)===String(route.id));
+  state.currentWreck=it||null;
+  if(!it){
+    app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
+    return;
+  }
+  const wcsParams = Array.isArray(it?.wcs?.parameters)?it.wcs.parameters:[];
+  const phsParams = Array.isArray(it?.phs?.parameters)?it.phs.parameters:[];
+  const esiParams = Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
+  const rpmFactors=readRPMFactors(it);
+
+  const vWCS = toNum(it?.totals?.wcs) ?? wcsParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
+  const vPHS = toNum(it?.totals?.phs) ?? (phsParams.length? Math.min(10, phsParams.reduce((s,p)=>s+(toNum(p.score)||0),0)/phsParams.length):0);
+  const vESI = toNum(it?.totals?.esi) ?? esiParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
+  const vRPM = rpmFinalMultiplier(it);
+
+  function tableRows(list, withWeight=false){
+    if(!list.length) return `<tr><td class="py-2 text-slate-500" colspan="${withWeight?4:3}">No data.</td></tr>`;
+    return list.map(p=>{
+      const w=p.weightPercent ?? p.weightPct ?? p.percentage ?? p.percent ?? p.weight;
+      return `
+        <tr class="border-t border-white/5">
+          <td class="py-2 pr-3">${escapeHtml(p.name||p.parameter||'')}</td>
+          <td class="py-2 pr-3 text-slate-300">${escapeHtml(p.rationale||'')}</td>
+          ${withWeight? `<td class="py-2 pr-3 text-right">${w!=null?Number(w).toFixed(0)+'%':''}</td>`:''}
+          <td class="py-2 pr-3 text-right tabular-nums">${toNum(p.score)?.toFixed(2) ?? ''}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+  function rpmRows(){
+    if(!rpmFactors.length) return `<tr><td class="py-2 text-slate-500" colspan="3">No factor breakdown supplied.</td></tr>`;
+    return rpmFactors.map(f=>`
+      <tr class="border-t border-white/5">
+        <td class="py-2 pr-3">${escapeHtml(f.name||f.factor||'')}</td>
+        <td class="py-2 pr-3 text-slate-300">${escapeHtml(f.rationale||'Not specified.')}</td>
+        <td class="py-2 pr-3 text-right tabular-nums">${escapeHtml(String(f.value??f.multiplier??''))}</td>
+      </tr>`).join("");
+  }
+
+  const coords = resolveCoordinates(it);
+  const coordLine = coords? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : '';
+
+  app.innerHTML = `
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <section class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+      <div class="p-5 border-b border-white/10 flex flex-col md:flex-row md:items-end gap-4 justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold text-cyan-200">${escapeHtml(vesselName(it))}</h1>
+          <p class="text-slate-300 text-sm mt-1">${escapeHtml(vesselSummary(it))}</p>
+          ${coordLine? `<p class="text-xs text-slate-500 mt-1">Coordinates: ${coordLine}</p>`:''}
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          <button id="btn-export-pdf" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">PDF</button>
+          <button id="btn-export-html" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">HTML</button>
+          <button id="btn-export-md" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">MD</button>
+          <button id="btn-export-json" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">JSON</button>
+        </div>
+      </div>
+
+      <div class="p-5 grid grid-cols-1 lg:grid-cols-3 gap-6" id="report-export-root">
+        <div class="space-y-6 lg:col-span-1">
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h3 class="font-medium mb-3">Historical</h3>
+            <ul class="text-sm space-y-1 text-slate-300">
+              ${it?.historical?.vesselType? `<li><span class="text-slate-400">Type:</span> ${escapeHtml(it.historical.vesselType)}</li>`:''}
+              ${it?.historical?.vesselSizeTonnage? `<li><span class="text-slate-400">Size:</span> ${escapeHtml(it.historical.vesselSizeTonnage)}</li>`:''}
+              ${it?.historical?.ageAndSinking?.launchedYear!=null? `<li><span class="text-slate-400">Launched:</span> ${escapeHtml(String(it.historical.ageAndSinking.launchedYear))}</li>`:''}
+              ${it?.historical?.ageAndSinking?.sunkDate? `<li><span class="text-slate-400">Sunk:</span> ${escapeHtml(String(it.historical.ageAndSinking.sunkDate))}</li>`:''}
+              ${it?.historical?.location?.depthMeters!=null? `<li><span class="text-slate-400">Depth (m):</span> ${escapeHtml(String(it.historical.location.depthMeters))}</li>`:''}
+              ${coordLine? `<li><span class="text-slate-400">Coords:</span> ${coordLine}</li>`:''}
+            </ul>
+          </div>
+
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h3 class="font-medium mb-3">Phase 2: In-situ</h3>
+            <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Survey notes...">${escapeHtml(getText(it?.phase2?.summary)||"")}</textarea>
+            <div class="flex gap-2 mt-3 flex-wrap">
+              <input id="phase2-files" type="file" multiple class="hidden" />
+              <button id="btn-select-files" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm">Select Files</button>
+              <button id="btn-save-phase2" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Save Notes</button>
+              <span id="phase2-status" class="text-xs text-slate-400 self-center"></span>
+            </div>
+            <div id="upload-gallery" class="grid grid-cols-2 gap-2 mt-4"></div>
+          </div>
+        </div>
+
+        <div class="space-y-6 lg:col-span-2">
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h3 class="font-medium mb-3">Risk Radar</h3>
+            <canvas id="werp-radar" class="w-full h-64"></canvas>
+            <p class="mt-2 text-xs text-slate-400">
+              WCS: ${Number(vWCS||0).toFixed(2)} • PHS: ${Number(vPHS||0).toFixed(2)} • ESI: ${Number(vESI||0).toFixed(2)} • RPM: ${Number(vRPM||1).toFixed(2)}×
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+              <h4 class="font-medium mb-3">WCS</h4>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead class="text-left text-slate-300"><tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score</th></tr></thead>
+                  <tbody>${tableRows(wcsParams,false)}</tbody>
+                </table>
+              </div>
+              <p class="text-sm text-slate-300 mt-2">Total: <span class="font-semibold">${Number(vWCS||0).toFixed(2)}</span></p>
+            </div>
+
+            <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+              <h4 class="font-medium mb-3">RPM</h4>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead class="text-left text-slate-300"><tr><th class="pr-3 pb-2">Factor</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Value</th></tr></thead>
+                  <tbody>${rpmRows()}</tbody>
+                </table>
+              </div>
+              <p class="text-sm text-slate-300 mt-2">Final Multiplier: <span class="font-semibold">${Number(vRPM||1).toFixed(2)}×</span></p>
+            </div>
+          </div>
+
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h4 class="font-medium mb-3">PHS (Pollution Hazard)</h4>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="text-left text-slate-300"><tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Weight (%)</th><th class="text-right pb-2">Score</th></tr></thead>
+                <tbody>${tableRows(phsParams,true)}</tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h4 class="font-medium mb-3">ESI (Environmental Sensitivity)</h4>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="text-left text-slate-300"><tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score</th></tr></thead>
+                <tbody>${tableRows(esiParams,false)}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+  renderUploadsGallery(it);
+  drawRadar(vWCS,vPHS,vESI,vRPM);
+  wireExports(it);
+  const isContributor=['admin','contributor'].includes(state.role);
+  if(isContributor){
+    $('#btn-save-phase2')?.addEventListener('click', savePhase2Summary);
+    $('#btn-select-files')?.addEventListener('click', ()=>{ $('#phase2-files').value=""; $('#phase2-files').click(); });
+    $('#phase2-files')?.addEventListener('change', handleUploadSelection);
+  } else {
+    ['phase2-notes','btn-save-phase2','btn-select-files'].forEach(id=>{
+      const el=$('#'+id);
+      if(el) el.setAttribute('disabled','true');
+    });
+  }
+  updateAuthUI();
+}
+
+function renderUploadsGallery(it){
+  const wrap=$('#upload-gallery'); if(!wrap) return;
+  wrap.innerHTML='';
+  const assets=Array.isArray(it?.phase2?.assets)?it.phase2.assets:[];
+  const imgs=assets.filter(a=>a?.url && /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(String(a?.name||a?.path||'')));
+  if(!imgs.length){
+    wrap.innerHTML='<div class="col-span-2 text-xs text-slate-500">No uploaded images.</div>';
+    return;
+  }
+  imgs.slice(0,12).forEach(a=>{
+    const div=document.createElement('div');
+    div.className='relative group rounded-lg overflow-hidden border border-white/10';
+    div.innerHTML=`<img src="${a.url}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-28 object-cover group-hover:opacity-90" alt="asset">`;
+    wrap.appendChild(div);
+  });
+}
+
+function drawRadar(vWCS,vPHS,vESI,vRPM){
+  const ctx=document.getElementById('werp-radar');
+  if(!ctx) return;
+  const max=20;
+  const data = [
+    Math.max(0,Math.min(20,Number(vWCS||0))),
+    Math.max(0,Math.min(20,(Number(vPHS||0)/10)*20)),
+    Math.max(0,Math.min(20,(Number(vESI||0)/40)*20)),
+    Math.max(0,Math.min(20,((Math.min(Math.max(Number(vRPM||1),0.5),2.5)-0.5)/2.0)*20))
+  ];
+  new Chart(ctx,{
+    type:'radar',
+    data:{
+      labels:['WCS','PHS','ESI','RPM'],
+      datasets:[
+        { label:'Risk Profile', data, backgroundColor:'rgba(34,197,94,0.25)', borderColor:'rgba(34,197,94,1)', pointBackgroundColor:'rgba(34,197,94,1)', borderWidth:2 },
+        { label:'High', data:[20,20,20,20], backgroundColor:'rgba(239,68,68,0.1)', borderColor:'rgba(239,68,68,0.6)', pointRadius:0 },
+        { label:'Medium', data:[12,12,12,12], backgroundColor:'rgba(245,158,11,0.1)', borderColor:'rgba(245,158,11,0.6)', pointRadius:0 },
+        { label:'Low', data:[6,6,6,6], backgroundColor:'rgba(16,185,129,0.1)', borderColor:'rgba(16,185,129,0.6)', pointRadius:0 }
+      ]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      scales:{ r:{ beginAtZero:true, min:0, max, ticks:{ stepSize:4 },
+        grid:{ color:'rgba(148,163,184,0.25)' }, angleLines:{ color:'rgba(148,163,184,0.25)' } } },
+      plugins:{ legend:{ position:'bottom', labels:{ color:'#cbd5e1' } } }
+    }
+  });
+}
+
+/* ---------- Phase 2 Save & Upload ---------- */
+async function savePhase2Summary(){
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id);
+  if(!path){ showToast("Path not found","error"); return; }
+  const val=getText($('#phase2-notes').value);
+  $('#phase2-status').textContent='Saving...';
+  try{
+    await updateDoc(doc(db,path,state.currentWreck.id),{
+      "phase2.summary": val,
+      "phase2.updatedAt": serverTimestamp()
+    });
+    $('#phase2-status').textContent='Saved.';
+    showToast("Phase 2 updated","success");
+  }catch(e){
+    $('#phase2-status').textContent='Error';
+    showToast(e?.message||"Save failed","error");
+  } finally {
+    setTimeout(()=>$('#phase2-status').textContent='',2000);
+  }
+}
+function sanitizeFileName(name=""){
+  return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`;
+}
+async function handleUploadSelection(e){
+  const files=Array.from(e.target.files||[]);
+  if(!files.length || !state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id);
+  if(!path){ showToast("Path not found","error"); return; }
+  $('#phase2-status').textContent=`Uploading ${files.length} file(s)...`;
+  const basePath=`artifacts/${appId}/public/uploads/${state.currentWreck.id}/user`;
+  let ok=0, fail=0;
+  for(const f of files){
+    try{
+      if(!/^image\//i.test(f.type)){ fail++; continue; }
+      const safe = sanitizeFileName(f.name);
+      const fileKey = `${Date.now()}_${safe}`;
+      const ref = storageRef(storage, `${basePath}/${fileKey}`);
+      await uploadBytes(ref, f, { contentType:f.type });
+      const url = await getDownloadURL(ref);
+      const asset = {
+        name:f.name, path:`${basePath}/${fileKey}`, url,
+        contentType:f.type, bytes:f.size, source:'upload', uploadedAtMs:Date.now()
+      };
+      await updateDoc(doc(db,path,state.currentWreck.id),{
+        "phase2.assets": arrayUnion(asset),
+        "phase2.assetsUpdatedAt": serverTimestamp()
+      });
+      ok++;
+    }catch(ex){
+      console.error("Upload failed",ex);
+      fail++;
+    }
+  }
+  $('#phase2-status').textContent = ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
+  showToast($('#phase2-status').textContent, ok?'success':'error');
+  setTimeout(()=>$('#phase2-status').textContent='',3000);
+}
+
+/* ---------- Export Helpers ---------- */
+function wireExports(it){
+  $('#btn-export-pdf')?.addEventListener('click', ()=>exportPdf(it));
+  $('#btn-export-html')?.addEventListener('click', ()=>exportHtml(it));
+  $('#btn-export-md')?.addEventListener('click', ()=>exportMarkdown(it));
+  $('#btn-export-json')?.addEventListener('click', ()=>exportJson(it));
+}
+function exportHtml(it){
+  const node=$('#report-export-root'); if(!node) return;
+  const vessel=vesselName(it);
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${node.outerHTML}</body></html>`;
+  downloadBlob(`${vessel.replace(/\s+/g,'_')}.html`, new Blob([html],{type:'text/html;charset=utf-8'}));
+}
+function exportMarkdown(it){
+  const vessel=vesselName(it);
+  const lines=[
+    `# ${vessel}`,
+    '',
+    `- WCS: ${toNum(it?.totals?.wcs)?.toFixed(2) ?? ''}`,
+    `- PHS: ${toNum(it?.totals?.phs)?.toFixed(2) ?? ''}`,
+    `- ESI: ${toNum(it?.totals?.esi)?.toFixed(2) ?? ''}`,
+    `- RPM: ${rpmFinalMultiplier(it).toFixed(2)}×`
+  ];
+  downloadBlob(`${vessel.replace(/\s+/g,'_')}.md`, new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'}));
+}
+function exportJson(it){
+  const vessel=vesselName(it);
+  downloadBlob(`${vessel.replace(/\s+/g,'_')}.json`, new Blob([JSON.stringify(it,null,2)],{type:'application/json;charset=utf-8'}));
+}
+function exportPdf(it){
+  const node=$('#report-export-root'); if(!node) return;
+  const vessel=vesselName(it);
+  const opt={
+    margin:0.4,
+    filename:`${vessel.replace(/\s+/g,'_')}_Report.pdf`,
+    image:{type:'jpeg',quality:0.95},
+    html2canvas:{scale:2, backgroundColor:'#050816'},
+    jsPDF:{unit:'in', format:'a4', orientation:'portrait'}
+  };
+  window.html2pdf ? html2pdf().from(node).set(opt).save() : showToast("html2pdf not loaded","error");
+}
+function downloadBlob(filename, blob){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+/* ---------- List View ---------- */
+function renderList(){
+  const app=$('#app');
+  const term=state.filters.search.toLowerCase();
+  const items=state.wrecks.filter(it=>vesselName(it).toLowerCase().includes(term));
+  app.innerHTML=`
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+      <div class="p-4 border-b border-white/10 flex flex-col md:flex-row md:items-center gap-3">
+        <div class="text-lg font-semibold text-cyan-200">All Wrecks</div>
+        <div class="md:ml-auto w-full md:w-80">
+          <input id="list-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        </div>
+      </div>
+      <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="list-grid">
+        ${items.map(it=>{
+          const band=riskBand(it);
+          const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                      band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                      'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+          const thumb=(it.media?.images?.[0]?.url) || (Array.isArray(it.media?.images)&&typeof it.media.images[0]==='string'?it.media.images[0]:PLACEHOLDER_SVG);
+          return `
+            <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
+              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
+              <div class="p-3">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
+                  <span class="px-2 py-0.5 rounded-md text-xs border ${badge}">${band.toUpperCase()}</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
+              </div>
+            </a>
+          `;
+        }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
+      </div>
+    </div>
+  `;
+  $('#list-search')?.addEventListener('input', e=>{
+    state.filters.search = e.target.value || '';
+    renderList();
+  });
+  updateAuthUI();
+}
+
+/* ---------- Render Root ---------- */
+function renderApp(){
+  const route=parseRoute();
+  state.currentRoute=route;
+  setActiveNav(route);
+  if(route.name==='home'){
+    renderHome();
+  } else if(route.name==='report'){
+    renderReport(route);
+  } else if(route.name==='list'){
+    renderList();
+  } else {
+    renderHome();
+  }
+  if(route.name==='home'){
+    refreshMapMarkers();
+    renderReassessList();
+  }
+}
+
+/* ---------- Auth State ---------- */
+onAuthStateChanged(auth, async (user)=>{
+  state.user=user;
+  if(!user){
+    state.role='user';
+    updateAuthUI();
+    renderApp();
+    return;
+  }
+  state.role = await fetchRoleFor(user.uid);
+  updateAuthUI();
+  renderApp();
+  startData();
+});
+
+/* ---------- Initial ---------- */
+renderApp();
+
+/* ---------- Public API ---------- */
+window.ProjectGuardian = {
+  loadData(payload){
+    if(!payload || !Array.isArray(payload.wrecks)) return;
+    state.wrecks = payload.wrecks.map(w=>({...w, id:w.id || w.name || crypto.randomUUID()}));
+    renderApp(); refreshMapMarkers();
+  },
+  setFilters({ band, stage, search }={}){
+    if(band) state.filters.band=band;
+    if(stage) state.filters.stage=stage;
+    if(typeof search==='string') state.filters.search=search;
+    renderApp(); refreshMapMarkers();
+  },
+  getState(){
+    return {
+      wrecks: state.wrecks.slice(),
+      filters: {...state.filters},
+      role: state.role,
+      user: state.user?.email || null
+    };
+  },
+  debugState(){
+    console.log("State", state);
+  }
+};
+
+</script>
 </body>
 </html>
