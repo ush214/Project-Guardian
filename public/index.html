@@ -18,13 +18,14 @@
       }
     }
   </script>
-  <!-- Leaflet (interactive map) -->
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- html2pdf -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" referrerpolicy="no-referrer"></script>
+
   <style>
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: #0f172a; }
@@ -40,10 +41,16 @@
       letter-spacing:.5px; text-transform:uppercase;
     }
     .note-block { border:1px solid rgba(255,255,255,0.08); background:#0f172a; }
+    .admin-btn { opacity:.85; }
+    .admin-btn:hover { opacity:1; }
+    @media print {
+      .page-break { page-break-before: always; }
+      .no-print { display:none!important; }
+    }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
-<header class="sticky top-0 z-50 backdrop-blur bg-[#050816]/90 border-b border-white/10">
+<header class="sticky top-0 z-50 backdrop-blur bg-[#050816]/90 border-b border-white/10 no-print">
   <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4">
     <a href="#/" class="text-xl md:text-2xl font-semibold tracking-tight text-cyan-200 hover:text-cyan-300 transition">
       Project Guardian: WW2 Wreck Analysis and Monitoring Platform
@@ -53,9 +60,12 @@
       <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
       <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
     </nav>
-    <div class="hidden md:flex items-center gap-2">
-      <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Logo Left" class="h-10 w-auto rounded shadow-soft border border-white/10">
-      <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Logo Right" class="h-10 w-auto rounded shadow-soft border border-white/10">
+    <div class="hidden md:flex items-center gap-4">
+      <!-- 75% larger (original approximated 40px height -> now 70px) -->
+      <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true"
+           alt="Logo Left" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
+      <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true"
+           alt="Logo Right" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
     </div>
   </div>
 </header>
@@ -86,17 +96,42 @@ const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek
 /* ---------- Actionable Severity Thresholds ---------- */
 const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
 const ACTION_MATRIX = {
-  critical: { label:"Critical", color:{ fill:"rgba(239,68,68,0.30)", stroke:"rgba(239,68,68,1)" }, action:"Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning." },
-  high: { label:"High", color:{ fill:"rgba(245,158,11,0.28)", stroke:"rgba(245,158,11,1)" }, action:"Active Monitoring: Non‑invasive ROV survey in 2–3 years." },
-  medium: { label:"Medium", color:{ fill:"rgba(250,204,21,0.22)", stroke:"rgba(250,204,21,1)" }, action:"Periodic Review: Reassess every 5 years or after major events." },
-  low: { label:"Low", color:{ fill:"rgba(16,185,129,0.28)", stroke:"rgba(16,185,129,1)" }, action:"Archive: No further action unless new information emerges." }
+  critical: {
+    label:"Critical",
+    color:{ fill:"rgba(239,68,68,0.30)", stroke:"rgba(239,68,68,1)" },
+    action:"Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning."
+  },
+  high: {
+    label:"High",
+    color:{ fill:"rgba(245,158,11,0.28)", stroke:"rgba(245,158,11,1)" },
+    action:"Active Monitoring: Non‑invasive ROV survey in 2–3 years."
+  },
+  medium: {
+    label:"Medium",
+    color:{ fill:"rgba(250,204,21,0.22)", stroke:"rgba(250,204,21,1)" },
+    action:"Periodic Review: Reassess every 5 years or after major events."
+  },
+  low: {
+    label:"Low",
+    color:{ fill:"rgba(16,185,129,0.28)", stroke:"rgba(16,185,129,1)" },
+    action:"Archive: No further action unless new information emerges."
+  }
 };
-function computeSeverityTotal({ wcs, phs, esi, rpm }) { return (wcs + phs + (esi / 3)) * rpm; }
+function computeSeverityTotal({ wcs, phs, esi, rpm }) {
+  return (wcs + phs + (esi / 3)) * rpm;
+}
 function categorizeSeverity(score) {
   if (score > ACTION_THRESHOLDS.critical) return "critical";
   if (score >= ACTION_THRESHOLDS.high) return "high";
   if (score >= ACTION_THRESHOLDS.medium) return "medium";
   return "low";
+}
+function severityCategoryForItem(it) {
+  const wcs = Number(it?.totals?.wcs||0);
+  const phs = Number(it?.totals?.phs||0);
+  const esi = Number(it?.totals?.esi||0);
+  const rpm = rpmFinalMultiplier(it);
+  return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
 }
 
 /* ------------------------------ Imports ------------------------------ */
@@ -135,7 +170,7 @@ const state = {
   role: 'user',
   user: null,
   listeners: [],
-  filters: { band:'all', stage:'all', search:'' },
+  filters: { severity:'all', stage:'all', search:'' }, // severity: critical|high|medium|low|all
   chart: null,
   leafletMap: null,
   leafletMarkers: new Map()
@@ -154,34 +189,26 @@ function showToast(msg,type='info'){
   div.textContent=msg;
   stack.appendChild(div);
   requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
-  setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },2800);
+  setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
 }
 const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
 
-/* ------------------------------ Severity & Stage ------------------------------ */
+/* ------------------------------ Legacy risk band (fallback) ------------------------------ */
 function severityBandFromValue(val){ const v=Number(val); if(!Number.isFinite(v)) return 'stable'; if(v>=50) return 'alert'; if(v>=25) return 'warning'; return 'stable'; }
-function riskBand(item){
-  const b=(item?.severity?.band||"").toLowerCase();
-  if(b==='high') return 'alert';
-  if(b==='medium') return 'warning';
-  if(b==='low') return 'stable';
-  return severityBandFromValue(item?.severity?.value);
-}
+
+/* ------------------------------ Stage ------------------------------ */
 function stageFromItem(it){
   const phase2HasNotes = !!getText(it?.phase2?.summary);
   const phase2Entries = Array.isArray(it?.phase2?.entries) && it.phase2.entries.length;
-  const phase2CompletedFlag = it?.phase2?.status === 'completed' || it?.phase2?.completed === true;
-  const completedExplicit = it?.completed === true || it?.status === 'completed' || !!it?.phase3 || !!it?.finalizedAt;
-  const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes || phase2Entries;
-  const isReassess = Boolean(
-    it?.needsReassessment === true ||
-    it?.seismicEvent === true ||
+  const phase2Done = it?.phase2?.status === 'completed' || it?.phase2?.completed;
+  const completedExplicit = it?.completed || it?.status === 'completed' || !!it?.phase3 || !!it?.finalizedAt;
+  const isCompleted = completedExplicit || phase2HasNotes || phase2Entries || phase2Done;
+  const reassess = it?.needsReassessment || it?.seismicEvent ||
     (it?.events && (
       it.events.seismic != null ||
       (Array.isArray(it.events) && it.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
-    ))
-  );
-  if(isReassess) return 'reassess';
+    ));
+  if(reassess) return 'reassess';
   return isCompleted ? 'completed' : 'initial';
 }
 
@@ -198,10 +225,8 @@ function resolveCoordinates(item){
   function extract(obj){
     if(!obj)return null;
     if(Array.isArray(obj)&&obj.length>=2){
-      const lngA=toNumL(obj[0]); const latA=toNumL(obj[1]);
-      if(latA!=null && lngA!=null) return {lat:latA,lng:lngA};
-      const latB=toNumL(obj[0]); const lngB=toNumL(obj[1]);
-      if(latB!=null && lngB!=null) return {lat:latB,lng:lngB};
+      const lng=toNumL(obj[0]); const lat=toNumL(obj[1]);
+      if(lat!=null && lng!=null) return {lat,lng};
       return null;
     }
     if(obj.coordinates){
@@ -235,32 +260,30 @@ async function fetchRoleFor(uid){
   try{
     const allow=await getDoc(doc(db,"system","allowlist","users",uid));
     if(allow.exists()){
-      const d=allow.data()||{};
-      let r=d.role ?? d.Role ?? d.ROLE;
-      if(typeof r==='string' && r.trim()){
+      const d=allow.data()||{}; let r=d.role ?? d.Role ?? d.ROLE;
+      if(typeof r==='string'&&r.trim()){
         r=r.trim().toLowerCase();
         if(r.startsWith('admin')) return 'admin';
         if(r.startsWith('contrib')) return 'contributor';
         if(['user','reader','viewer'].includes(r)) return 'user';
       }
-      if(d.admin===true) return 'admin';
-      if(d.contributor===true) return 'contributor';
-      if(d.allowed===true) return 'user';
+      if(d.admin) return 'admin';
+      if(d.contributor) return 'contributor';
+      if(d.allowed) return 'user';
     }
   }catch{}
   try{
     const legacy=await getDoc(doc(db,`artifacts/${appId}/private/users/${uid}`));
     if(legacy.exists()){
-      const d=legacy.data()||{};
-      let r=d.role ?? d.Role ?? d.ROLE;
-      if(typeof r==='string' && r.trim()){
+      const d=legacy.data()||{}; let r=d.role ?? d.Role ?? d.ROLE;
+      if(typeof r==='string'&&r.trim()){
         r=r.trim().toLowerCase();
         if(r.startsWith('admin')) return 'admin';
         if(r.startsWith('contrib')) return 'contributor';
         if(['user','reader','viewer'].includes(r)) return 'user';
       }
-      if(d.admin===true) return 'admin';
-      if(d.contributor===true) return 'contributor';
+      if(d.admin) return 'admin';
+      if(d.contributor) return 'contributor';
     }
   }catch{}
   return 'user';
@@ -278,42 +301,42 @@ function normalizeDoc(d){
 }
 async function startData(){
   detachListeners();
-  const byKey=new Map();
-  const applySnap=(snap, basePath)=>{
+  const accumulator=new Map();
+  const applySnap=(snap,path)=>{
     snap.forEach(docSnap=>{
       const raw=docSnap.data()||{};
-      const d={...normalizeDoc(raw), id: raw.id || docSnap.id, _path: basePath};
-      if(String(d?.type||"").toUpperCase().includes("SEISMIC_EVENT")) return;
-      d.severity = d.severity && typeof d.severity==='object'? d.severity : {};
-      if(d.severity.value==null) d.severity.value = raw?.severity?.value ?? raw?.severityValue;
-      if(!d.severity.band) d.severity.band = severityBandFromValue(d.severity.value);
-      byKey.set(`${basePath}::${d.id}`, d);
-      state.byIdPath.set(d.id, basePath);
+      const rec={...normalizeDoc(raw), id: raw.id || docSnap.id, _path:path};
+      if(String(rec?.type||"").toUpperCase().includes("SEISMIC_EVENT")) return;
+      if(!rec.severity) rec.severity = {};
+      if(rec.severity.value==null) rec.severity.value = raw?.severity?.value ?? raw?.severityValue;
+      accumulator.set(`${path}::${rec.id}`, rec);
+      state.byIdPath.set(rec.id, path);
     });
-    state.wrecks = Array.from(byKey.values());
+    state.wrecks = Array.from(accumulator.values());
     renderApp();
     refreshLeafletMarkers();
   };
   for(const p of READ_COLLECTIONS){
     try{
-      const un=onSnapshot(collection(db,p),(snap)=>applySnap(snap,p),(err)=>console.error("Snapshot error",p,err));
+      const un=onSnapshot(collection(db,p),(snap)=>applySnap(snap,p),
+        e=>console.error("Listener error",p,e));
       state.listeners.push(un);
-    }catch(e){ console.error("Listener error",p,e); }
+    }catch(e){ console.error("Failed to listen",p,e); }
   }
 }
 
 /* ------------------------------ Image Aggregation (Uploads only) ------------------------------ */
 function collectUploadedImages(it){
-  const results=[];
+  const out=[];
   if(Array.isArray(it?.phase2?.assets)){
     for(const a of it.phase2.assets){
       if(!a?.url) continue;
       if(a.source!=='upload') continue;
       if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
-      results.push({url:a.url, source:'Upload'});
+      out.push(a);
     }
   }
-  return results;
+  return out;
 }
 function firstUploadThumb(it){
   const imgs=collectUploadedImages(it);
@@ -324,28 +347,31 @@ function firstUploadThumb(it){
 function initLeaflet(){
   if(state.leafletMap || typeof L==='undefined') return;
   state.leafletMap = L.map('leaflet-map',{ zoomControl:true }).setView([10,150],3);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
-    attribution:"&copy; OpenStreetMap contributors"
-  }).addTo(state.leafletMap);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{ attribution:"&copy; OpenStreetMap contributors" }).addTo(state.leafletMap);
 }
-function markerIconFor(band){
-  const color=band==='alert'?'red':band==='warning'?'orange':'green';
-  return L.icon({
-    iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
-    shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
-    iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+function markerIconFor(category){
+  const color =
+    category==='critical' ? 'red' :
+    category==='high' ? 'orange' :
+    category==='medium' ? 'gold' : 'green';
+  // Use standard marker color mapping (fallback icons)
+  return L.divIcon({
+    className:'custom-marker',
+    html:`<div style="width:14px;height:14px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.25);"></div>`,
+    iconSize:[14,14],
+    iconAnchor:[7,7]
   });
 }
 function refreshLeafletMarkers(){
   if(!state.leafletMap) return;
-  for(const m of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(m);}catch{} }
+  for(const mk of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(mk);}catch{} }
   state.leafletMarkers.clear();
-  const riskFilter=state.filters.band;
+  const sFilter=state.filters.severity;
   const stageFilter=state.filters.stage;
   const term=state.filters.search.toLowerCase();
   const filtered=state.wrecks.filter(it=>{
-    const rb=riskBand(it);
-    if(riskFilter!=='all' && rb!==riskFilter) return false;
+    const cat=severityCategoryForItem(it);
+    if(sFilter!=='all' && cat!==sFilter) return false;
     const st=stageFromItem(it);
     if(stageFilter!=='all' && st!==stageFilter) return false;
     if(term && !vesselName(it).toLowerCase().includes(term)) return false;
@@ -354,13 +380,13 @@ function refreshLeafletMarkers(){
   filtered.forEach(it=>{
     const coord=resolveCoordinates(it);
     if(!coord) return;
-    const band=riskBand(it);
-    const marker=L.marker([coord.lat,coord.lng],{ icon:markerIconFor(band) });
+    const category=severityCategoryForItem(it);
+    const marker=L.marker([coord.lat, coord.lng], { icon: markerIconFor(category) });
     const thumb=firstUploadThumb(it);
     const popupHtml=`
-      <div style="min-width:200px">
+      <div style="min-width:210px">
         <div style="font-weight:600;font-size:14px">${escapeHtml(vesselName(it))}</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:4px">Stage: ${stageFromItem(it)}</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:4px">Stage: ${stageFromItem(it)} • ${category.toUpperCase()}</div>
         <div style="margin:4px 0 6px">
           <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'"
                style="width:100%;max-height:140px;object-fit:cover;border:1px solid #334155;border-radius:6px"/>
@@ -373,12 +399,36 @@ function refreshLeafletMarkers(){
     state.leafletMarkers.set(it.id, marker);
   });
 }
-function initLeafletMapIfNeeded(){ if(!state.leafletMap){ initLeaflet(); } }
 
 /* ------------------------------ Debounce ------------------------------ */
 function debounce(fn,ms=250){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
 
-/* ------------------------------ Auth Panel ------------------------------ */
+/* ------------------------------ Auth UI ------------------------------ */
+function updateAuthUI(){
+  const signedIn=!!state.user;
+  $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
+  $('#auth-role') && ($('#auth-role').textContent = state.role);
+  document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
+  document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
+
+  const isContributor=['admin','contributor'].includes(state.role);
+  const isAdmin = state.role==='admin';
+
+  ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
+    const el=$('#'+id);
+    if(el){
+      if(!isContributor){ el.disabled=true; el.classList.add('opacity-50','cursor-not-allowed'); }
+      else { el.disabled=false; el.classList.remove('opacity-50','cursor-not-allowed'); }
+    }
+  });
+
+  // Admin-only delete controls
+  document.querySelectorAll('[data-admin-only]').forEach(el=>{
+    el.classList.toggle('hidden', !isAdmin);
+  });
+}
+
+/* ------------------------------ UI Blocks ------------------------------ */
 function buildAuthPanel(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
@@ -409,8 +459,6 @@ function buildAuthPanel(){
     </div>
   </div>`;
 }
-
-/* ------------------------------ Analyze Panel ------------------------------ */
 function buildAnalyzePanel(){
   const isContributor=['admin','contributor'].includes(state.role);
   return `
@@ -431,17 +479,15 @@ function buildAnalyzePanel(){
     </div>
   </div>`;
 }
-
-/* ------------------------------ Map Card ------------------------------ */
 function buildMapCard(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
     <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
-      <div class="flex items-center gap-1 text-sm flex-wrap">
+      <div class="flex flex-wrap items-center gap-1 text-sm">
         <span class="mr-2 font-medium text-slate-200">Risk:</span>
-        ${['all','alert','warning','stable'].map(r=>`<button data-filter-risk="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+        ${['all','critical','high','medium','low'].map(r=>`<button data-filter-sev="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
       </div>
-      <div class="flex items-center gap-1 text-sm flex-wrap">
+      <div class="flex flex-wrap items-center gap-1 text-sm">
         <span class="mr-2 font-medium text-slate-200">Stage:</span>
         ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
       </div>
@@ -458,6 +504,8 @@ function buildMapCard(){
     </div>
   </div>`;
 }
+
+/* ------------------------------ Reassess List ------------------------------ */
 function renderReassessList(){
   const wrap=$('#reassess-list'); if(!wrap) return;
   wrap.innerHTML='';
@@ -474,45 +522,22 @@ function renderReassessList(){
     return;
   }
   list.forEach(it=>{
-    const band=riskBand(it);
-    const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
-                band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
-                'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+    const cat = severityCategoryForItem(it);
+    const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                  cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
+                  cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                  'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
     const a=document.createElement('a');
     a.href=`#/wreck/${encodeURIComponent(it.id)}`;
     a.className='block rounded-lg bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition p-3 space-y-2';
     a.innerHTML=`
       <div class="flex items-center justify-between gap-3">
         <div class="font-medium truncate">${escapeHtml(vesselName(it))}</div>
-        <span class="px-2 py-0.5 text-xs rounded-md border ${badge}">${band.toUpperCase()}</span>
+        <span class="px-2 py-0.5 text-xs rounded-md border ${color}">${cat.toUpperCase()}</span>
       </div>
-      <div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>
-    `;
+      <div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>`;
     wrap.appendChild(a);
   });
-}
-
-/* ------------------------------ Auth UI ------------------------------ */
-function updateAuthUI(){
-  const signedIn=!!state.user;
-  $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
-  $('#auth-role') && ($('#auth-role').textContent = state.role);
-  document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
-  document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
-
-  const isContributor = ['admin','contributor'].includes(state.role);
-  ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
-    const b=$('#'+id);
-    if(b){
-      if(!isContributor){ b.disabled=true; b.classList.add('opacity-50','cursor-not-allowed'); }
-      else { b.disabled=false; b.classList.remove('opacity-50','cursor-not-allowed'); }
-    }
-  });
-  const notes=$('#phase2-notes');
-  if(notes){
-    if(!isContributor) notes.setAttribute('disabled','true');
-    else notes.removeAttribute('disabled');
-  }
 }
 
 /* ------------------------------ Home ------------------------------ */
@@ -520,6 +545,7 @@ function renderHome(){
   const app=$('#app');
   app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
 
+  // Auth events
   $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
   $('#btn-signin')?.addEventListener('click', async ()=>{
     const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
@@ -541,6 +567,7 @@ function renderHome(){
   });
   $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOut(auth);}catch{} });
 
+  // Analyze / Reassess
   $('#analyze-form')?.addEventListener('submit', async e=>{
     e.preventDefault();
     if(!['admin','contributor'].includes(state.role)){ showToast("Insufficient role","error"); return; }
@@ -548,7 +575,7 @@ function renderHome(){
     if(!name){ showToast("Enter vessel name","error"); return; }
     $('#analyze-status').textContent='Requesting analysis...';
     try{
-      if(!callable.analyzeWerps) throw new Error("analyzeWerps not deployed");
+      if(!callable.analyzeWerps) throw new Error("Function not deployed");
       await callable.analyzeWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
       $('#analysis-input').value="";
       $('#analyze-status').textContent='Analysis requested.';
@@ -564,7 +591,7 @@ function renderHome(){
     if(!name){ showToast("Enter vessel name","error"); return; }
     $('#analyze-status').textContent='Requesting reassessment...';
     try{
-      if(!callable.reassessWerps) throw new Error("reassessWerps not deployed");
+      if(!callable.reassessWerps) throw new Error("Function not deployed");
       await callable.reassessWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
       $('#analysis-input').value="";
       $('#analyze-status').textContent='Reassessment requested.';
@@ -575,11 +602,18 @@ function renderHome(){
     }
   });
 
-  document.querySelectorAll('[data-filter-risk]').forEach(btn=>{
-    btn.addEventListener('click',()=>{ state.filters.band = btn.getAttribute('data-filter-risk'); refreshLeafletMarkers(); });
+  // Filters
+  document.querySelectorAll('[data-filter-sev]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      state.filters.severity = btn.getAttribute('data-filter-sev');
+      refreshLeafletMarkers();
+    });
   });
   document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
-    btn.addEventListener('click',()=>{ state.filters.stage = btn.getAttribute('data-filter-stage'); refreshLeafletMarkers(); });
+    btn.addEventListener('click',()=>{
+      state.filters.stage = btn.getAttribute('data-filter-stage');
+      refreshLeafletMarkers();
+    });
   });
   $('#map-search')?.addEventListener('input', debounce(e=>{
     state.filters.search = e.target.value || '';
@@ -592,7 +626,7 @@ function renderHome(){
   updateAuthUI();
 }
 
-/* ------------------------------ RPM + Report Helpers ------------------------------ */
+/* ------------------------------ RPM & Factor Helpers ------------------------------ */
 function readRPMFactors(it){
   const rpm=it?.rpm;
   if(!rpm) return [];
@@ -613,11 +647,11 @@ function readRPMFactors(it){
   }
   const skip=new Set(["finalMultiplier","multiplier","notes","rationale","comment","comments","factors","parameters"]);
   if(rpm && typeof rpm==='object'){
-    return Object.entries(rpm)
-      .filter(([k])=>!skip.has(k))
-      .map(([name,v])=> v && typeof v==='object'
+    return Object.entries(rpm).filter(([k])=>!skip.has(k)).map(([name,v])=>(
+      v&&typeof v==='object'
         ? { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" }
-        : { name, rationale:"", value:v ?? "" });
+        : { name, rationale:"", value:v ?? "" }
+    ));
   }
   return [];
 }
@@ -626,9 +660,10 @@ function rpmFinalMultiplier(it){
   return Number.isFinite(m)?m:1;
 }
 
-/* ------------------------------ Radar (Threshold Model) ------------------------------ */
-function drawRadar(vWCS, vPHS, vESI, vRPM){
-  const ctx=document.getElementById('werp-radar'); if(!ctx) return;
+/* ------------------------------ Radar Chart ------------------------------ */
+function drawRadar(vWCS,vPHS,vESI,vRPM){
+  const canvas=document.getElementById('werp-radar');
+  if(!canvas || !canvas.getContext) return;
   if(state.chart){ try{ state.chart.destroy(); }catch{} }
   const max=20;
   const dataPoints=[
@@ -655,38 +690,57 @@ function drawRadar(vWCS, vPHS, vESI, vRPM){
       ctx.restore();
     }
   };
-  state.chart=new Chart(ctx,{
+  state.chart=new Chart(canvas,{
     type:'radar',
-    data:{ labels:['WCS','PHS','ESI','RPM'], datasets:[{ label:'Risk Profile', data:dataPoints, backgroundColor:cat.color.fill, borderColor:cat.color.stroke, borderWidth:2, pointBackgroundColor:cat.color.stroke, pointBorderColor:cat.color.stroke, pointRadius:3 }]},
+    data:{ labels:['WCS','PHS','ESI','RPM'], datasets:[{
+      label:'Risk Profile',
+      data:dataPoints,
+      backgroundColor:cat.color.fill,
+      borderColor:cat.color.stroke,
+      borderWidth:2,
+      pointBackgroundColor:cat.color.stroke,
+      pointBorderColor:cat.color.stroke,
+      pointRadius:3
+    }]},
     options:{
       responsive:true, maintainAspectRatio:false,
-      scales:{ r:{ beginAtZero:true, min:0, max, ticks:{ stepSize:4, showLabelBackdrop:false, color:'#64748b' }, grid:{ color:'rgba(148,163,184,0.25)' }, angleLines:{ color:'rgba(148,163,184,0.25)' }, pointLabels:{ color:'#e2e8f0', font:{ size:11 } } } },
+      scales:{ r:{ beginAtZero:true, min:0, max,
+        ticks:{ stepSize:4, showLabelBackdrop:false, color:'#64748b' },
+        grid:{ color:'rgba(148,163,184,0.25)' },
+        angleLines:{ color:'rgba(148,163,184,0.25)' },
+        pointLabels:{ color:'#e2e8f0', font:{ size:11 } }
+      }},
       plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:ctx=>`${ctx.label}: ${ctx.formattedValue}` } } }
     },
     plugins:[centerTextPlugin]
   });
+
   let panel=document.getElementById('action-threshold-panel');
   if(!panel){
     panel=document.createElement('div');
     panel.id='action-threshold-panel';
     panel.className='mt-4 rounded-lg border border-white/10 bg-slate-800/60 p-4 text-sm';
-    ctx.canvas.parentElement.appendChild(panel);
+    canvas.parentElement?.appendChild(panel);
   }
-  panel.innerHTML=`
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-      <div>
-        <div class="text-slate-300"><span class="font-medium text-slate-200">Severity Score:</span> <span class="font-semibold">${severityScore.toFixed(2)}</span></div>
-        <div class="mt-1">
-          <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold" style="background:${cat.color.fill};color:${cat.color.stroke}">${cat.label.toUpperCase()}</span>
+  if(panel){
+    panel.innerHTML=`
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <div class="text-slate-300"><span class="font-medium text-slate-200">Severity Score:</span> <span class="font-semibold">${severityScore.toFixed(2)}</span></div>
+          <div class="mt-1">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold" style="background:${cat.color.fill};color:${cat.color.stroke}">
+              ${cat.label.toUpperCase()}
+            </span>
+          </div>
         </div>
-      </div>
-      <div class="md:text-right text-slate-400 leading-snug">
-        <span class="text-slate-300 font-medium">Required Action:</span><br>${escapeHtml(cat.action)}
-      </div>
-    </div>`;
+        <div class="md:text-right text-slate-400 leading-snug">
+          <span class="text-slate-300 font-medium">Required Action:</span><br>${escapeHtml(cat.action)}
+        </div>
+      </div>`;
+  }
 }
 
-/* ------------------------------ Phase 2 Save & Upload + Entries ------------------------------ */
+/* ------------------------------ Phase 2: Entries & Uploads & Admin Deletion ------------------------------ */
 async function savePhase2Entry(){
   if(!state.currentWreck) return;
   const path=state.byIdPath.get(state.currentWreck.id);
@@ -694,36 +748,77 @@ async function savePhase2Entry(){
   const val=getText($('#phase2-notes').value);
   if(!val){ showToast("Enter text","error"); return; }
   $('#phase2-status').textContent='Saving...';
-  const userIdent = state.user?.email || state.user?.uid || 'anonymous';
+  const entry = {
+    entryId: crypto.randomUUID(),
+    text: val,
+    createdAtMs: Date.now(),
+    user: state.user?.email || state.user?.uid || 'anonymous'
+  };
   try{
+    // Load current doc to merge entries (avoid arrayRemove complexity)
+    const snap = await getDoc(doc(db,path,state.currentWreck.id));
+    const data = snap.exists()? snap.data(): {};
+    const current = Array.isArray(data?.phase2?.entries)? data.phase2.entries.slice(): [];
+    current.push(entry);
     await updateDoc(doc(db,path,state.currentWreck.id),{
-      "phase2.entries": arrayUnion({ text: val, createdAtMs: Date.now(), user: userIdent }),
+      "phase2.entries": current,
       "phase2.summary": val.slice(0,240),
       "phase2.updatedAt": serverTimestamp()
     });
     $('#phase2-status').textContent='Saved.';
     showToast("Entry saved","success");
     $('#phase2-notes').value="";
-    appendPhase2EntryLocal({ text: val, createdAtMs: Date.now(), user: userIdent });
+    appendPhase2EntryLocal(entry, true);
   }catch(e){
+    console.error(e);
     $('#phase2-status').textContent='Error';
     showToast(e?.message||"Save failed","error");
   } finally {
     setTimeout(()=>$('#phase2-status').textContent='',2000);
   }
 }
-function appendPhase2EntryLocal(entry){
+function appendPhase2EntryLocal(entry, prepend=false){
   const list=$('#phase2-entries'); if(!list) return;
-  const li=document.createElement('div');
-  li.className='note-block rounded-lg p-3 text-sm space-y-1';
   const ts=new Date(entry.createdAtMs).toLocaleString();
-  li.innerHTML=`
-    <div class="flex items-center justify-between">
-      <span class="text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(entry.user||'user')}</span>
-      <span class="text-xs text-slate-400">${ts}</span>
+  const isAdmin = state.role==='admin';
+  const div=document.createElement('div');
+  div.className='note-block rounded-lg p-3 text-sm space-y-1';
+  div.dataset.entryId = entry.entryId;
+  div.innerHTML=`
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(entry.user||'user')}</span>
+        <span class="text-xs text-slate-400">${escapeHtml(ts)}</span>
+      </div>
+      <button class="text-xs px-2 py-1 rounded bg-rose-600/60 hover:bg-rose-600 text-white hidden"
+              data-admin-only data-delete-entry="${entry.entryId}">Delete</button>
     </div>
-    <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(entry.text)}</div>`;
-  list.prepend(li);
+    <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(entry.text)}</div>
+  `;
+  if(prepend) list.prepend(div); else list.appendChild(div);
+  updateAuthUI();
+  div.querySelector('[data-delete-entry]')?.addEventListener('click', ()=>deletePhase2Entry(entry.entryId));
+}
+async function deletePhase2Entry(entryId){
+  if(state.role!=='admin') return showToast("Admin only","error");
+  if(!state.currentWreck) return;
+  const path = state.byIdPath.get(state.currentWreck.id);
+  if(!path) return;
+  try{
+    const ref=doc(db,path,state.currentWreck.id);
+    const snap=await getDoc(ref);
+    if(!snap.exists()) return;
+    const data=snap.data();
+    const entries=Array.isArray(data?.phase2?.entries)? data.phase2.entries.filter(e=>e.entryId!==entryId):[];
+    await updateDoc(ref,{ "phase2.entries": entries, "phase2.updatedAt": serverTimestamp() });
+    // remove DOM
+    const node = document.querySelector(`[data-entry-id="${entryId}"]`);
+    node?.remove();
+    showToast("Entry deleted","success");
+  }catch(e){
+    console.error(e);
+    showToast("Delete failed","error");
+  }
 }
 function sanitizeFileName(name=""){ return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`; }
 async function handleUploadSelection(e){
@@ -743,29 +838,182 @@ async function handleUploadSelection(e){
       await uploadBytes(ref,f,{ contentType:f.type });
       const url=await getDownloadURL(ref);
       const asset={ name:f.name, path:`${basePath}/${fileKey}`, url, contentType:f.type, bytes:f.size, source:'upload', uploadedAtMs:Date.now() };
-      await updateDoc(doc(db,path,state.currentWreck.id),{
-        "phase2.assets": arrayUnion(asset),
+      const docRef=doc(db,path,state.currentWreck.id);
+      const snap=await getDoc(docRef);
+      const data=snap.exists()? snap.data(): {};
+      const assets=Array.isArray(data?.phase2?.assets)? data.phase2.assets.slice():[];
+      assets.push(asset);
+      await updateDoc(docRef,{
+        "phase2.assets": assets,
         "phase2.assetsUpdatedAt": serverTimestamp()
       });
+      appendUploadedImageLocal(asset, true);
       ok++;
-    }catch(ex){ console.error("Upload failed",ex); fail++; }
+    }catch(ex){ console.error(ex); fail++; }
   }
   $('#phase2-status').textContent = ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
   showToast($('#phase2-status').textContent, ok?'success':'error');
   setTimeout(()=>$('#phase2-status').textContent='',3000);
 }
+function appendUploadedImageLocal(asset, prepend=false){
+  const gallery=$('#upload-gallery'); if(!gallery) return;
+  const wrap=document.createElement('div');
+  wrap.className='relative rounded-lg overflow-hidden border border-white/10 bg-slate-800 group';
+  wrap.dataset.assetPath=asset.path;
+  wrap.innerHTML=`
+    <img src="${asset.url}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-40 object-cover group-hover:opacity-90" alt="upload">
+    <span class="img-badge">UPLOAD</span>
+    <button data-admin-only data-delete-asset="${asset.path}" title="Delete"
+      class="hidden absolute top-1 right-1 px-2 py-1 rounded bg-rose-600/80 hover:bg-rose-600 text-xs text-white admin-btn">×</button>
+  `;
+  if(prepend) gallery.prepend(wrap); else gallery.appendChild(wrap);
+  updateAuthUI();
+  wrap.querySelector('[data-delete-asset]')?.addEventListener('click',()=>deleteAsset(asset.path));
+}
+async function deleteAsset(assetPath){
+  if(state.role!=='admin') return showToast("Admin only","error");
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id);
+  if(!path) return;
+  try{
+    const ref=doc(db,path,state.currentWreck.id);
+    const snap=await getDoc(ref);
+    if(!snap.exists()) return;
+    const data=snap.data();
+    const assets=Array.isArray(data?.phase2?.assets)? data.phase2.assets.filter(a=>a.path!==assetPath):[];
+    await updateDoc(ref,{ "phase2.assets": assets, "phase2.assetsUpdatedAt": serverTimestamp() });
+    document.querySelector(`[data-asset-path="${assetPath}"]`)?.remove();
+    showToast("Image deleted","success");
+  }catch(e){
+    console.error(e);
+    showToast("Delete failed","error");
+  }
+}
 
-/* ------------------------------ Exports ------------------------------ */
+/* ------------------------------ Exports (Improved PDF Layout) ------------------------------ */
 function wireExports(it){
   $('#btn-export-pdf')?.addEventListener('click',()=>exportPdf(it));
   $('#btn-export-html')?.addEventListener('click',()=>exportHtml(it));
   $('#btn-export-md')?.addEventListener('click',()=>exportMarkdown(it));
   $('#btn-export-json')?.addEventListener('click',()=>exportJson(it));
 }
+function buildPrintable(it,metrics){
+  const { vWCS,vPHS,vESI,vRPM,severityScore,categoryKey,actionText,images,entries } = metrics;
+  const cat=ACTION_MATRIX[categoryKey];
+  const div=document.createElement('div');
+  div.innerHTML=`
+    <style>
+      h1,h2,h3 { font-family:Inter,Arial,sans-serif; }
+      .section { margin-bottom:1.2rem; }
+      .tbl { width:100%; border-collapse:collapse; font-size:12px; }
+      .tbl th, .tbl td { border:1px solid #ccc; padding:4px 6px; text-align:left; vertical-align:top; }
+      .page-break { page-break-before: always; }
+      .chip { display:inline-block; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:600; letter-spacing:.5px; }
+    </style>
+    <div style="text-align:center;margin-bottom:1.5rem;">
+      <img src="${LOGO_LEFT}" style="height:90px;margin-right:16px;border:1px solid #ccc;border-radius:6px;vertical-align:middle"/>
+      <img src="${LOGO_RIGHT}" style="height:90px;border:1px solid #ccc;border-radius:6px;vertical-align:middle"/>
+      <h1 style="margin:12px 0 4px;font-size:26px;color:#0f172a;">WERP Risk Report</h1>
+      <div style="font-size:13px;color:#334155;">${escapeHtml(vesselName(it))}</div>
+      <div style="margin-top:6px;font-size:12px;">
+        Severity Score: <strong>${severityScore.toFixed(2)}</strong>
+        <span class="chip" style="background:${cat.color.fill};color:${cat.color.stroke};border:1px solid ${cat.color.stroke}">${cat.label.toUpperCase()}</span>
+      </div>
+      <div style="font-size:11px;color:#475569;margin-top:4px;">Action: ${escapeHtml(actionText)}</div>
+    </div>
+
+    <div class="section">
+      <h2 style="font-size:18px;margin:0 0 6px;color:#0f172a;">Summary</h2>
+      <p style="font-size:12px;line-height:1.4;color:#1e293b;">${escapeHtml(vesselSummary(it))}</p>
+    </div>
+
+    <div class="section">
+      <h3 style="font-size:16px;margin:0 0 4px;color:#0f172a;">Scores</h3>
+      <table class="tbl">
+        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>WCS</td><td>${vWCS.toFixed(2)}</td></tr>
+          <tr><td>PHS</td><td>${vPHS.toFixed(2)}</td></tr>
+          <tr><td>ESI</td><td>${vESI.toFixed(2)}</td></tr>
+          <tr><td>RPM</td><td>${vRPM.toFixed(2)}</td></tr>
+          <tr><td>Severity Score</td><td>${severityScore.toFixed(2)} (${cat.label})</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h3 style="font-size:16px;margin:0 0 4px;color:#0f172a;">Uploaded Images</h3>
+      ${
+        images.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:8px;">
+             ${images.slice(0,18).map(i=>`<div style="width:140px;border:1px solid #ccc;border-radius:4px;overflow:hidden">
+               <img src="${i.url}" style="width:140px;height:90px;object-fit:cover" />
+               <div style="font-size:10px;padding:2px 4px;background:#f1f5f9">Upload</div>
+             </div>`).join('')}
+           </div>`
+        : '<div style="font-size:11px;color:#64748b;">No uploaded images.</div>'
+      }
+    </div>
+
+    <div class="page-break section">
+      <h3 style="font-size:16px;margin:0 0 6px;color:#0f172a;">In-situ Note Log</h3>
+      ${
+        entries.length
+          ? entries.map(e=>{
+              const ts=e.createdAtMs? new Date(e.createdAtMs).toLocaleString() : '';
+              return `<div style="border:1px solid #cbd5e1;border-radius:4px;padding:6px 8px;margin-bottom:6px;">
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;margin-bottom:4px;">
+                  <strong>${escapeHtml(e.user||'user')}</strong>
+                  <span>${escapeHtml(ts)}</span>
+                </div>
+                <div style="white-space:pre-wrap;font-size:12px;line-height:1.3;color:#0f172a;">${escapeHtml(e.text||'')}</div>
+              </div>`;
+            }).join('')
+          : '<div style="font-size:11px;color:#64748b;">No entries recorded.</div>'
+      }
+    </div>
+  `;
+  return div;
+}
+function exportPdf(it){
+  const root=document.body;
+  const wcsParams = Array.isArray(it?.wcs?.parameters)?it.wcs.parameters:[];
+  const phsParams = Array.isArray(it?.phs?.parameters)?it.phs.parameters:[];
+  const esiParams = Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
+  const vWCS = toNum(it?.totals?.wcs) ?? wcsParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
+  const vPHS = toNum(it?.totals?.phs) ?? (phsParams.length? Math.min(10, phsParams.reduce((s,p)=>s+(toNum(p.score)||0),0)/phsParams.length):0);
+  const vESI = toNum(it?.totals?.esi) ?? esiParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
+  const vRPM = rpmFinalMultiplier(it);
+  const severityScore=computeSeverityTotal({ wcs:vWCS, phs:vPHS, esi:vESI, rpm:vRPM });
+  const categoryKey=categorizeSeverity(severityScore);
+  const actionText=ACTION_MATRIX[categoryKey].action;
+  const images=collectUploadedImages(it);
+  const entries=(Array.isArray(it?.phase2?.entries)?[...it.phase2.entries]:[]).sort((a,b)=>(b?.createdAtMs||0)-(a?.createdAtMs||0));
+
+  const printable=buildPrintable(it,{ vWCS,vPHS,vESI,vRPM,severityScore,categoryKey,actionText,images,entries });
+  printable.style.background='#ffffff';
+  printable.style.color='#0f172a';
+  printable.style.padding='16px';
+  root.appendChild(printable);
+  const opt={
+    margin:0.4,
+    filename:`${vesselName(it).replace(/\s+/g,'_')}_Report.pdf`,
+    image:{ type:'jpeg', quality:0.95 },
+    html2canvas:{ scale:2, backgroundColor:'#ffffff' },
+    jsPDF:{ unit:'in', format:'a4', orientation:'portrait' }
+  };
+  html2pdf().from(printable).set(opt).save().then(()=>{
+    printable.remove();
+  }).catch(e=>{
+    console.error(e);
+    showToast("PDF export failed","error");
+    printable.remove();
+  });
+}
 function exportHtml(it){
   const node=$('#report-export-root'); if(!node) return;
   const vessel=vesselName(it);
-  const actionPanel=document.getElementById('action-threshold-panel');
+  const actionPanel=$('#action-threshold-panel');
   const clone=node.cloneNode(true);
   if(actionPanel && !clone.querySelector('#action-threshold-panel')) clone.appendChild(actionPanel.cloneNode(true));
   const entries=$('#phase2-entries');
@@ -775,46 +1023,33 @@ function exportHtml(it){
 }
 function exportMarkdown(it){
   const vessel=vesselName(it);
-  const sev=computeSeverityTotal({
-    wcs:Number(it?.totals?.wcs||0),
-    phs:Number(it?.totals?.phs||0),
-    esi:Number(it?.totals?.esi||0),
-    rpm:rpmFinalMultiplier(it)
-  });
+  const vWCS=toNum(it?.totals?.wcs)||0;
+  const vPHS=toNum(it?.totals?.phs)||0;
+  const vESI=toNum(it?.totals?.esi)||0;
+  const vRPM=rpmFinalMultiplier(it);
+  const sev=computeSeverityTotal({ wcs:vWCS, phs:vPHS, esi:vESI, rpm:vRPM });
   const cat=ACTION_MATRIX[categorizeSeverity(sev)];
   const lines=[
     `# ${vessel}`,
     ``,
     `**Severity Score:** ${sev.toFixed(2)} (${cat.label})`,
     ``,
-    `- WCS: ${toNum(it?.totals?.wcs)?.toFixed(2) ?? ''}`,
-    `- PHS: ${toNum(it?.totals?.phs)?.toFixed(2) ?? ''}`,
-    `- ESI: ${toNum(it?.totals?.esi)?.toFixed(2) ?? ''}`,
-    `- RPM: ${rpmFinalMultiplier(it).toFixed(2)}×`,
+    `- WCS: ${vWCS.toFixed(2)}`,
+    `- PHS: ${vPHS.toFixed(2)}`,
+    `- ESI: ${vESI.toFixed(2)}`,
+    `- RPM: ${vRPM.toFixed(2)}×`,
     ``,
-    `**Required Action:** ${cat.action}`
+    `**Required Action:** ${cat.action}`,
+    ``,
+    `Summary:`,
+    ``,
+    vesselSummary(it)
   ];
   downloadBlob(`${vessel.replace(/\s+/g,'_')}.md`, new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'}));
 }
 function exportJson(it){
   const vessel=vesselName(it);
   downloadBlob(`${vessel.replace(/\s+/g,'_')}.json`, new Blob([JSON.stringify(it,null,2)],{type:'application/json;charset=utf-8'}));
-}
-function exportPdf(it){
-  const node=$('#report-export-root'); if(!node) return;
-  const vessel=vesselName(it);
-  const actionPanel=document.getElementById('action-threshold-panel');
-  if(actionPanel && !node.querySelector('#action-threshold-panel')) node.appendChild(actionPanel.cloneNode(true));
-  const entries=$('#phase2-entries');
-  if(entries && !node.querySelector('#phase2-entries')) node.appendChild(entries.cloneNode(true));
-  const opt={
-    margin:0.4,
-    filename:`${vessel.replace(/\s+/g,'_')}_Report.pdf`,
-    image:{type:'jpeg',quality:0.95},
-    html2canvas:{scale:2, backgroundColor:'#050816'},
-    jsPDF:{unit:'in', format:'a4', orientation:'portrait'}
-  };
-  window.html2pdf ? html2pdf().from(node).set(opt).save() : showToast("html2pdf not loaded","error");
 }
 function downloadBlob(filename, blob){
   const url=URL.createObjectURL(blob);
@@ -845,10 +1080,11 @@ function renderList(){
       </div>
       <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="list-grid">
         ${items.map(it=>{
-          const band=riskBand(it);
-          const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
-                      band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
-                      'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+          const cat=severityCategoryForItem(it);
+          const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                        cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
+                        cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                        'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
           const thumb=firstUploadThumb(it);
           return `
             <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
@@ -856,7 +1092,7 @@ function renderList(){
               <div class="p-3">
                 <div class="flex items-center justify-between gap-3">
                   <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
-                  <span class="px-2 py-0.5 rounded-md text-xs border ${badge}">${band.toUpperCase()}</span>
+                  <span class="px-2 py-0.5 rounded-md text-xs border ${color}">${cat.toUpperCase()}</span>
                 </div>
                 <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
               </div>
@@ -865,7 +1101,7 @@ function renderList(){
       </div>
     </div>`;
   $('#list-search')?.addEventListener('input', e=>{
-    state.filters.search = e.target.value || '';
+    state.filters.search=e.target.value||'';
     renderList();
   });
   updateAuthUI();
@@ -881,14 +1117,15 @@ function renderReport(route){
     return;
   }
   const images=collectUploadedImages(it);
-  const wcsParams = Array.isArray(it?.wcs?.parameters)?it.wcs.parameters:[];
-  const phsParams = Array.isArray(it?.phs?.parameters)?it.phs.parameters:[];
-  const esiParams = Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
+  const wcsParams=Array.isArray(it?.wcs?.parameters)?it.wcs.parameters:[];
+  const phsParams=Array.isArray(it?.phs?.parameters)?it.phs.parameters:[];
+  const esiParams=Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
   const rpmFactors=readRPMFactors(it);
   const vWCS = toNum(it?.totals?.wcs) ?? wcsParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
   const vPHS = toNum(it?.totals?.phs) ?? (phsParams.length? Math.min(10, phsParams.reduce((s,p)=>s+(toNum(p.score)||0),0)/phsParams.length):0);
   const vESI = toNum(it?.totals?.esi) ?? esiParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
   const vRPM = rpmFinalMultiplier(it);
+
   function tableRows(list,withWeight=false){
     if(!list.length) return `<tr><td class="py-2 text-slate-500" colspan="${withWeight?4:3}">No data.</td></tr>`;
     return list.map(p=>{
@@ -913,14 +1150,18 @@ function renderReport(route){
   const coords=resolveCoordinates(it);
   const coordLine=coords? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : '';
   const galleryHtml = images.length
-    ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-        ${images.slice(0,18).map(img=>`
-          <div class="relative rounded-lg overflow-hidden border border-white/10 bg-slate-800 group">
-            <img src="${img.url}" loading="lazy" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-40 object-cover group-hover:opacity-90" alt="upload">
-            <span class="img-badge">${img.source}</span>
-          </div>`).join("")}
+    ? `<div id="upload-gallery" class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        ${images.slice(0,18).map(a=>`
+          <div class="relative rounded-lg overflow-hidden border border-white/10 bg-slate-800 group" data-asset-path="${a.path}">
+            <img src="${a.url}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-40 object-cover group-hover:opacity-90" alt="upload">
+            <span class="img-badge">UPLOAD</span>
+            <button data-admin-only data-delete-asset="${a.path}" title="Delete"
+              class="hidden absolute top-1 right-1 px-2 py-1 rounded bg-rose-600/80 hover:bg-rose-600 text-xs text-white admin-btn">×</button>
+          </div>
+        `).join("")}
       </div>`
-    : `<div class="text-xs text-slate-500">No uploaded images yet.</div>`;
+    : `<div id="upload-gallery" class="text-xs text-slate-500">No uploaded images yet.</div>`;
+
   app.innerHTML=`
     <div class="flex flex-wrap items-center gap-3 mb-6">
       <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
@@ -928,9 +1169,9 @@ function renderReport(route){
       <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
     </div>
     <div class="flex items-center justify-between mb-4 bg-slate-900/70 border border-white/10 rounded-lg px-4 py-2">
-      <img src="${LOGO_LEFT}" alt="Logo Left" class="h-10 w-auto rounded border border-white/10">
+      <img src="${LOGO_LEFT}" alt="Logo Left" style="height:70px" class="w-auto rounded border border-white/10">
       <h2 class="text-base md:text-lg font-semibold tracking-wide text-cyan-200 text-center flex-1">WERP Risk Report</h2>
-      <img src="${LOGO_RIGHT}" alt="Logo Right" class="h-10 w-auto rounded border border-white/10">
+      <img src="${LOGO_RIGHT}" alt="Logo Right" style="height:70px" class="w-auto rounded border border-white/10">
     </div>
     <section class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
       <div class="p-5 border-b border-white/10 flex flex-col md:flex-row md:items-end gap-4 justify-between">
@@ -939,7 +1180,7 @@ function renderReport(route){
           <p class="text-slate-300 text-sm mt-1">${escapeHtml(vesselSummary(it))}</p>
           ${coordLine? `<p class="text-xs text-slate-500 mt-1">Coordinates: ${coordLine}</p>`:''}
         </div>
-        <div class="flex gap-2 flex-wrap">
+        <div class="flex gap-2 flex-wrap no-print">
           <button id="btn-export-pdf" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">PDF</button>
           <button id="btn-export-html" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">HTML</button>
           <button id="btn-export-md" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">MD</button>
@@ -960,7 +1201,7 @@ function renderReport(route){
             </ul>
             <div class="mt-4">${galleryHtml}</div>
           </div>
-          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4 no-print">
             <h3 class="font-medium mb-3">Phase 2: In-situ Report</h3>
             <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Enter new in-situ observation..."></textarea>
             <div class="flex gap-2 mt-3 flex-wrap">
@@ -984,7 +1225,9 @@ function renderReport(route){
               <h4 class="font-medium mb-3">WCS</h4>
               <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
-                  <thead class="text-left text-slate-300"><tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score</th></tr></thead>
+                  <thead class="text-left text-slate-300">
+                    <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score</th></tr>
+                  </thead>
                   <tbody>${tableRows(wcsParams,false)}</tbody>
                 </table>
               </div>
@@ -994,7 +1237,9 @@ function renderReport(route){
               <h4 class="font-medium mb-3">RPM</h4>
               <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
-                  <thead class="text-left text-slate-300"><tr><th class="pr-3 pb-2">Factor</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Value</th></tr></thead>
+                  <thead class="text-left text-slate-300">
+                    <tr><th class="pr-3 pb-2">Factor</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Value</th></tr>
+                  </thead>
                   <tbody>${rpmRows()}</tbody>
                 </table>
               </div>
@@ -1005,7 +1250,9 @@ function renderReport(route){
             <h4 class="font-medium mb-3">PHS (Pollution Hazard)</h4>
             <div class="overflow-x-auto">
               <table class="min-w-full text-sm">
-                <thead class="text-left text-slate-300"><tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Weight (%)</th><th class="text-right pb-2">Score</th></tr></thead>
+                <thead class="text-left text-slate-300">
+                  <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Weight</th><th class="text-right pb-2">Score</th></tr>
+                </thead>
                 <tbody>${tableRows(phsParams,true)}</tbody>
               </table>
             </div>
@@ -1014,7 +1261,9 @@ function renderReport(route){
             <h4 class="font-medium mb-3">ESI (Environmental Sensitivity)</h4>
             <div class="overflow-x-auto">
               <table class="min-w-full text-sm">
-                <thead class="text-left text-slate-300"><tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score</th></tr></thead>
+                <thead class="text-left text-slate-300">
+                  <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score</th></tr>
+                </thead>
                 <tbody>${tableRows(esiParams,false)}</tbody>
               </table>
             </div>
@@ -1026,10 +1275,14 @@ function renderReport(route){
                  .sort((a,b)=>(b?.createdAtMs||0)-(a?.createdAtMs||0))
                  .map(e=>{
                    const ts=e?.createdAtMs? new Date(e.createdAtMs).toLocaleString(): '';
-                   return `<div class="note-block rounded-lg p-3 space-y-1">
-                     <div class="flex items-center justify-between">
-                       <span class="text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(e.user||'user')}</span>
-                       <span class="text-xs text-slate-400">${escapeHtml(ts)}</span>
+                   return `<div class="note-block rounded-lg p-3 space-y-1" data-entry-id="${e.entryId||''}">
+                     <div class="flex items-center justify-between gap-2">
+                       <div class="flex items-center gap-2">
+                         <span class="text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(e.user||'user')}</span>
+                         <span class="text-xs text-slate-400">${escapeHtml(ts)}</span>
+                       </div>
+                       <button data-admin-only data-delete-entry="${e.entryId||''}" title="Delete"
+                         class="hidden text-xs px-2 py-1 rounded bg-rose-600/60 hover:bg-rose-600 text-white admin-btn">Delete</button>
                      </div>
                      <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(e.text||'')}</div>
                    </div>`;
@@ -1039,8 +1292,19 @@ function renderReport(route){
         </div>
       </div>
     </section>`;
+
   drawRadar(vWCS,vPHS,vESI,vRPM);
   wireExports(it);
+  // Wire admin deletion controls
+  document.querySelectorAll('[data-delete-entry]').forEach(btn=>{
+    const id=btn.getAttribute('data-delete-entry');
+    if(id) btn.addEventListener('click',()=>deletePhase2Entry(id));
+  });
+  document.querySelectorAll('[data-delete-asset]').forEach(btn=>{
+    const path=btn.getAttribute('data-delete-asset');
+    if(path) btn.addEventListener('click',()=>deleteAsset(path));
+  });
+
   const isContributor=['admin','contributor'].includes(state.role);
   if(isContributor){
     $('#btn-save-phase2')?.addEventListener('click', savePhase2Entry);
@@ -1049,6 +1313,7 @@ function renderReport(route){
   } else {
     ['phase2-notes','btn-save-phase2','btn-select-files'].forEach(id=>$('#'+id)?.setAttribute('disabled','true'));
   }
+  // Bind deletion for newly appended entries/assets later
   updateAuthUI();
 }
 
@@ -1064,10 +1329,20 @@ function parseRoute(){
 window.addEventListener('hashchange',()=>renderApp());
 function setActiveNav(route){
   const map={ home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
-  document.querySelectorAll('nav a').forEach(a=>{ a.classList.remove('ring-2','ring-cyan-500'); a.removeAttribute('aria-current'); });
-  const sel=map[route.name]; if(sel){ const el=document.querySelector(sel); if(el){ el.classList.add('ring-2','ring-cyan-500'); el.setAttribute('aria-current','page'); } }
+  document.querySelectorAll('nav a').forEach(a=>{
+    a.classList.remove('ring-2','ring-cyan-500');
+    a.removeAttribute('aria-current');
+  });
+  const sel=map[route.name];
+  if(sel){
+    const el=document.querySelector(sel);
+    if(el){
+      el.classList.add('ring-2','ring-cyan-500');
+      el.setAttribute('aria-current','page');
+    }
+  }
   if(route.name==='report' && state.currentWreck){
-    const cr=document.querySelector('#nav-current-report');
+    const cr=$('#nav-current-report');
     cr?.classList.remove('hidden');
     cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
   }
@@ -1111,11 +1386,11 @@ renderApp();
 window.ProjectGuardian={
   loadData(payload){
     if(!payload || !Array.isArray(payload.wrecks)) return;
-    state.wrecks=payload.wrecks.map(w=>({...w, id:w.id || w.name || crypto.randomUUID()}));
+    state.wrecks=payload.wrecks.map(w=>({...w,id:w.id||w.name||crypto.randomUUID()}));
     renderApp(); refreshLeafletMarkers();
   },
-  setFilters({ band, stage, search }={}){
-    if(band) state.filters.band=band;
+  setFilters({ severity, stage, search }={}){
+    if(severity) state.filters.severity=severity;
     if(stage) state.filters.stage=stage;
     if(typeof search==='string') state.filters.search=search;
     renderApp(); refreshLeafletMarkers();
