@@ -1,255 +1,898 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Project Guardian – WERP Reports</title>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
-
-  <!-- Fonts + Tailwind (CDN is fine for now; switch to built CSS for production) -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="utf-8" />
+  <title>Project Guardian: WW2 Wreck Analysis and Monitoring Platform</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tailwind CSS CDN (no custom stylesheets per requirements) -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
-
-  <!-- Chart.js -->
+  <script>
+    // Tailwind config: enable dark oceanic theme via arbitrary colors and extend shadows if needed
+    tailwind.config = {
+      theme: {
+        extend: {
+          boxShadow: {
+            'soft': '0 2px 10px rgba(0,0,0,0.25)',
+            'card': '0 8px 24px rgba(0,0,0,0.35)'
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Chart.js (radar chart for WERP scores) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- DOMPurify / Marked -->
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-
-  <!-- Optional monitoring styles -->
-  <link rel="stylesheet" href="/monitoring.css" />
-  
-  <!-- Blue theme -->
-  <link rel="stylesheet" href="/theme.css" />
-
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    #map { width: 100%; height: 460px; border-radius: 10px; }
-    .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
-    .pill.low { color:#065f46; background:#ecfdf5; border-color:#10b981; }
-    .pill.medium { color:#92400e; background:#fffbeb; border-color:#f59e0b; }
-    .pill.high { color:#991b1b; background:#fef2f2; border-color:#ef4444; }
-    .pill.unknown { color:#334155; background:#f1f5f9; border-color:#cbd5e1; }
-    .report-prose { max-width: none; font-size: 0.92rem; line-height: 1.45; color: #111827; }
-    .report-prose table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-    .report-prose th, .report-prose td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; vertical-align: top; }
-    #reportScroll { max-height: 75vh; overflow-y: auto; padding-right: 4px; }
-    .gallery-tile img { width: 100%; height: auto; object-fit: contain; border-radius: 6px; border: 1px solid #e5e7eb; background: #f8fafc; }
-    .gallery-tile .file-tile { height: 120px; display:flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#f8fafc; font-size:12px; color:#475569; padding:6px; text-align:center; }
-    .list-scroll { max-height: 420px; overflow-y: auto; padding-right: 4px; }
-  </style>
+  <!-- html2pdf.js for exporting reports -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-YcsIP5Z5s7k1Slb2nsbYh3H2lH2v0k6vT+1b6tfk3hQ8r6l1i6JtVZQvJ7cLrGoJq9wqz7Qy0f3h5m7rU0fPGQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
-<body class="bg-slate-50 text-gray-900">
-  <header class="bg-gray-900 text-white">
-    <div class="max-w-6xl mx-auto px-4 py-3 grid grid-cols-3 gap-3 items-center">
-      <div class="flex items-center gap-3">
-        <img src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Marinas Guardian Logo" class="h-[72px] w-auto rounded-sm bg-white/5 p-1">
-        <img src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Deeptrek Logo" class="h-[72px] w-auto rounded-sm bg-white/5 p-1">
-      </div>
-      <div class="text-center">
-        <h1 class="text-lg sm:text-xl font-semibold">Project Guardian – WERP Reports</h1>
-      </div>
-      <div class="flex items-center justify-end gap-2">
-        <a id="monitoringBtn" href="/monitoring.html" class="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-1.5 rounded">Monitoring</a>
-        <a id="importDataBtn" href="/import.html" class="hidden bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs px-3 py-1.5 rounded border border-indigo-200">Import Data</a>
-        <span id="userName" class="hidden text-xs text-indigo-200"></span>
-        <button id="signOutBtn" class="hidden bg-gray-600 hover:bg-gray-500 text-white text-xs px-3 py-1.5 rounded">Sign out</button>
-      </div>
+<body class="min-h-screen bg-[#050816] text-slate-100 selection:bg-cyan-300/20 selection:text-cyan-200">
+  <!-- App Shell -->
+  <header class="sticky top-0 z-50 backdrop-blur supports-[backdrop-filter]:bg-[#050816]/70 bg-[#050816]/90 border-b border-white/10">
+    <div class="mx-auto max-w-7xl px-4 py-4 flex flex-wrap items-center gap-4">
+      <a href="#/" class="text-xl md:text-2xl font-semibold tracking-tight text-cyan-200 hover:text-cyan-300 transition">
+        Project Guardian: WW2 Wreck Analysis and Monitoring Platform
+      </a>
+      <nav class="ml-auto flex items-center gap-2 md:gap-3">
+        <a id="nav-home" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Home</a>
+        <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
+        <!-- Current wreck link is set dynamically when a report is open -->
+        <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
+      </nav>
     </div>
   </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <!-- Auth -->
-    <section id="signedOutContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 max-w-md mx-auto">
-      <h2 class="text-xl font-semibold text-gray-800 mb-2 text-center">Welcome</h2>
-      <p class="text-gray-600 mb-4 text-center">Sign in with your email and password to continue.</p>
+  <main id="app" class="mx-auto max-w-7xl px-4 py-6 md:py-10 space-y-6"></main>
 
-      <form id="authForm" onsubmit="return false;">
-        <div class="space-y-3">
-          <label class="block">
-            <span class="text-sm text-gray-700">Email</span>
-            <input id="emailInput" type="email" class="mt-1 w-full p-3 border border-gray-300 rounded-md" placeholder="you@example.com" autocomplete="email" />
-          </label>
-          <label class="block">
-            <span class="text-sm text-gray-700">Password</span>
-            <input id="passwordInput" type="password" class="mt-1 w-full p-3 border border-gray-300 rounded-md" placeholder="••••••••" autocomplete="current-password" />
-          </label>
-          <p id="authMessage" class="text-sm h-5 text-center text-gray-500" aria-live="polite"></p>
-          <div class="flex flex-col sm:flex-row gap-2 mt-2">
-            <button id="signInEmailBtn" type="button" class="flex-1 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Sign in</button>
-            <button id="createAccountBtn" type="button" class="flex-1 px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Create account</button>
-          </div>
-          <button id="resetPasswordBtn" type="button" class="w-full text-sm text-indigo-700 hover:underline mt-1">Forgot password?</button>
-        </div>
-      </form>
-      <p class="text-xs text-gray-500 mt-6 text-center">New accounts start as read-only Users. Admin approval is required for Contributor access.</p>
-    </section>
+  <!-- Toasts -->
+  <div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
 
-    <div id="appContainer" class="hidden space-y-6">
-      <!-- Analyze -->
-      <section class="bg-white border border-gray-200 rounded-xl shadow p-6">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg font-semibold text-gray-800">Analyze New Vessel</h2>
-          <div class="flex items-center gap-2">
-            <span id="roleBadge" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-300">Role: —</span>
-            <span id="contribHint" class="text-xs text-gray-500 hidden">Contributor access required</span>
-          </div>
-        </div>
-        <div class="flex flex-col sm:flex-row gap-3">
-          <input type="text" id="vesselName" class="flex-1 p-3 border border-gray-300 rounded-md" placeholder="e.g., USS Chevalier" />
-          <button id="analyzeBtn" type="button" class="bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-800 transition disabled:opacity-50 disabled:cursor-not-allowed">
-            <span id="analyzeText">Analyze Wreck</span>
-          </button>
-        </div>
-        <p id="statusMessage" class="text-sm text-gray-500 mt-3 h-5" aria-live="polite"></p>
-      </section>
-
-      <!-- Map -->
-      <section class="bg-white border border-gray-200 rounded-xl shadow p-3">
-        <div id="map"></div>
-      </section>
-
-      <!-- Filters -->
-      <section class="bg-white border border-gray-200 rounded-xl shadow p-4">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <h3 class="text-sm font-medium text-gray-800">Severity Filters</h3>
-            <div class="flex items-center gap-4 mt-1 text-sm">
-              <label class="flex items-center gap-2"><input id="sevHigh" type="checkbox" class="h-4 w-4" checked> High</label>
-              <label class="flex items-center gap-2"><input id="sevMedium" type="checkbox" class="h-4 w-4" checked> Medium</label>
-              <label class="flex items-center gap-2"><input id="sevLow" type="checkbox" class="h-4 w-4" checked> Low</label>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <input id="searchBox" type="text" placeholder="Search vessel name..." class="w-64 border border-gray-300 rounded-md px-3 py-2 text-sm">
-            <button id="clearSearch" type="button" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm px-3 py-2 rounded">Clear</button>
-          </div>
-          <div class="text-xs text-gray-600">Showing: <span id="visibleCounts">0</span></div>
-        </div>
-        <p class="text-xs text-gray-500 mt-2">Severity = (WCS + PHS + (ESI ÷ 3)) × RPM.</p>
-      </section>
-
-      <!-- Lists -->
-      <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-white border border-gray-200 rounded-xl shadow p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold text-gray-800">Initial Assessments</h2>
-            <span id="initialCount" class="text-xs text-gray-600">0</span>
-          </div>
-          <div id="initialWreckList" class="list-scroll space-y-2"></div>
-          <div id="noInitialWrecksMessage" class="text-sm text-gray-500 border border-dashed border-gray-300 rounded-md p-3 mt-2 hidden">No initial assessments match your filters.</div>
-        </div>
-        <div class="bg-white border border-gray-200 rounded-xl shadow p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold text-gray-800">Completed Assessments</h2>
-            <span id="completedCount" class="text-xs text-gray-600">0</span>
-          </div>
-          <div id="completedWreckList" class="list-scroll space-y-2"></div>
-          <div id="noCompletedWrecksMessage" class="text-sm text-gray-500 border border-dashed border-gray-300 rounded-md p-3 mt-2 hidden">No completed assessments match your filters.</div>
-        </div>
-        <div class="bg-white border border-gray-200 rounded-xl shadow p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold text-gray-800">Requiring Reassessment</h2>
-            <span id="reassessCount" class="text-xs text-gray-600">0</span>
-          </div>
-          <div id="reassessList" class="list-scroll space-y-2"></div>
-          <div id="noReassessMessage" class="text-sm text-gray-500 border border-dashed border-gray-300 rounded-md p-3 mt-2 hidden">No reassessments match your filters.</div>
-        </div>
-      </section>
-
-      <!-- Report -->
-      <section id="reportContainer" class="bg-white border border-gray-200 rounded-xl shadow p-6 hidden">
-        <div class="flex items-center justify-between mb-3">
-          <h2 id="reportTitle" class="text-2xl font-bold text-gray-900"></h2>
-          <div class="flex items-center gap-2">
-            <button id="exportPdfBtn" type="button" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">Export PDF</button>
-            <button id="exportHtmlBtn" type="button" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">HTML</button>
-            <button id="exportMdBtn" type="button" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">MD</button>
-            <button id="exportJsonBtn" type="button" class="text-xs px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50">JSON</button>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <div class="lg:col-span-3">
-            <h3 class="text-base font-bold mb-3 text-center text-gray-900">WERP Risk Profile</h3>
-            <div id="werSpiderWrapper" class="rounded border border-gray-200 bg-white h-[340px]">
-              <canvas id="werSpiderChart" aria-label="WERP risk profile radar chart"></canvas>
-            </div>
-            <div id="benchLegend" class="mt-2 text-xs text-gray-600 text-center"></div>
-          </div>
-
-          <div class="lg:col-span-2 space-y-4">
-            <div>
-              <h3 class="text-base font-bold mb-3 text-gray-900">Uploaded Files</h3>
-              <div id="uploadGalleryGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
-              <p id="uploadGalleryEmpty" class="text-xs text-gray-500 mt-1 hidden">No uploads yet.</p>
-            </div>
-            <div>
-              <h3 class="text-base font-bold mb-3 text-gray-900">Cached Media</h3>
-              <div id="referenceMediaGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
-              <p id="referenceMediaEmpty" class="text-xs text-gray-500 mt-1 hidden">No cached media yet.</p>
-            </div>
-          </div>
-        </div>
-
-        <div id="reportScroll" class="mt-4">
-          <div id="reportContent" class="report-prose"></div>
-        </div>
-
-        <!-- Monitoring Panel receives wreckId at runtime -->
-        <div id="monitoring-panel" class="mt-6" data-wreck-id=""></div>
-
-        <div id="phase2Section" class="mt-6 border-top pt-4">
-          <h3 class="text-base font-semibold text-gray-800 mb-2">Phase 2: In-Situ Assessment (Recommended)</h3>
-          <p class="text-xs text-gray-500 mb-3">Provide UT readings, ROV imagery, and diver logs to finalize classification.</p>
-          <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <div class="lg:col-span-3">
-              <label class="text-sm text-gray-700">In-situ notes</label>
-              <textarea id="phase2Input" class="w-full min-h-[120px] p-2 border border-gray-300 rounded-md" placeholder="Paste Phase 2 field observations here..."></textarea>
-              <div class="flex items-center gap-2 mt-2">
-                <button id="savePhase2Btn" type="button" class="text-xs px-3 py-1.5 rounded bg-gray-800 text-white hover:bg-gray-700">Save Phase 2</button>
-                <button id="reassessBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Reassess with Phase 2</button>
-                <span id="phase2Status" class="text-xs text-gray-500"></span>
-              </div>
-            </div>
-            <div class="lg:col-span-2">
-              <label class="text-sm text-gray-700">Upload files (images, PDFs, logs)</label>
-              <input id="phase2Files" type="file" multiple class="block w-full mt-1 text-sm file:mr-2 file:py-2 file:px-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:text-gray-700 hover:file:bg-gray-50" />
-              <div class="flex items-center gap-2 mt-2">
-                <button id="uploadFilesBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-600">Upload files</button>
-                <span id="uploadStatus" class="text-xs text-gray-500"></span>
-              </div>
-              <p class="text-[11px] text-gray-500 mt-1">Images appear in the gallery; other files are attached to this report.</p>
-            </div>
-          </div>
-        </div>
-
-        <div id="feedbackSection" class="mt-6 border-t pt-4">
-          <h3 class="text-base font-semibold text-gray-800 mb-2">Assessment Feedback (per report)</h3>
-          <div class="flex flex-col gap-2">
-            <textarea id="feedbackInput" class="w-full min-h-[80px] p-2 border border-gray-300 rounded-md" placeholder="Highlight issues, corrections, or guidance for reassessment..."></textarea>
-            <div class="flex items-center gap-2">
-              <button id="saveFeedbackBtn" type="button" class="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500">Save feedback</button>
-              <span id="feedbackStatus" class="text-xs text-gray-500"></span>
-            </div>
-          </div>
-          <div class="mt-4">
-            <h4 class="text-sm font-semibold text-gray-700 mb-1">Recent feedback</h4>
-            <ul id="feedbackList" class="space-y-2"></ul>
-          </div>
-        </div>
-      </section>
+  <!-- Simple modal for map popups -->
+  <div id="map-popup" class="fixed inset-0 z-[55] hidden items-center justify-center">
+    <div class="absolute inset-0 bg-black/60" data-close="1"></div>
+    <div class="relative mx-4 max-w-lg w-full rounded-xl bg-slate-900 border border-white/10 shadow-card overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <h3 class="font-semibold text-cyan-200" id="map-popup-title">Vessel</h3>
+        <button class="px-2 py-1 text-slate-300 hover:text-white" data-close="1">✕</button>
+      </div>
+      <div class="p-4 space-y-3">
+        <img id="map-popup-thumb" class="w-full h-40 object-cover rounded-lg border border-white/10" alt="Vessel image">
+        <p id="map-popup-summary" class="text-sm text-slate-300"></p>
+        <a id="map-popup-link" href="#/" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium">View Full Report →</a>
+      </div>
     </div>
-  </main>
+  </div>
 
-  <!-- App logic -->
-  <script type="module" src="/app.js"></script>
-  <!-- Monitoring bootstrap -->
-  <script type="module" src="/monitoring-init.js"></script>
+  <!-- Scripts (all functionality self-contained, no placeholder data inside) -->
+  <script>
+    // ====== Global App State and Public API (no mock data) ======
+    // The app expects data to be loaded at runtime. Integrators should call:
+    //   window.ProjectGuardian.loadData({ wrecks: [...], updatedAt: Date.now() })
+    // See "Data Shape" note near the bottom for expected fields.
+
+    const state = {
+      wrecks: [],                // Array of wreck objects from backend
+      uploads: new Map(),        // Simulated uploads per wreckId (local only)
+      notes: new Map(),          // Simulated phase2 notes per wreckId (local only)
+      currentWreckId: null,      // Last opened wreck
+      filters: {
+        band: 'all',             // 'all' | 'alert' | 'warning' | 'stable'
+        search: ''
+      }
+    };
+
+    // ====== Utilities ======
+    const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360"><rect width="100%" height="100%" fill="#0f172a"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="16">No image available</text></svg>');
+
+    function byId(id) { return document.getElementById(id); }
+    function el(tag, classes = "", attrs = {}) {
+      const e = document.createElement(tag);
+      if (classes) e.className = classes;
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v == null) continue;
+        if (k === 'text') e.textContent = v;
+        else if (k === 'html') e.innerHTML = v;
+        else e.setAttribute(k, v);
+      }
+      return e;
+    }
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>\"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+    }
+    function getText(v) { if (v == null) return ""; const s = String(v).trim(); return s; }
+    function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+
+    // Severity band helper (maps to Alert/Warning/Stable)
+    function bandFromItem(it) {
+      // prefer explicit band if present
+      const b = (it?.severity?.band || "").toLowerCase();
+      if (b) {
+        if (b === 'high') return 'alert';
+        if (b === 'medium') return 'warning';
+        if (b === 'low') return 'stable';
+      }
+      // fallback compute from value thresholds
+      const v = toNum(it?.severity?.value);
+      if (v == null) return 'stable';
+      if (v >= 50) return 'alert';
+      if (v >= 25) return 'warning';
+      return 'stable';
+    }
+
+    // Data access helpers
+    function vesselName(it) {
+      return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown");
+    }
+    function vesselSummary(it) {
+      return getText(it?.historical?.circumstancesOfLoss) ||
+             getText(it?.historical?.summary) ||
+             getText(it?.phase2?.summary) ||
+             "No summary available.";
+    }
+    function vesselCoordinates(it) {
+      const loc = it?.historical?.location || {};
+      const c = it?.coordinates || loc?.coordinates || {};
+      const lat = toNum(c.lat ?? c.latitude);
+      const lon = toNum(c.lon ?? c.lng ?? c.longitude);
+      if (lat == null || lon == null) return null;
+      return { lat, lon };
+    }
+    function imageCandidates(it) {
+      // Accept strings or objects with url fields
+      const arr = Array.isArray(it?.media?.images) ? it.media.images : [];
+      const urls = [];
+      for (const x of arr) {
+        if (!x) continue;
+        if (typeof x === 'string') urls.push(x);
+        else if (typeof x === 'object' && x.url) urls.push(x.url);
+      }
+      return urls;
+    }
+    function thumbFor(it) {
+      const urls = imageCandidates(it);
+      return urls[0] || PLACEHOLDER_SVG;
+    }
+
+    // RPM factor reader (supports arrays and object maps)
+    function readRPMFactors(it) {
+      const rpm = it?.rpm;
+      if (!rpm) return [];
+      // arrays
+      if (Array.isArray(rpm.parameters)) return rpm.parameters;
+      if (Array.isArray(rpm.factors)) return rpm.factors;
+      if (Array.isArray(rpm.breakdown)) return rpm.breakdown;
+      if (Array.isArray(rpm.factorBreakdown)) return rpm.factorBreakdown;
+      // maps
+      const maps = ['factors', 'parameters', 'breakdown', 'factorMap'];
+      for (const key of maps) {
+        const obj = rpm[key];
+        if (obj && typeof obj === 'object') {
+          return Object.entries(obj).map(([name, v]) => {
+            if (v && typeof v === 'object') {
+              return { name, rationale: v.rationale ?? v.reason ?? "", value: v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" };
+            }
+            return { name, rationale: "", value: v ?? "" };
+          });
+        }
+      }
+      // fallback: treat remaining keys as factors (exclude scalars)
+      const skip = new Set(["finalMultiplier", "multiplier", "notes", "rationale", "comment", "comments", "factors", "parameters"]);
+      if (typeof rpm === 'object') {
+        return Object.entries(rpm)
+          .filter(([k]) => !skip.has(k))
+          .map(([name, v]) => (v && typeof v === 'object')
+            ? { name, rationale: v.rationale ?? v.reason ?? "", value: v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" }
+            : { name, rationale: "", value: v ?? "" });
+      }
+      return [];
+    }
+    function rpmFinalMultiplier(it) {
+      const m = toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
+      return Number.isFinite(m) ? m : 1.0;
+    }
+
+    // Toasts
+    function showToast(message, type = "info") {
+      const stack = byId('toast-stack');
+      const color = type === "success" ? "bg-emerald-600" : type === "error" ? "bg-rose-600" : "bg-slate-700";
+      const t = el('div', `rounded-lg ${color} text-white px-4 py-2 shadow-soft border border-white/10 transition`);
+      t.textContent = message;
+      stack.appendChild(t);
+      setTimeout(() => {
+        t.classList.add('opacity-0', 'translate-y-[-4px]');
+        setTimeout(() => t.remove(), 250);
+      }, 2500);
+    }
+
+    // ====== Router (hash-based): #/, #/wreck/:id, #/list ======
+    const routes = {
+      home: /^#\/?$/,
+      report: /^#\/wreck\/([^/]+)$/,
+      list: /^#\/list\/?$/
+    };
+    function currentRoute() {
+      const h = location.hash || '#/';
+      if (routes.home.test(h)) return { name: 'home' };
+      const mReport = h.match(routes.report);
+      if (mReport) return { name: 'report', params: { id: decodeURIComponent(mReport[1]) } };
+      if (routes.list.test(h)) return { name: 'list' };
+      return { name: 'home' }; // fallback
+    }
+    window.addEventListener('hashchange', () => renderApp());
+    window.addEventListener('DOMContentLoaded', () => renderApp());
+
+    function setNavActive(routeName) {
+      const links = [
+        { id: 'nav-home', match: 'home' },
+        { id: 'nav-list', match: 'list' },
+        { id: 'nav-current-report', match: 'report' }
+      ];
+      for (const { id, match } of links) {
+        const a = byId(id);
+        if (!a) continue;
+        if (routeName === match) {
+          a.classList.add('ring-2','ring-cyan-500');
+          a.setAttribute('aria-current', 'page');
+        } else {
+          a.classList.remove('ring-2','ring-cyan-500');
+          a.removeAttribute('aria-current');
+        }
+      }
+    }
+
+    // ====== Map helpers (simple image with overlay markers) ======
+    const WORLD_MAP_SRC = "https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.svg"; // permissive static image
+    function lonLatToXY(lon, lat, w, h) {
+      // equirectangular projection
+      const x = (lon + 180) / 360 * w;
+      const y = (90 - lat) / 180 * h;
+      return { x, y };
+    }
+    function buildMapSection(wrecks) {
+      const wrapper = el('div', 'relative w-full rounded-xl overflow-hidden border border-white/10 bg-slate-900 shadow-card');
+      const img = el('img', 'w-full h-auto max-h-[520px] object-contain bg-slate-800', { src: WORLD_MAP_SRC, alt: 'World map' });
+      wrapper.appendChild(img);
+
+      const markersLayer = el('div', 'pointer-events-none absolute inset-0');
+      wrapper.appendChild(markersLayer);
+
+      function placeMarkers() {
+        markersLayer.innerHTML = '';
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const imgRect = img.getBoundingClientRect();
+        const w = imgRect.width, h = imgRect.height;
+        if (!w || !h) return;
+
+        const offsetLeft = imgRect.left - wrapperRect.left;
+        const offsetTop  = imgRect.top  - wrapperRect.top;
+
+        // compute filter
+        const bandFilter = state.filters.band; // 'all' | 'alert' | 'warning' | 'stable'
+        const term = (state.filters.search || '').toLowerCase();
+        const filtered = wrecks.filter(it => {
+          const b = bandFromItem(it);
+          if (bandFilter !== 'all' && b !== bandFilter) return false;
+          if (term && !vesselName(it).toLowerCase().includes(term)) return false;
+          return Boolean(vesselCoordinates(it)); // only those with coords
+        });
+
+        for (const it of filtered) {
+          const coords = vesselCoordinates(it);
+          if (!coords) continue;
+          const { x, y } = lonLatToXY(coords.lon, coords.lat, w, h);
+          const marker = el('button',
+            'pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 h-4 w-4 rounded-full ring-2 ring-white/60',
+            { title: vesselName(it), 'data-id': it.id }
+          );
+          const band = bandFromItem(it);
+          const bg = band === 'alert' ? 'bg-rose-500' : band === 'warning' ? 'bg-amber-400' : 'bg-emerald-400';
+          marker.classList.add(...bg.split(' '));
+          marker.style.left = `${offsetLeft + x}px`;
+          marker.style.top = `${offsetTop + y}px`;
+
+          marker.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openMapPopup(it);
+          });
+
+          markersLayer.appendChild(marker);
+        }
+      }
+
+      img.addEventListener('load', placeMarkers);
+      // reposition on resize
+      window.addEventListener('resize', placeMarkers);
+      setTimeout(placeMarkers, 300);
+
+      return wrapper;
+    }
+    function openMapPopup(it) {
+      const modal = byId('map-popup');
+      byId('map-popup-title').textContent = vesselName(it);
+      const img = byId('map-popup-thumb');
+      img.src = thumbFor(it);
+      img.onerror = () => { img.src = PLACEHOLDER_SVG; };
+      byId('map-popup-summary').textContent = vesselSummary(it);
+      byId('map-popup-link').href = `#/wreck/${encodeURIComponent(it.id)}`;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+    byId('map-popup').addEventListener('click', (e) => {
+      if (e.target?.dataset?.close) {
+        const modal = byId('map-popup');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    });
+
+    // ====== Views ======
+    function ViewHome() {
+      const root = el('div', 'space-y-6');
+
+      // Submission
+      const submitCard = el('section', 'bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden');
+      submitCard.innerHTML = `
+        <div class="px-4 py-4 md:px-6 md:py-5 border-b border-white/10">
+          <h2 class="text-lg md:text-xl font-semibold text-cyan-200">Submit a new vessel for analysis</h2>
+          <p class="text-slate-300 text-sm mt-1">Enter a vessel name to enqueue an assessment task. The backend can handle the analysis job.</p>
+        </div>
+        <div class="p-4 md:p-6">
+          <form id="analysis-form" class="flex flex-col md:flex-row gap-3">
+            <input id="analysis-input" type="text" placeholder="e.g., USS Enterprise (CV-6)" class="flex-1 px-3 py-2 rounded-lg bg-slate-800 text-slate-100 placeholder-slate-400 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
+            <button class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium">Analyze</button>
+          </form>
+        </div>
+      `;
+      submitCard.querySelector('#analysis-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = getText(submitCard.querySelector('#analysis-input').value);
+        if (!name) { showToast("Please enter a vessel name.", "error"); return; }
+        // Emit event for integrators to hook into
+        document.dispatchEvent(new CustomEvent('pg:submit-analysis', { detail: { vesselName: name, source: 'ui' } }));
+        showToast(`Requested analysis for: ${name}`, "success");
+        submitCard.querySelector('#analysis-input').value = "";
+      });
+      root.appendChild(submitCard);
+
+      // Map + Filters
+      const mapCard = el('section', 'bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden');
+      const controls = el('div', 'p-4 md:p-5 border-b border-white/10 flex flex-col md:flex-row gap-3 md:items-center');
+      controls.innerHTML = `
+        <div class="flex items-center gap-1 text-sm text-slate-300">
+          <span class="mr-2 font-medium text-slate-200">Risk:</span>
+          <button data-band="all" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">All</button>
+          <button data-band="alert" class="px-3 py-1.5 rounded-lg border border-white/10 bg-rose-500/20 hover:bg-rose-500/25 text-rose-200">Alert</button>
+          <button data-band="warning" class="px-3 py-1.5 rounded-lg border border-white/10 bg-amber-400/20 hover:bg-amber-400/25 text-amber-200">Warning</button>
+          <button data-band="stable" class="px-3 py-1.5 rounded-lg border border-white/10 bg-emerald-400/20 hover:bg-emerald-400/25 text-emerald-200">Stable</button>
+        </div>
+        <div class="md:ml-auto flex-1">
+          <label class="sr-only" for="map-search">Search</label>
+          <input id="map-search" type="text" placeholder="Search vessels..." class="w-full md:w-80 px-3 py-2 rounded-lg bg-slate-800 text-slate-100 placeholder-slate-400 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
+        </div>
+      `;
+      const mapBody = el('div', 'p-3 md:p-4 space-y-4');
+      const mapEl = buildMapSection(state.wrecks);
+      mapBody.appendChild(mapEl);
+
+      // Reassessment list
+      const reassess = el('div', 'mt-2');
+      const reassessTitle = el('h3', 'text-base font-semibold text-cyan-200 px-1', { text: 'Flagged for Reassessment' });
+      const reassessWrap = el('div', 'mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3');
+      function renderReassess() {
+        reassessWrap.innerHTML = '';
+        const items = state.wrecks.filter(w =>
+          w?.needsReassessment === true ||
+          w?.seismicEvent === true ||
+          (w?.events && (w.events.seismic != null || (Array.isArray(w.events) && w.events.some(e => /seismic|storm|cyclone|earthquake/i.test(e?.type || "")))))
+        );
+        if (!items.length) {
+          const empty = el('div', 'px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300', { text: 'No wrecks currently flagged for reassessment.' });
+          reassessWrap.appendChild(empty);
+        } else {
+          for (const it of items) {
+            const band = bandFromItem(it);
+            const badge = band === 'alert' ? 'bg-rose-500/20 text-rose-200 border-rose-400/30' :
+                          band === 'warning' ? 'bg-amber-400/20 text-amber-200 border-amber-300/30' :
+                          'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+            const card = el('a', `block rounded-lg bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition p-3 space-y-2`, { href: `#/wreck/${encodeURIComponent(it.id)}` });
+            card.innerHTML = `
+              <div class="flex items-center justify-between gap-3">
+                <div class="font-medium">${escapeHtml(vesselName(it))}</div>
+                <span class="px-2 py-0.5 rounded-md text-xs border ${badge}">${band.toUpperCase()}</span>
+              </div>
+              <div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>
+            `;
+            reassessWrap.appendChild(card);
+          }
+        }
+      }
+      renderReassess();
+
+      mapCard.appendChild(controls);
+      mapCard.appendChild(mapBody);
+      root.appendChild(mapCard);
+
+      // Wire filters
+      controls.querySelectorAll('[data-band]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.filters.band = btn.dataset.band;
+          renderApp(); // re-render to refresh map + list
+        });
+      });
+      controls.querySelector('#map-search').addEventListener('input', (e) => {
+        state.filters.search = e.target.value || '';
+        renderApp();
+      });
+
+      return root;
+    }
+
+    function ViewReport(wreckId) {
+      const it = state.wrecks.find(w => String(w.id) === String(wreckId));
+      const root = el('div', 'space-y-6');
+      if (!it) {
+        const empty = el('div', 'rounded-xl bg-slate-900 border border-white/10 p-6 text-slate-300', { text: 'Wreck not found. Return to the home page or list view.' });
+        root.appendChild(empty);
+        return root;
+      }
+      state.currentWreckId = it.id;
+      // show "Current Report" nav link
+      const navCR = byId('nav-current-report');
+      navCR.classList.remove('hidden');
+      navCR.href = `#/wreck/${encodeURIComponent(it.id)}`;
+
+      // Header Card
+      const head = el('section', 'rounded-xl bg-slate-900 border border-white/10 shadow-card overflow-hidden');
+      head.innerHTML = `
+        <div class="p-5 border-b border-white/10">
+          <div class="flex flex-col md:flex-row md:items-end gap-4 justify-between">
+            <div>
+              <h2 class="text-xl md:text-2xl font-semibold text-cyan-200">${escapeHtml(vesselName(it))}</h2>
+              <p class="text-slate-300 text-sm mt-1">${escapeHtml(vesselSummary(it))}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btn-export-pdf" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium">Export PDF</button>
+              <a href="#/" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Back</a>
+            </div>
+          </div>
+        </div>
+      `;
+      root.appendChild(head);
+
+      // Historical + Gallery
+      const gallery = el('section', 'rounded-xl bg-slate-900 border border-white/10 shadow-card overflow-hidden');
+      const hist = it.historical || {};
+      const age = hist.ageAndSinking || {};
+      const loc = hist.location || {};
+      const coords = loc.coordinates || {};
+      const infoRows = [];
+      if (hist.vesselType) infoRows.push(['Vessel Type', hist.vesselType]);
+      if (hist.vesselSizeTonnage) infoRows.push(['Tonnage / Size', hist.vesselSizeTonnage]);
+      if (age.launchedYear != null) infoRows.push(['Launched', String(age.launchedYear)]);
+      if (age.sunkDate) infoRows.push(['Sunk', String(age.sunkDate)]);
+      if (age.yearsSubmerged != null) infoRows.push(['Years Submerged', String(age.yearsSubmerged)]);
+      if (loc.depthMeters != null) infoRows.push(['Depth (m)', String(loc.depthMeters)]);
+      const coordTxt = (coords.lat != null && (coords.lon != null || coords.lng != null || coords.longitude != null))
+        ? `${Number(coords.lat).toFixed(4)}°, ${Number(coords.lon ?? coords.lng ?? coords.longitude).toFixed(4)}°` : "";
+      if (coordTxt) infoRows.push(['Coordinates', coordTxt]);
+      if (loc.description) infoRows.push(['Location', loc.description]);
+
+      const imgs = imageCandidates(it);
+      const imgGrid = imgs.length ? imgs : [PLACEHOLDER_SVG];
+
+      const rowsHtml = infoRows.map(([k,v]) =>
+        `<tr><th class="text-left text-slate-300 font-medium pr-3 py-1 whitespace-nowrap">${escapeHtml(k)}</th><td class="text-slate-200 py-1">${escapeHtml(String(v))}</td></tr>`
+      ).join("");
+      gallery.innerHTML = `
+        <div class="p-5 border-b border-white/10">
+          <h3 class="text-lg font-semibold text-cyan-200">Historical Information</h3>
+        </div>
+        <div class="p-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div class="lg:col-span-1">
+            <table class="w-full border-separate border-spacing-y-1">${rowsHtml || '<tr><td class="text-slate-400">No historical details provided.</td></tr>'}</table>
+          </div>
+          <div class="lg:col-span-2">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+              ${imgGrid.map(u => `<a href="${u}" target="_blank" rel="noopener" class="block group rounded-lg overflow-hidden border border-white/10 bg-slate-800">
+                <img src="${u}" class="w-full h-32 md:h-40 object-cover group-hover:opacity-90" alt="Vessel image" onerror="this.src='${PLACEHOLDER_SVG}'" />
+              </a>`).join("")}
+            </div>
+          </div>
+        </div>
+      `;
+      root.appendChild(gallery);
+
+      // Phase 2: In-situ Survey Findings (notes + simulated upload)
+      const phase2 = el('section', 'rounded-xl bg-slate-900 border border-white/10 shadow-card overflow-hidden');
+      phase2.innerHTML = `
+        <div class="p-5 border-b border-white/10">
+          <h3 class="text-lg font-semibold text-cyan-200">Phase 2: In-situ Survey Findings</h3>
+          <p class="text-slate-300 text-sm mt-1">Record survey notes and attach supporting documents. Upload is simulated for POC and not persisted.</p>
+        </div>
+        <div class="p-5 space-y-4">
+          <div>
+            <label class="block text-sm text-slate-300 mb-1" for="phase2-notes">Analyst Notes</label>
+            <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-800 text-slate-100 placeholder-slate-400 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Enter observations, methods, confidence notes..."></textarea>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <input id="phase2-files" type="file" multiple class="hidden" />
+            <button id="btn-select-files" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Select Files</button>
+            <button id="btn-save-phase2" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white">Save Notes</button>
+          </div>
+          <div>
+            <h4 class="text-sm font-medium text-slate-200 mb-1">Selected Files</h4>
+            <ul id="files-list" class="text-sm text-slate-300 space-y-1"></ul>
+          </div>
+        </div>
+      `;
+      // seed from local state notes/uploads
+      const savedNote = state.notes.get(it.id) || getText(it?.phase2?.summary) || "";
+      phase2.querySelector('#phase2-notes').value = savedNote;
+      const filesList = phase2.querySelector('#files-list');
+      const localFiles = state.uploads.get(it.id) || [];
+      function renderFilesList(arr) {
+        filesList.innerHTML = '';
+        if (!arr.length) {
+          filesList.innerHTML = '<li class="text-slate-500">No files selected.</li>';
+          return;
+        }
+        for (const f of arr) {
+          const li = el('li', 'flex items-center gap-2');
+          li.innerHTML = `<span class="i">📄</span><span>${escapeHtml(f.name)} <span class="text-slate-500">(${(f.size/1024).toFixed(1)} KB)</span></span>`;
+          filesList.appendChild(li);
+        }
+      }
+      renderFilesList(localFiles);
+      phase2.querySelector('#btn-select-files').addEventListener('click', () => phase2.querySelector('#phase2-files').click());
+      phase2.querySelector('#phase2-files').addEventListener('change', (e) => {
+        const files = Array.from(e.target.files || []);
+        state.uploads.set(it.id, files);
+        renderFilesList(files);
+        document.dispatchEvent(new CustomEvent('pg:upload', { detail: { wreckId: it.id, files } }));
+        showToast(`${files.length} file(s) selected.`, 'success');
+      });
+      phase2.querySelector('#btn-save-phase2').addEventListener('click', () => {
+        const text = getText(phase2.querySelector('#phase2-notes').value);
+        state.notes.set(it.id, text);
+        document.dispatchEvent(new CustomEvent('pg:phase2-save', { detail: { wreckId: it.id, notes: text } }));
+        showToast('Phase 2 notes saved locally.', 'success');
+      });
+      root.appendChild(phase2);
+
+      // Phase 3: Risk Synthesis & Report (radar + details)
+      const phase3 = el('section', 'rounded-xl bg-slate-900 border border-white/10 shadow-card overflow-hidden', { id: 'report-export-root' });
+      // compute totals if present
+      const wcsParams = Array.isArray(it?.wcs?.parameters) ? it.wcs.parameters : [];
+      const phsParams = Array.isArray(it?.phs?.parameters) ? it.phs.parameters : [];
+      const esiParams = Array.isArray(it?.esi?.parameters) ? it.esi.parameters : [];
+      const rpmFactors = readRPMFactors(it);
+      const vWCS = toNum(it?.totals?.wcs) ?? (Array.isArray(wcsParams) ? wcsParams.reduce((s,p)=>s+(toNum(p.score)||0),0) : 0);
+      const vPHS = toNum(it?.totals?.phs) ?? (Array.isArray(phsParams) ? Math.min(10, phsParams.reduce((s,p)=>s+(toNum(p.score)||0),0)/Math.max(1,phsParams.length)) : 0);
+      const vESI = toNum(it?.totals?.esi) ?? (Array.isArray(esiParams) ? esiParams.reduce((s,p)=>s+(toNum(p.score)||0),0) : 0);
+      const vRPM = rpmFinalMultiplier(it);
+
+      const phsTableRows = phsParams.map(p => {
+        // Show explicit weighting if provided
+        const w = p.weightPercent ?? p.weightPct ?? p.percentage ?? p.percent ?? p.weight ?? "";
+        const wTxt = w === "" || w == null ? "" : `${Number(w).toFixed(0)}%`;
+        return `
+          <tr class="border-t border-white/5">
+            <td class="py-2 pr-3">${escapeHtml(p.name ?? p.parameter ?? '')}</td>
+            <td class="py-2 pr-3 text-slate-300">${escapeHtml(p.rationale ?? '')}</td>
+            <td class="py-2 pr-3 text-right tabular-nums">${wTxt}</td>
+            <td class="py-2 pr-3 text-right tabular-nums">${toNum(p.score)?.toFixed(2) ?? ''}</td>
+          </tr>
+        `;
+      }).join("");
+
+      const wcsTableRows = wcsParams.map(p => `
+        <tr class="border-t border-white/5">
+          <td class="py-2 pr-3">${escapeHtml(p.name ?? p.parameter ?? '')}</td>
+          <td class="py-2 pr-3 text-slate-300">${escapeHtml(p.rationale ?? '')}</td>
+          <td class="py-2 pr-3 text-right tabular-nums">${toNum(p.score)?.toFixed(2) ?? ''}</td>
+        </tr>
+      `).join("");
+
+      const esiTableRows = esiParams.map(p => `
+        <tr class="border-t border-white/5">
+          <td class="py-2 pr-3">${escapeHtml(p.name ?? p.parameter ?? '')}</td>
+          <td class="py-2 pr-3 text-slate-300">${escapeHtml(p.rationale ?? '')}</td>
+          <td class="py-2 pr-3 text-right tabular-nums">${toNum(p.score)?.toFixed(2) ?? ''}</td>
+        </tr>
+      `).join("");
+
+      const rpmTableRows = rpmFactors.map(f => `
+        <tr class="border-t border-white/5">
+          <td class="py-2 pr-3">${escapeHtml(f.name ?? f.factor ?? '')}</td>
+          <td class="py-2 pr-3 text-slate-300">${escapeHtml(f.rationale ?? 'Not specified.')}</td>
+          <td class="py-2 pr-3 text-right tabular-nums">${getText(f.value ?? f.multiplier ?? '')}</td>
+        </tr>
+      `).join("");
+
+      phase3.innerHTML = `
+        <div class="p-5 border-b border-white/10">
+          <h3 class="text-lg font-semibold text-cyan-200">Phase 3: Risk Synthesis and Report</h3>
+          <p class="text-slate-300 text-sm mt-1">WERP protocol scores with visual thresholds and detailed breakdowns.</p>
+        </div>
+        <div class="p-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h4 class="font-medium mb-3">WERP Radar</h4>
+            <canvas id="werf-radar" class="w-full h-64"></canvas>
+            <p class="mt-2 text-xs text-slate-400">
+              WCS: ${Number(vWCS ?? 0).toFixed(2)} • PHS: ${Number(vPHS ?? 0).toFixed(2)} • ESI: ${Number(vESI ?? 0).toFixed(2)} • RPM: ${Number(vRPM ?? 1).toFixed(2)}×
+            </p>
+          </div>
+          <div class="space-y-4">
+            <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+              <h4 class="font-medium mb-3">RPM (Release Probability Modifier)</h4>
+              ${rpmTableRows
+                ? `<div class="overflow-x-auto"><table class="min-w-full text-sm">
+                     <thead class="text-left text-slate-300">
+                       <tr><th class="pr-3 pb-2">Factor</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Value</th></tr>
+                     </thead>
+                     <tbody>${rpmTableRows}</tbody>
+                   </table></div>`
+                : `<p class="text-slate-400 text-sm">No factor breakdown provided. Using final multiplier if supplied.</p>`}
+              <p class="mt-2 text-sm"><span class="text-slate-300">Final Multiplier:</span> <span class="font-semibold">${Number(vRPM ?? 1).toFixed(2)}×</span> <span class="text-xs text-slate-400">(1.00 baseline)</span></p>
+            </div>
+            <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+              <h4 class="font-medium mb-3">WCS (Hull & Structure)</h4>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead class="text-left text-slate-300">
+                    <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score (0–5)</th></tr>
+                  </thead>
+                  <tbody>${wcsTableRows || '<tr><td class="py-2 text-slate-400" colspan="3">No WCS parameters provided.</td></tr>'}</tbody>
+                </table>
+              </div>
+              <p class="text-sm text-slate-300 mt-2">Total: <span class="font-semibold">${Number(vWCS ?? 0).toFixed(2)}</span></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-5 pb-5 space-y-6">
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h4 class="font-medium mb-3">PHS (Pollution Hazard)</h4>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="text-left text-slate-300">
+                  <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Weight (%)</th><th class="text-right pb-2">Score (0–10)</th></tr>
+                </thead>
+                <tbody>${phsTableRows || '<tr><td class="py-2 text-slate-400" colspan="4">No PHS parameters provided.</td></tr>'}</tbody>
+              </table>
+            </div>
+            <p class="text-sm text-slate-300 mt-2">Weighted score handling is displayed when weights are supplied by the backend.</p>
+          </div>
+
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h4 class="font-medium mb-3">ESI (Environmental Sensitivity)</h4>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="text-left text-slate-300">
+                  <tr><th class="pr-3 pb-2">Parameter</th><th class="pr-3 pb-2">Rationale</th><th class="text-right pb-2">Score (0–10)</th></tr>
+                </thead>
+                <tbody>${esiTableRows || '<tr><td class="py-2 text-slate-400" colspan="3">No ESI parameters provided.</td></tr>'}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+      root.appendChild(phase3);
+
+      // Wire radar chart
+      setTimeout(() => {
+        const ctx = document.getElementById('werf-radar');
+        if (!ctx) return;
+        const max = 20; // normalized 0–20 scale for visualization
+        const data = {
+          labels: ['WCS', 'PHS', 'ESI', 'RPM'],
+          datasets: [
+            {
+              label: 'Risk Profile',
+              data: [
+                Math.max(0, Math.min(20, Number(vWCS ?? 0))),                // WCS often on 0–20
+                Math.max(0, Math.min(20, (Number(vPHS ?? 0) / 10) * 20)),    // PHS 0–10 -> 0–20
+                Math.max(0, Math.min(20, (Number(vESI ?? 0) / 40) * 20)),    // ESI 0–30/40 -> approx to 0–20
+                Math.max(0, Math.min(20, ((Math.min(Math.max(Number(vRPM ?? 1), 0.5), 2.5) - 0.5) / 2.0) * 20)) // RPM 0.5–2.5 -> 0–20
+              ],
+              backgroundColor: 'rgba(34, 197, 94, 0.20)',
+              borderColor: 'rgba(34, 197, 94, 1)',
+              pointBackgroundColor: 'rgba(34, 197, 94, 1)',
+              borderWidth: 2,
+            },
+            {
+              label: 'High Benchmark',
+              data: [20, 20, 20, 20],
+              backgroundColor: 'rgba(239, 68, 68, 0.10)',
+              borderColor: 'rgba(239, 68, 68, 0.6)',
+              pointRadius: 0,
+            },
+            {
+              label: 'Medium Benchmark',
+              data: [12, 12, 12, 12],
+              backgroundColor: 'rgba(245, 158, 11, 0.10)',
+              borderColor: 'rgba(245, 158, 11, 0.6)',
+              pointRadius: 0,
+            },
+            {
+              label: 'Low Benchmark',
+              data: [6, 6, 6, 6],
+              backgroundColor: 'rgba(16, 185, 129, 0.10)',
+              borderColor: 'rgba(16, 185, 129, 0.6)',
+              pointRadius: 0,
+            }
+          ]
+        };
+        new Chart(ctx, {
+          type: 'radar',
+          data,
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { r: { beginAtZero: true, min: 0, max, ticks: { stepSize: 4 }, grid: { color: 'rgba(148,163,184,0.25)' }, angleLines: { color: 'rgba(148,163,184,0.25)' } } },
+            plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1' } } }
+          }
+        });
+      }, 0);
+
+      // Wire PDF export
+      head.querySelector('#btn-export-pdf')?.addEventListener('click', () => {
+        const el = byId('report-export-root');
+        if (!el) return;
+        const opt = {
+          margin:       0.4,
+          filename:     `${vesselName(it).replace(/\s+/g, '_')}_Report.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, backgroundColor: '#050816' },
+          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+        };
+        html2pdf().from(el).set(opt).save();
+      });
+
+      return root;
+    }
+
+    function ViewList() {
+      const root = el('div', 'space-y-6');
+
+      const card = el('section', 'rounded-xl bg-slate-900 border border-white/10 shadow-card overflow-hidden');
+      const header = el('div', 'p-5 border-b border-white/10');
+      header.innerHTML = `
+        <h2 class="text-lg md:text-xl font-semibold text-cyan-200">All Wrecks</h2>
+        <p class="text-slate-300 text-sm mt-1">Search or browse every assessed wreck.</p>
+      `;
+      const controls = el('div', 'p-4 md:p-5 border-b border-white/10 flex flex-col md:flex-row gap-3 md:items-center');
+      controls.innerHTML = `
+        <div class="md:ml-auto flex-1">
+          <label class="sr-only" for="list-search">Search</label>
+          <input id="list-search" type="text" placeholder="Search by vessel name..." class="w-full md:w-96 px-3 py-2 rounded-lg bg-slate-800 text-slate-100 placeholder-slate-400 border border-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
+        </div>
+      `;
+      const body = el('div', 'p-4 md:p-5');
+      const grid = el('div', 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4');
+
+      function renderList() {
+        grid.innerHTML = '';
+        const term = (controls.querySelector('#list-search').value || '').toLowerCase();
+        const items = state.wrecks.filter(it => vesselName(it).toLowerCase().includes(term));
+        if (!items.length) {
+          const empty = el('div', 'px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-slate-300', { text: 'No wrecks match your search.' });
+          grid.appendChild(empty);
+          return;
+        }
+        for (const it of items) {
+          const band = bandFromItem(it);
+          const badge = band === 'alert' ? 'bg-rose-500/20 text-rose-200 border-rose-400/30' :
+                        band === 'warning' ? 'bg-amber-400/20 text-amber-200 border-amber-300/30' :
+                        'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+          const card = el('a', 'block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden', { href: `#/wreck/${encodeURIComponent(it.id)}` });
+          card.innerHTML = `
+            <img src="${thumbFor(it)}" alt="Vessel image" class="w-full h-40 object-cover border-b border-white/10" onerror="this.src='${PLACEHOLDER_SVG}'" />
+            <div class="p-3">
+              <div class="flex items-center justify-between gap-3">
+                <h3 class="font-medium">${escapeHtml(vesselName(it))}</h3>
+                <span class="px-2 py-0.5 rounded-md text-xs border ${badge}">${band.toUpperCase()}</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
+            </div>
+          `;
+          grid.appendChild(card);
+        }
+      }
+      renderList();
+      controls.querySelector('#list-search').addEventListener('input', renderList);
+
+      body.appendChild(grid);
+      card.appendChild(header);
+      card.appendChild(controls);
+      card.appendChild(body);
+      root.appendChild(card);
+
+      return root;
+    }
+
+    // ====== Render Root ======
+    function renderApp() {
+      const container = byId('app');
+      container.innerHTML = '';
+      const route = currentRoute();
+      setNavActive(route.name);
+      if (route.name === 'home') {
+        container.appendChild(ViewHome());
+      } else if (route.name === 'report') {
+        container.appendChild(ViewReport(route.params.id));
+      } else if (route.name === 'list') {
+        container.appendChild(ViewList());
+      } else {
+        container.appendChild(ViewHome());
+      }
+    }
+
+    // ====== Public API for Integration ======
+    window.ProjectGuardian = {
+      // Load or refresh dataset. This re-renders the current route.
+      loadData(payload) {
+        // Expected shape: { wrecks: [...], updatedAt?: number }
+        if (!payload || !Array.isArray(payload.wrecks)) {
+          console.warn("ProjectGuardian.loadData: invalid payload; expected { wrecks: [...] }.");
+          return;
+        }
+        state.wrecks = payload.wrecks.map(w => ({ ...w, id: w.id ?? w.name ?? crypto.randomUUID() }));
+        renderApp();
+      },
+      // Optionally set filters programmatically
+      setFilters({ band, search } = {}) {
+        if (band) state.filters.band = band;
+        if (typeof search === 'string') state.filters.search = search;
+        renderApp();
+      },
+      // Get current state snapshot
+      getState() {
+        return {
+          wrecks: state.wrecks.slice(),
+          filters: { ...state.filters },
+          currentWreckId: state.currentWreckId
+        };
+      }
+    };
+
+    // ====== Notes for Integrators (comments only, no mock data) ======
+    // Data Shape (expected minimal fields per wreck record):
+    // {
+    //   id: string,
+    //   name: string,
+    //   historical?: {
+    //     vesselType?: string,
+    //     vesselSizeTonnage?: string,
+    //     ageAndSinking?: { launchedYear?: number|string, sunkDate?: string|number, yearsSubmerged?: number },
+    //     circumstancesOfLoss?: string,
+    //     location?: {
+    //       description?: string,
+    //       depthMeters?: number,
+    //       coordinates?: { lat?: number, lon?: number, lng?: number, longitude?: number }
+    //     }
+    //   },
+    //   media?: { images?: Array<string | { url: string, [k: string]: any } > },
+    //   wcs?: { parameters?: Array<{ name?: string, score?: number, rationale?: string }> },
+    //   phs?: { parameters?: Array<{ name?: string, score?: number, rationale?: string, weightPercent?: number }> },
+    //   esi?: { parameters?: Array<{ name?: string, score?: number, rationale?: string }> },
+    //   rpm?: {
+    //     // Either arrays or maps are accepted:
+    //     factors?: Array<{ name?: string, value?: number, multiplier?: number, rationale?: string }> | Record<string, { value?: number, rationale?: string }>,
+    //     parameters?: same as factors,
+    //     breakdown?: same,
+    //     factorBreakdown?: same,
+    //     finalMultiplier?: number
+    //   },
+    //   totals?: { wcs?: number, phs?: number, esi?: number },
+    //   severity?: { value?: number, band?: 'low'|'medium'|'high' },
+    //   needsReassessment?: boolean,
+    //   events?: any
+    // }
+    //
+    // Wiring ideas:
+    // - Firestore listeners or REST API can call window.ProjectGuardian.loadData({ wrecks }) whenever data changes.
+    // - Hook pg:submit-analysis to trigger a backend callable for analysis.
+    // - Hook pg:phase2-save and pg:upload to persist notes and files.
+
+  </script>
 </body>
 </html>
