@@ -75,7 +75,8 @@
       currentWreckId: null,      // Last opened wreck
       filters: {
         band: 'all',             // 'all' | 'alert' | 'warning' | 'stable'
-        search: ''
+        search: '',
+        stage: 'all'             // 'all' | 'initial' | 'completed' | 'reassess'
       }
     };
 
@@ -115,6 +116,26 @@
       if (v >= 50) return 'alert';
       if (v >= 25) return 'warning';
       return 'stable';
+    }
+
+    // Stage helper (initial | completed | reassess)
+    function stageFromItem(it) {
+      const phase2HasNotes = !!getText(it?.phase2?.summary);
+      const phase2CompletedFlag = it?.phase2?.status === 'completed' || it?.phase2?.completed === true;
+      const completedExplicit = it?.completed === true || it?.status === 'completed' || !!it?.phase3 || !!it?.finalizedAt;
+      const isCompleted = Boolean(completedExplicit || phase2CompletedFlag || phase2HasNotes);
+
+      const isReassess = Boolean(
+        it?.needsReassessment === true ||
+        it?.seismicEvent === true ||
+        (it?.events && (
+          it.events.seismic != null ||
+          (Array.isArray(it.events) && it.events.some(e => /seismic|storm|cyclone|earthquake/i.test(e?.type || "")))
+        ))
+      );
+
+      if (isReassess) return 'reassess';
+      return isCompleted ? 'completed' : 'initial';
     }
 
     // Data access helpers
@@ -266,10 +287,13 @@
 
         // compute filter
         const bandFilter = state.filters.band; // 'all' | 'alert' | 'warning' | 'stable'
+        const stageFilter = state.filters.stage; // 'all' | 'initial' | 'completed' | 'reassess'
         const term = (state.filters.search || '').toLowerCase();
         const filtered = wrecks.filter(it => {
           const b = bandFromItem(it);
           if (bandFilter !== 'all' && b !== bandFilter) return false;
+          const st = stageFromItem(it);
+          if (stageFilter !== 'all' && st !== stageFilter) return false;
           if (term && !vesselName(it).toLowerCase().includes(term)) return false;
           return Boolean(vesselCoordinates(it)); // only those with coords
         });
@@ -302,7 +326,7 @@
       window.addEventListener('resize', placeMarkers);
       setTimeout(placeMarkers, 300);
 
-      return wrapper;
+      return { wrapper, placeMarkers };
     }
     function openMapPopup(it) {
       const modal = byId('map-popup');
@@ -369,8 +393,24 @@
         </div>
       `;
       const mapBody = el('div', 'p-3 md:p-4 space-y-4');
-      const mapEl = buildMapSection(state.wrecks);
+      const { wrapper: mapEl, placeMarkers } = buildMapSection(state.wrecks);
       mapBody.appendChild(mapEl);
+
+      // Stage filter UNDER the map (as requested)
+      const stageControls = el('div', 'pt-3 md:pt-4 border-t border-white/10');
+      stageControls.innerHTML = `
+        <div class="flex flex-col md:flex-row md:items-center gap-3">
+          <div class="flex items-center gap-1 text-sm text-slate-300">
+            <span class="mr-2 font-medium text-slate-200">Assessment stage:</span>
+            <button data-stage="all" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">All</button>
+            <button data-stage="initial" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">Initial</button>
+            <button data-stage="completed" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">Completed</button>
+            <button data-stage="reassess" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">Require Reassessment</button>
+          </div>
+          <div class="text-xs text-slate-400 md:ml-auto">Filters combine: Risk × Stage × Search</div>
+        </div>
+      `;
+      mapBody.appendChild(stageControls);
 
       // Reassessment list
       const reassess = el('div', 'mt-2');
@@ -411,6 +451,9 @@
       root.appendChild(mapCard);
 
       // Wire filters
+      // Seed search box value from state
+      controls.querySelector('#map-search').value = state.filters.search;
+
       controls.querySelectorAll('[data-band]').forEach(btn => {
         btn.addEventListener('click', () => {
           state.filters.band = btn.dataset.band;
@@ -419,7 +462,15 @@
       });
       controls.querySelector('#map-search').addEventListener('input', (e) => {
         state.filters.search = e.target.value || '';
-        renderApp();
+        // No full re-render needed; just reposition markers
+        placeMarkers();
+      });
+
+      stageControls.querySelectorAll('[data-stage]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.filters.stage = btn.dataset.stage;
+          renderApp(); // re-render to refresh map and highlight
+        });
       });
 
       return root;
@@ -839,9 +890,10 @@
         renderApp();
       },
       // Optionally set filters programmatically
-      setFilters({ band, search } = {}) {
+      setFilters({ band, search, stage } = {}) {
         if (band) state.filters.band = band;
         if (typeof search === 'string') state.filters.search = search;
+        if (stage) state.filters.stage = stage;
         renderApp();
       },
       // Get current state snapshot
