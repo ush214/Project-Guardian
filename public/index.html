@@ -18,28 +18,24 @@
       }
     }
   </script>
-  <!-- Leaflet (no integrity to avoid blocking) -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    crossorigin=""
-  />
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    crossorigin=""
-  ></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- html2pdf (no integrity to avoid SRI mismatch) -->
+  <!-- html2pdf -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" referrerpolicy="no-referrer"></script>
-
   <style>
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: #0f172a; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 6px; }
     ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    .radar-wrapper { height: 340px; position: relative; }
     .fade-enter { opacity:0; transform:translateY(4px); }
     .fade-enter-active { transition:all .28s; opacity:1; transform:translateY(0); }
+    .img-badge {
+      position:absolute; top:4px; left:4px;
+      background:rgba(0,0,0,0.55); color:#e2e8f0;
+      font-size:10px; padding:2px 5px; border-radius:4px;
+      letter-spacing:.5px; text-transform:uppercase;
+    }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -53,6 +49,10 @@
       <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
       <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
     </nav>
+    <div class="hidden md:flex items-center gap-2">
+      <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Logo Left" class="h-10 w-auto rounded shadow-soft border border-white/10">
+      <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Logo Right" class="h-10 w-auto rounded shadow-soft border border-white/10">
+    </div>
   </div>
 </header>
 
@@ -60,7 +60,7 @@
 <div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
 
 <script type="module">
-/* ---------- Configuration & Constants ---------- */
+/* ------------------------------ Config & Constants ------------------------------ */
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",
@@ -76,12 +76,11 @@ const READ_COLLECTIONS = [
   "artifacts/guardian-agent-default/public/data/werpassessments"
 ];
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
-const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
+const WORLD_MAP_SRC = "https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.svg";
+const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
+const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
-/* Toggle this to true to re-enable SRI (make sure hashes are validated in your environment) */
-const STRICT_SRI_MODE = false;
-
-/* ---------- Imports ---------- */
+/* ------------------------------ Imports ------------------------------ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -98,60 +97,51 @@ import {
   getFunctions, httpsCallable
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
-/* ---------- Firebase Init ---------- */
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
-const auth = getAuth(firebaseApp);
-const storage = getStorage(firebaseApp);
-const functions = getFunctions(firebaseApp, "us-central1");
+/* ------------------------------ Firebase Init ------------------------------ */
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const auth = getAuth(fbApp);
+const storage = getStorage(fbApp);
+const functions = getFunctions(fbApp, "us-central1");
 
-let callable = {
-  analyzeWerps: null,
-  reassessWerps: null
-};
+let callable = { analyzeWerps: null, reassessWerps: null };
 try { callable.analyzeWerps = httpsCallable(functions, "analyzeWerps"); } catch {}
 try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
 
-/* ---------- State ---------- */
+/* ------------------------------ State ------------------------------ */
 const state = {
   wrecks: [],
   byIdPath: new Map(),
-  currentRoute: null,
   currentWreck: null,
-  filters: { band: 'all', stage: 'all', search: '' },
+  currentRoute: null,
   role: 'user',
   user: null,
   listeners: [],
-  map: null,
-  mapMarkers: new Map(),
-  mapReady: false,
-  mapInitTried: false
+  filters: { band:'all', stage:'all', search:'' },
+  chart: null
 };
 
-/* ---------- Utilities ---------- */
+/* ------------------------------ Utilities ------------------------------ */
 const $ = sel => document.querySelector(sel);
-function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+function escapeHtml(s){
+  return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c] || c));
+}
+const getText = v => v==null ? "" : String(v).trim();
 const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
-const getText = v => v==null?"":String(v).trim();
-function showToast(msg, type='info'){
-  const stack = $('#toast-stack'); if(!stack) return;
-  const color = type==='success'?'bg-emerald-600': type==='error'?'bg-rose-600':'bg-slate-700';
-  const div = document.createElement('div');
+function showToast(msg,type='info'){
+  const stack=$('#toast-stack'); if(!stack)return;
+  const color=type==='success'?'bg-emerald-600':type==='error'?'bg-rose-600':'bg-slate-700';
+  const div=document.createElement('div');
   div.className=`${color} text-white px-4 py-2 rounded-lg shadow-soft border border-white/10 transition fade-enter`;
   div.textContent=msg;
   stack.appendChild(div);
   requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
-  setTimeout(()=>{
-    div.classList.add('opacity-0','-translate-y-1');
-    setTimeout(()=>div.remove(),260);
-  },2800);
+  setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },2800);
 }
 
-const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="100%" height="100%" fill="#0f172a"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="16" font-family="Arial, sans-serif">No image available</text></svg>'
-);
+const PLACEHOLDER_SVG = "data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
 
-/* ---------- Severity & Stage ---------- */
+/* ------------------------------ Severity & Stage ------------------------------ */
 function severityBandFromValue(val){
   const v=Number(val);
   if(!Number.isFinite(v)) return 'stable';
@@ -183,7 +173,7 @@ function stageFromItem(it){
   return isCompleted ? 'completed' : 'initial';
 }
 
-/* ---------- Data Helpers ---------- */
+/* ------------------------------ Data helpers ------------------------------ */
 function vesselName(it){
   return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown");
 }
@@ -196,8 +186,8 @@ function vesselSummary(it){
 function resolveCoordinates(item){
   const toNumL = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
   function extract(obj){
-    if(!obj) return null;
-    if(Array.isArray(obj) && obj.length>=2){
+    if(!obj)return null;
+    if(Array.isArray(obj)&&obj.length>=2){
       const lngA=toNumL(obj[0]); const latA=toNumL(obj[1]);
       if(latA!=null && lngA!=null) return {lat:latA,lng:lngA};
       const latB=toNumL(obj[0]); const lngB=toNumL(obj[1]);
@@ -205,19 +195,19 @@ function resolveCoordinates(item){
       return null;
     }
     if(obj.coordinates){
-      const nested = extract(obj.coordinates);
-      if(nested) return nested;
+      const nested=extract(obj.coordinates);
+      if(nested)return nested;
     }
-    const lat = toNumL(obj.latitude ?? obj.lat ?? obj.y);
-    const lng = toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
+    const lat=toNumL(obj.latitude ?? obj.lat ?? obj.y);
+    const lng=toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
     if(lat!=null && lng!=null) return {lat,lng};
     if(obj.latlng){
-      const ll = extract(obj.latlng);
-      if(ll) return ll;
+      const ll=extract(obj.latlng);
+      if(ll)return ll;
     }
     return null;
   }
-  const cands = [
+  const cands=[
     item?.phase1?.screening?.coordinates,
     item?.coordinates,
     item?.location?.coordinates,
@@ -235,7 +225,7 @@ function resolveCoordinates(item){
   return null;
 }
 
-/* ---------- Auth & Roles ---------- */
+/* ------------------------------ Role / Auth ------------------------------ */
 async function fetchRoleFor(uid){
   try{
     const allow = await getDoc(doc(db,"system","allowlist","users",uid));
@@ -254,7 +244,7 @@ async function fetchRoleFor(uid){
     }
   }catch{}
   try{
-    const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
+    const legacy = await getDoc(doc(db,`artifacts/${appId}/private/users/${uid}`));
     if(legacy.exists()){
       const d=legacy.data()||{};
       let r=d.role ?? d.Role ?? d.ROLE;
@@ -271,7 +261,7 @@ async function fetchRoleFor(uid){
   return 'user';
 }
 
-/* ---------- Firestore Listeners ---------- */
+/* ------------------------------ Firestore Listeners ------------------------------ */
 function detachListeners(){
   for(const u of state.listeners){ try{u();}catch{} }
   state.listeners=[];
@@ -286,14 +276,14 @@ function normalizeDoc(d){
 }
 async function startData(){
   detachListeners();
-  const byKey = new Map();
+  const byKey=new Map();
   const applySnap=(snap, basePath)=>{
     snap.forEach(docSnap=>{
       const raw=docSnap.data()||{};
-      const d={...normalizeDoc(raw), id:raw.id||docSnap.id, _path:basePath};
+      const d={...normalizeDoc(raw), id: raw.id || docSnap.id, _path: basePath};
       const t=String(d?.type||"").toUpperCase();
       if(t.includes("SEISMIC_EVENT")) return;
-      d.severity = d.severity && typeof d.severity==='object' ? d.severity : {};
+      d.severity = d.severity && typeof d.severity==='object'? d.severity : {};
       if(d.severity.value==null) d.severity.value = raw?.severity?.value ?? raw?.severityValue;
       if(!d.severity.band) d.severity.band = severityBandFromValue(d.severity.value);
       byKey.set(`${basePath}::${d.id}`, d);
@@ -301,215 +291,176 @@ async function startData(){
     });
     state.wrecks = Array.from(byKey.values());
     renderApp();
-    refreshMapMarkers();
+    renderMapMarkers();
   };
   for(const p of READ_COLLECTIONS){
     try{
-      const un = onSnapshot(collection(db,p),
-        (snap)=>applySnap(snap,p),
-        err=>console.error("Snapshot error",p,err)
-      );
+      const un = onSnapshot(collection(db,p),(snap)=>applySnap(snap,p),(err)=>console.error("Snapshot error",p,err));
       state.listeners.push(un);
-    }catch(e){
-      console.error("Listener error",p,e);
-    }
+    }catch(e){ console.error("Listener error",p,e); }
   }
 }
 
-/* ---------- Map (Leaflet) ---------- */
-function iconForBand(band){
-  const color = band==='alert'?'red':band==='warning'?'orange':'green';
-  return L.icon({
-    iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
-    shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
-    iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
-  });
+/* ------------------------------ Map (Static Image + Markers) ------------------------------ */
+function lonLatToXY(lon, lat, w, h){
+  const x = (lon + 180) / 360 * w;
+  const y = (90 - lat) / 180 * h;
+  return { x, y };
 }
-function initLeafletMap(){
-  if(state.mapInitTried) return;
-  state.mapInitTried=true;
-  const tryInit = () => {
-    if(typeof L === 'undefined'){
-      console.warn("Leaflet not yet available, retrying...");
-      setTimeout(tryInit, 300);
-      return;
-    }
-    if(state.map) { state.mapReady=true; return; }
-    state.map = L.map('map-canvas',{ zoomControl:true, attributionControl:true }).setView([10,150],3);
-    L.tileLayer(
-      `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,
-      { tileSize:512, zoomOffset:-1, attribution:'&copy; OpenStreetMap &copy; Mapbox' }
-    ).addTo(state.map);
-    state.mapReady=true;
-    refreshMapMarkers();
-  };
-  tryInit();
+let mapImageEl = null;
+let mapMarkersLayer = null;
+let mapWrapper = null;
+
+function setupStaticMap(){
+  mapWrapper = $('#static-map-wrapper');
+  if(!mapWrapper) return;
+  mapImageEl = $('#static-map-image');
+  mapMarkersLayer = $('#static-map-markers');
+  if(!mapImageEl || !mapMarkersLayer) return;
+  const place = () => renderMapMarkers();
+  mapImageEl.addEventListener('load', place);
+  window.addEventListener('resize', place);
+  place();
 }
-function refreshMapMarkers(){
-  if(!state.mapReady || !state.map) return;
-  // Clear
-  for(const m of state.mapMarkers.values()){
-    try{ state.map.removeLayer(m);}catch{}
-  }
-  state.mapMarkers.clear();
+
+function renderMapMarkers(){
+  if(!mapImageEl || !mapMarkersLayer) return;
+  mapMarkersLayer.innerHTML = "";
+  const imgRect = mapImageEl.getBoundingClientRect();
+  const wrapperRect = mapWrapper.getBoundingClientRect();
+  const w = imgRect.width; const h = imgRect.height;
+  if(!w || !h) return;
+
+  const offsetLeft = imgRect.left - wrapperRect.left;
+  const offsetTop  = imgRect.top  - wrapperRect.top;
+
   const riskFilter = state.filters.band;
-  const stageFilter= state.filters.stage;
+  const stageFilter = state.filters.stage;
   const term = state.filters.search.toLowerCase();
+
+  let noCoordCount = 0;
+
   const filtered = state.wrecks.filter(it=>{
-    const rb=riskBand(it);
+    const rb = riskBand(it);
     if(riskFilter!=='all' && rb!==riskFilter) return false;
-    const st=stageFromItem(it);
+    const st = stageFromItem(it);
     if(stageFilter!=='all' && st!==stageFilter) return false;
     if(term && !vesselName(it).toLowerCase().includes(term)) return false;
-    return resolveCoordinates(it)!=null;
+    const coord=resolveCoordinates(it);
+    if(!coord){ noCoordCount++; return false; }
+    return true;
   });
-  filtered.forEach(it=>{
-    const coord = resolveCoordinates(it);
-    if(!coord) return;
-    const b=riskBand(it);
-    const marker=L.marker([coord.lat,coord.lng],{ icon:iconForBand(b) });
-    const thumb = (it.media?.images?.[0]?.url) ||
-                  (Array.isArray(it.media?.images) && typeof it.media.images[0]==='string'?it.media.images[0]: PLACEHOLDER_SVG);
-    marker.bindPopup(`
-      <div style="min-width:200px">
-        <div style="font-weight:600">${escapeHtml(vesselName(it))}</div>
-        <div style="font-size:12px;color:#444">Stage: ${stageFromItem(it)}</div>
-        <div style="margin:6px 0">
-          <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:140px;object-fit:cover;border:1px solid #ccc;border-radius:4px"/>
-        </div>
-        <a href="#/wreck/${encodeURIComponent(it.id)}" style="color:#2563eb;text-decoration:underline;font-size:13px;">Open Report</a>
-      </div>
-    `);
-    marker.addTo(state.map);
-    state.mapMarkers.set(it.id, marker);
-  });
-}
 
-/* ---------- Router ---------- */
-const routes = {
-  home: /^#\/?$/,
-  report: /^#\/wreck\/([^/]+)$/,
-  list: /^#\/list\/?$/
-};
-function parseRoute(){
-  const h=location.hash || '#/';
-  if(routes.home.test(h)) return { name:'home' };
-  const mReport = h.match(routes.report);
-  if(mReport) return { name:'report', id: decodeURIComponent(mReport[1]) };
-  if(routes.list.test(h)) return { name:'list' };
-  return { name:'home' };
-}
-window.addEventListener('hashchange', ()=>renderApp());
-
-function setActiveNav(route){
-  const map = { home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
-  document.querySelectorAll('nav a').forEach(a=>{
-    a.classList.remove('ring-2','ring-cyan-500');
-    a.removeAttribute('aria-current');
-  });
-  const sel=map[route.name];
-  if(sel){
-    const el=document.querySelector(sel);
-    if(el){
-      el.classList.add('ring-2','ring-cyan-500');
-      el.setAttribute('aria-current','page');
-    }
+  for(const it of filtered){
+    const coord=resolveCoordinates(it);
+    if(!coord) continue;
+    const { x, y } = lonLatToXY(coord.lng ?? coord.lon ?? coord.longitude, coord.lat, w, h);
+    const band = riskBand(it);
+    const marker = document.createElement('button');
+    marker.className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 h-4 w-4 rounded-full ring-2 ring-white/60";
+    const bg = band==='alert' ? 'bg-rose-500' : band==='warning' ? 'bg-amber-400' : 'bg-emerald-400';
+    marker.classList.add(...bg.split(' '));
+    marker.style.left = `${offsetLeft + x}px`;
+    marker.style.top  = `${offsetTop + y}px`;
+    marker.title = vesselName(it);
+    marker.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      location.hash = `#/wreck/${encodeURIComponent(it.id)}`;
+    });
+    mapMarkersLayer.appendChild(marker);
   }
-  if(route.name==='report' && state.currentWreck){
-    const cr = document.querySelector('#nav-current-report');
-    cr?.classList.remove('hidden');
-    cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
+
+  if(noCoordCount>0){
+    console.debug(`Skipped ${noCoordCount} wreck(s) without coordinates.`);
   }
 }
 
-/* ---------- UI Pieces ---------- */
+/* ------------------------------ Debounce ------------------------------ */
+function debounce(fn, ms=250){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+
+/* ------------------------------ Auth Panel ------------------------------ */
 function buildAuthPanel(){
   return `
-    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
-      <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-cyan-200">Authentication</h2>
-        <button id="toggle-auth" class="text-sm text-cyan-300 hover:text-cyan-200 transition">Toggle</button>
-      </div>
-      <div id="auth-body" class="p-4 grid md:grid-cols-2 gap-6">
-        <form id="auth-form" data-auth-hidden class="">
-          <label class="block text-sm mb-1">Email</label>
-          <input id="login-email" type="email" autocomplete="username" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="you@example.com"/>
-          <label class="block text-sm mt-3 mb-1">Password</label>
-          <input id="login-pass" type="password" autocomplete="current-password" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-          <div class="flex gap-2 mt-4 flex-wrap">
-            <button type="button" id="btn-signin" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Sign In</button>
-            <button type="button" id="btn-create" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">Create Account</button>
-            <button type="button" id="btn-reset" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">Reset Password</button>
-          </div>
-          <div id="auth-msg" class="text-xs text-slate-400 mt-2 h-5"></div>
-        </form>
-        <div data-auth-visible class="hidden space-y-3">
-          <div class="text-sm">
-            <div><span class="font-medium text-slate-300">Signed in as:</span> <span id="auth-email" class="text-cyan-300"></span></div>
-            <div><span class="font-medium text-slate-300">Role:</span> <span id="auth-role" class="text-cyan-300"></span></div>
-          </div>
-          <button id="btn-signout" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm">Sign Out</button>
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+    <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-cyan-200">Authentication</h2>
+      <button id="toggle-auth" class="text-sm text-cyan-300 hover:text-cyan-200 transition">Toggle</button>
+    </div>
+    <div id="auth-body" class="p-4 grid md:grid-cols-2 gap-6">
+      <form id="auth-form" data-auth-hidden>
+        <label class="block text-sm mb-1">Email</label>
+        <input id="login-email" type="email" autocomplete="username" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="you@example.com"/>
+        <label class="block text-sm mt-3 mb-1">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        <div class="flex gap-2 mt-4 flex-wrap">
+          <button type="button" id="btn-signin" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Sign In</button>
+          <button type="button" id="btn-create" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">Create Account</button>
+          <button type="button" id="btn-reset" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">Reset Password</button>
         </div>
+        <div id="auth-msg" class="text-xs text-slate-400 mt-2 h-5"></div>
+      </form>
+      <div data-auth-visible class="hidden space-y-3">
+        <div class="text-sm">
+          <div><span class="font-medium text-slate-300">Signed in as:</span> <span id="auth-email" class="text-cyan-300"></span></div>
+          <div><span class="font-medium text-slate-300">Role:</span> <span id="auth-role" class="text-cyan-300"></span></div>
+        </div>
+        <button id="btn-signout" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm">Sign Out</button>
       </div>
     </div>
-  `;
+  </div>`;
 }
+
+/* ------------------------------ Analyze Panel ------------------------------ */
 function buildAnalyzePanel(){
-  const isContributor = ['admin','contributor'].includes(state.role);
+  const isContributor=['admin','contributor'].includes(state.role);
   return `
-    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
-      <div class="px-4 py-3 border-b border-white/10">
-        <h2 class="text-lg font-semibold text-cyan-200">Assessment Actions</h2>
-        <p class="text-slate-400 text-sm mt-1">Submit new or request reassessment (contributors/admin only).</p>
-      </div>
-      <div class="p-4 space-y-4">
-        <form id="analyze-form" class="flex flex-col md:flex-row gap-3">
-          <input id="analysis-input" type="text" placeholder="Vessel name..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-          <div class="flex gap-2">
-            <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Analyze</button>
-            <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Reassess</button>
-          </div>
-        </form>
-        <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
-      </div>
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
+    <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-cyan-200">Assessment Actions</h2>
+      <span class="text-xs text-slate-400">Role: ${state.role}</span>
     </div>
-  `;
+    <div class="p-4 space-y-4">
+      <form id="analyze-form" class="flex flex-col md:flex-row gap-3">
+        <input id="analysis-input" type="text" placeholder="Vessel name..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        <div class="flex gap-2">
+          <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Analyze</button>
+          <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Reassess</button>
+        </div>
+      </form>
+      <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
+    </div>
+  </div>`;
 }
+
+/* ------------------------------ Map Card ------------------------------ */
 function buildMapCard(){
   return `
-    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
-      <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
-        <div class="flex items-center gap-1 text-sm flex-wrap">
-          <span class="mr-2 font-medium text-slate-200">Risk:</span>
-          ${['all','alert','warning','stable'].map(r=>`<button data-filter-risk="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
-        </div>
-        <div class="flex items-center gap-1 text-sm flex-wrap">
-          <span class="mr-2 font-medium text-slate-200">Stage:</span>
-          ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
-        </div>
-        <div class="xl:ml-auto w-full xl:w-72">
-          <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-        </div>
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
+    <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
+      <div class="flex items-center gap-1 text-sm flex-wrap">
+        <span class="mr-2 font-medium text-slate-200">Risk:</span>
+        ${['all','alert','warning','stable'].map(r=>`<button data-filter-risk="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
       </div>
-      <div class="relative">
-        <div id="map-canvas" class="w-full h-[550px] bg-slate-800 flex items-center justify-center">
-          <div class="text-slate-400 text-sm" id="map-loading">Loading map...</div>
-        </div>
+      <div class="flex items-center gap-1 text-sm flex-wrap">
+        <span class="mr-2 font-medium text-slate-200">Stage:</span>
+        ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
       </div>
-      <div class="p-4 border-t border-white/10">
-        <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
-        <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+      <div class="xl:ml-auto w-full xl:w-72">
+        <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
       </div>
     </div>
-  `;
+    <div class="relative">
+      <div id="static-map-wrapper" class="relative w-full bg-slate-950 overflow-hidden">
+        <img id="static-map-image" src="${WORLD_MAP_SRC}" alt="World map" class="w-full h-auto object-contain select-none pointer-events-none">
+        <div id="static-map-markers" class="pointer-events-none absolute inset-0"></div>
+      </div>
+    </div>
+    <div class="p-4 border-t border-white/10">
+      <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
+      <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+    </div>
+  </div>`;
 }
-
-/* ---------- Debounce ---------- */
-function debounce(fn, ms=250){
-  let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
-}
-
-/* ---------- Home View ---------- */
 function renderReassessList(){
   const wrap=$('#reassess-list'); if(!wrap) return;
   wrap.innerHTML='';
@@ -544,6 +495,34 @@ function renderReassessList(){
   });
 }
 
+/* ------------------------------ Image Aggregation ------------------------------ */
+function collectImages(it){
+  const set = new Set();
+  const results = [];
+  if(Array.isArray(it?.media?.images)){
+    for(const entry of it.media.images){
+      if(!entry) continue;
+      if(typeof entry==='string'){
+        if(!set.has(entry)){ set.add(entry); results.push({url:entry, source:'Media'}); }
+      } else if(entry.url){
+        if(!set.has(entry.url)){ set.add(entry.url); results.push({url:entry.url, source:'Media'}); }
+      }
+    }
+  }
+  if(Array.isArray(it?.phase2?.assets)){
+    for(const a of it.phase2.assets){
+      if(!a?.url) continue;
+      if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
+      if(!set.has(a.url)){
+        set.add(a.url);
+        results.push({url:a.url, source:a.source==='upload'?'Upload': (a.source==='reference'?'Reference':'Asset')});
+      }
+    }
+  }
+  return results;
+}
+
+/* ------------------------------ Home ------------------------------ */
 function updateAuthUI(){
   const signedIn=!!state.user;
   $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
@@ -552,11 +531,10 @@ function updateAuthUI(){
   document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
 
   const isContributor = ['admin','contributor'].includes(state.role);
-  // Gate buttons
   ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
     const b=$('#'+id);
     if(b){
-      if(!isContributor) { b.disabled=true; b.classList.add('opacity-50','cursor-not-allowed'); }
+      if(!isContributor){ b.disabled=true; b.classList.add('opacity-50','cursor-not-allowed'); }
       else { b.disabled=false; b.classList.remove('opacity-50','cursor-not-allowed'); }
     }
   });
@@ -570,12 +548,8 @@ function renderHome(){
   const app=$('#app');
   app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
 
-  // Auth toggling
-  $('#toggle-auth')?.addEventListener('click',()=>{
-    $('#auth-body')?.classList.toggle('hidden');
-  });
+  $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
 
-  // Auth actions
   $('#btn-signin')?.addEventListener('click', async ()=>{
     const email=$('#login-email').value.trim();
     const pass=$('#login-pass').value;
@@ -604,11 +578,10 @@ function renderHome(){
   });
   $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOut(auth);}catch{} });
 
-  // Analyze / Reassess
   $('#analyze-form')?.addEventListener('submit', async e=>{
     e.preventDefault();
-    const isContributor=['admin','contributor'].includes(state.role);
-    if(!isContributor){ showToast("Insufficient role","error"); return; }
+    const isContrib=['admin','contributor'].includes(state.role);
+    if(!isContrib){ showToast("Insufficient role","error"); return; }
     const name=getText($('#analysis-input').value);
     if(!name){ showToast("Enter vessel name","error"); return; }
     $('#analyze-status').textContent='Requesting analysis...';
@@ -624,8 +597,8 @@ function renderHome(){
     }
   });
   $('#btn-reassess')?.addEventListener('click', async ()=>{
-    const isContributor=['admin','contributor'].includes(state.role);
-    if(!isContributor){ showToast("Insufficient role","error"); return; }
+    const isContrib=['admin','contributor'].includes(state.role);
+    if(!isContrib){ showToast("Insufficient role","error"); return; }
     const name=getText($('#analysis-input').value);
     if(!name){ showToast("Enter vessel name","error"); return; }
     $('#analyze-status').textContent='Requesting reassessment...';
@@ -641,32 +614,29 @@ function renderHome(){
     }
   });
 
-  // Filters
   document.querySelectorAll('[data-filter-risk]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
+    btn.addEventListener('click',()=>{
       state.filters.band = btn.getAttribute('data-filter-risk');
-      refreshMapMarkers();
+      renderMapMarkers();
     });
   });
   document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
+    btn.addEventListener('click',()=>{
       state.filters.stage = btn.getAttribute('data-filter-stage');
-      refreshMapMarkers();
+      renderMapMarkers();
     });
   });
-  const debouncedSearch=debounce(val=>{
-    state.filters.search=val;
-    refreshMapMarkers();
-  },300);
-  $('#map-search')?.addEventListener('input', e=>debouncedSearch(e.target.value||''));
+  $('#map-search')?.addEventListener('input', debounce(e=>{
+    state.filters.search = e.target.value || '';
+    renderMapMarkers();
+  },250));
 
-  // Init map
-  initLeafletMap();
+  setupStaticMap();
   renderReassessList();
   updateAuthUI();
 }
 
-/* ---------- Report View ---------- */
+/* ------------------------------ RPM + Report ------------------------------ */
 function readRPMFactors(it){
   const rpm=it?.rpm;
   if(!rpm) return [];
@@ -680,8 +650,8 @@ function readRPMFactors(it){
     if(obj && typeof obj==='object'){
       return Object.entries(obj).map(([name,v])=>{
         if(v && typeof v==='object')
-          return { name, rationale:v.rationale??v.reason??"", value:v.value??v.multiplier??v.weight??v.score??"" };
-        return { name, rationale:"", value:v??"" };
+          return { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" };
+        return { name, rationale:"", value:v ?? "" };
       });
     }
   }
@@ -689,7 +659,9 @@ function readRPMFactors(it){
   if(rpm && typeof rpm==='object'){
     return Object.entries(rpm)
       .filter(([k])=>!skip.has(k))
-      .map(([name,v])=> v&&typeof v==='object'?{name,rationale:v.rationale??v.reason??"",value:v.value??v.multiplier??v.weight??v.score??""}:{name,rationale:"",value:v??""});
+      .map(([name,v])=> v && typeof v==='object'
+        ? { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" }
+        : { name, rationale:"", value:v ?? "" });
   }
   return [];
 }
@@ -706,6 +678,7 @@ function renderReport(route){
     app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
     return;
   }
+  const images = collectImages(it);
   const wcsParams = Array.isArray(it?.wcs?.parameters)?it.wcs.parameters:[];
   const phsParams = Array.isArray(it?.phs?.parameters)?it.phs.parameters:[];
   const esiParams = Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
@@ -743,12 +716,30 @@ function renderReport(route){
   const coords = resolveCoordinates(it);
   const coordLine = coords? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : '';
 
+  const galleryHtml = images.length
+    ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        ${images.slice(0,12).map(img=>`
+          <div class="relative rounded-lg overflow-hidden border border-white/10 bg-slate-800 group">
+            <img src="${img.url}" loading="lazy" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-40 object-cover group-hover:opacity-90" alt="image">
+            <span class="img-badge">${img.source}</span>
+          </div>
+        `).join("")}
+      </div>`
+    : `<div class="text-xs text-slate-500">No images available.</div>`;
+
   app.innerHTML = `
     <div class="flex flex-wrap items-center gap-3 mb-6">
       <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
       <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
       <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
     </div>
+
+    <div class="flex items-center justify-between mb-4 bg-slate-900/70 border border-white/10 rounded-lg px-4 py-2">
+      <img src="${LOGO_LEFT}" alt="Logo Left" class="h-10 w-auto rounded border border-white/10">
+      <h2 class="text-base md:text-lg font-semibold tracking-wide text-cyan-200 text-center flex-1">WERP Risk Report</h2>
+      <img src="${LOGO_RIGHT}" alt="Logo Right" class="h-10 w-auto rounded border border-white/10">
+    </div>
+
     <section class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
       <div class="p-5 border-b border-white/10 flex flex-col md:flex-row md:items-end gap-4 justify-between">
         <div>
@@ -758,9 +749,9 @@ function renderReport(route){
         </div>
         <div class="flex gap-2 flex-wrap">
           <button id="btn-export-pdf" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">PDF</button>
-          <button id="btn-export-html" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">HTML</button>
-          <button id="btn-export-md" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">MD</button>
-          <button id="btn-export-json" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">JSON</button>
+            <button id="btn-export-html" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">HTML</button>
+            <button id="btn-export-md" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">MD</button>
+            <button id="btn-export-json" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">JSON</button>
         </div>
       </div>
 
@@ -776,6 +767,10 @@ function renderReport(route){
               ${it?.historical?.location?.depthMeters!=null? `<li><span class="text-slate-400">Depth (m):</span> ${escapeHtml(String(it.historical.location.depthMeters))}</li>`:''}
               ${coordLine? `<li><span class="text-slate-400">Coords:</span> ${coordLine}</li>`:''}
             </ul>
+            <div class="mt-4">
+              <h4 class="font-medium mb-2 text-sm text-slate-200">Images</h4>
+              ${galleryHtml}
+            </div>
           </div>
 
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
@@ -792,9 +787,9 @@ function renderReport(route){
         </div>
 
         <div class="space-y-6 lg:col-span-2">
-          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4 radar-wrapper">
             <h3 class="font-medium mb-3">Risk Radar</h3>
-            <canvas id="werp-radar" class="w-full h-64"></canvas>
+            <canvas id="werp-radar" class="w-full h-full"></canvas>
             <p class="mt-2 text-xs text-slate-400">
               WCS: ${Number(vWCS||0).toFixed(2)} • PHS: ${Number(vPHS||0).toFixed(2)} • ESI: ${Number(vESI||0).toFixed(2)} • RPM: ${Number(vRPM||1).toFixed(2)}×
             </p>
@@ -847,6 +842,7 @@ function renderReport(route){
       </div>
     </section>
   `;
+
   renderUploadsGallery(it);
   drawRadar(vWCS,vPHS,vESI,vRPM);
   wireExports(it);
@@ -876,7 +872,8 @@ function renderUploadsGallery(it){
   imgs.slice(0,12).forEach(a=>{
     const div=document.createElement('div');
     div.className='relative group rounded-lg overflow-hidden border border-white/10';
-    div.innerHTML=`<img src="${a.url}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-28 object-cover group-hover:opacity-90" alt="asset">`;
+    div.innerHTML=`<img src="${a.url}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-28 object-cover group-hover:opacity-90" alt="asset">
+      <span class="img-badge">${(a.source||'upload').toUpperCase()}</span>`;
     wrap.appendChild(div);
   });
 }
@@ -884,6 +881,7 @@ function renderUploadsGallery(it){
 function drawRadar(vWCS,vPHS,vESI,vRPM){
   const ctx=document.getElementById('werp-radar');
   if(!ctx) return;
+  if(state.chart){ try{ state.chart.destroy(); }catch{} }
   const max=20;
   const data = [
     Math.max(0,Math.min(20,Number(vWCS||0))),
@@ -891,7 +889,7 @@ function drawRadar(vWCS,vPHS,vESI,vRPM){
     Math.max(0,Math.min(20,(Number(vESI||0)/40)*20)),
     Math.max(0,Math.min(20,((Math.min(Math.max(Number(vRPM||1),0.5),2.5)-0.5)/2.0)*20))
   ];
-  new Chart(ctx,{
+  state.chart = new Chart(ctx,{
     type:'radar',
     data:{
       labels:['WCS','PHS','ESI','RPM'],
@@ -912,7 +910,7 @@ function drawRadar(vWCS,vPHS,vESI,vRPM){
   });
 }
 
-/* ---------- Phase 2 Save & Upload ---------- */
+/* ------------------------------ Phase 2 Save & Upload ------------------------------ */
 async function savePhase2Summary(){
   if(!state.currentWreck) return;
   const path=state.byIdPath.get(state.currentWreck.id);
@@ -971,7 +969,7 @@ async function handleUploadSelection(e){
   setTimeout(()=>$('#phase2-status').textContent='',3000);
 }
 
-/* ---------- Export Helpers ---------- */
+/* ------------------------------ Exports ------------------------------ */
 function wireExports(it){
   $('#btn-export-pdf')?.addEventListener('click', ()=>exportPdf(it));
   $('#btn-export-html')?.addEventListener('click', ()=>exportHtml(it));
@@ -1022,7 +1020,7 @@ function downloadBlob(filename, blob){
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-/* ---------- List View ---------- */
+/* ------------------------------ List View ------------------------------ */
 function renderList(){
   const app=$('#app');
   const term=state.filters.search.toLowerCase();
@@ -1045,7 +1043,8 @@ function renderList(){
           const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
                       band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
                       'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
-          const thumb=(it.media?.images?.[0]?.url) || (Array.isArray(it.media?.images)&&typeof it.media.images[0]==='string'?it.media.images[0]:PLACEHOLDER_SVG);
+          const imgs=collectImages(it);
+          const thumb=imgs[0]?.url || PLACEHOLDER_SVG;
           return `
             <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
               <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
@@ -1069,7 +1068,44 @@ function renderList(){
   updateAuthUI();
 }
 
-/* ---------- Render Root ---------- */
+/* ------------------------------ Router ------------------------------ */
+const routes = {
+  home: /^#\/?$/,
+  report: /^#\/wreck\/([^/]+)$/,
+  list: /^#\/list\/?$/
+};
+function parseRoute(){
+  const h=location.hash || '#/';
+  if(routes.home.test(h)) return { name:'home' };
+  const mReport = h.match(routes.report);
+  if(mReport) return { name:'report', id: decodeURIComponent(mReport[1]) };
+  if(routes.list.test(h)) return { name:'list' };
+  return { name:'home' };
+}
+window.addEventListener('hashchange', ()=>renderApp());
+
+function setActiveNav(route){
+  const map = { home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
+  document.querySelectorAll('nav a').forEach(a=>{
+    a.classList.remove('ring-2','ring-cyan-500');
+    a.removeAttribute('aria-current');
+  });
+  const sel=map[route.name];
+  if(sel){
+    const el=document.querySelector(sel);
+    if(el){
+      el.classList.add('ring-2','ring-cyan-500');
+      el.setAttribute('aria-current','page');
+    }
+  }
+  if(route.name==='report' && state.currentWreck){
+    const cr = document.querySelector('#nav-current-report');
+    cr?.classList.remove('hidden');
+    cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
+  }
+}
+
+/* ------------------------------ Root Render ------------------------------ */
 function renderApp(){
   const route=parseRoute();
   state.currentRoute=route;
@@ -1084,12 +1120,12 @@ function renderApp(){
     renderHome();
   }
   if(route.name==='home'){
-    refreshMapMarkers();
+    renderMapMarkers();
     renderReassessList();
   }
 }
 
-/* ---------- Auth State ---------- */
+/* ------------------------------ Auth State ------------------------------ */
 onAuthStateChanged(auth, async (user)=>{
   state.user=user;
   if(!user){
@@ -1104,21 +1140,21 @@ onAuthStateChanged(auth, async (user)=>{
   startData();
 });
 
-/* ---------- Initial ---------- */
+/* ------------------------------ Initial ------------------------------ */
 renderApp();
 
-/* ---------- Public API ---------- */
+/* ------------------------------ Public API ------------------------------ */
 window.ProjectGuardian = {
   loadData(payload){
     if(!payload || !Array.isArray(payload.wrecks)) return;
     state.wrecks = payload.wrecks.map(w=>({...w, id:w.id || w.name || crypto.randomUUID()}));
-    renderApp(); refreshMapMarkers();
+    renderApp(); renderMapMarkers();
   },
   setFilters({ band, stage, search }={}){
     if(band) state.filters.band=band;
     if(stage) state.filters.stage=stage;
     if(typeof search==='string') state.filters.search=search;
-    renderApp(); refreshMapMarkers();
+    renderApp(); renderMapMarkers();
   },
   getState(){
     return {
@@ -1132,7 +1168,6 @@ window.ProjectGuardian = {
     console.log("State", state);
   }
 };
-
 </script>
 </body>
 </html>
