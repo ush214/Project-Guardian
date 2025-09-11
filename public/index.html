@@ -18,6 +18,9 @@
       }
     }
   </script>
+  <!-- Leaflet (interactive map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- html2pdf -->
@@ -36,6 +39,7 @@
       font-size:10px; padding:2px 5px; border-radius:4px;
       letter-spacing:.5px; text-transform:uppercase;
     }
+    .note-block { border:1px solid rgba(255,255,255,0.08); background:#0f172a; }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -76,11 +80,10 @@ const READ_COLLECTIONS = [
   "artifacts/guardian-agent-default/public/data/werpassessments"
 ];
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
-const WORLD_MAP_SRC = "https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.svg";
 const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
 const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
-/* ---------- Actionable Severity Thresholds & Model ---------- */
+/* ---------- Actionable Severity Thresholds ---------- */
 const ACTION_THRESHOLDS = {
   critical: 60,
   high: 45,
@@ -156,7 +159,9 @@ const state = {
   user: null,
   listeners: [],
   filters: { band:'all', stage:'all', search:'' },
-  chart: null
+  chart: null,
+  leafletMap: null,
+  leafletMarkers: new Map()
 };
 
 /* ------------------------------ Utilities ------------------------------ */
@@ -196,9 +201,10 @@ function riskBand(item){
 }
 function stageFromItem(it){
   const phase2HasNotes = !!getText(it?.phase2?.summary);
+  const phase2Entries = Array.isArray(it?.phase2?.entries) && it.phase2.entries.length;
   const phase2CompletedFlag = it?.phase2?.status === 'completed' || it?.phase2?.completed === true;
   const completedExplicit = it?.completed === true || it?.status === 'completed' || !!it?.phase3 || !!it?.finalizedAt;
-  const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes;
+  const isCompleted = completedExplicit || phase2CompletedFlag || phase2HasNotes || phase2Entries;
   const isReassess = Boolean(
     it?.needsReassessment === true ||
     it?.seismicEvent === true ||
@@ -329,7 +335,7 @@ async function startData(){
     });
     state.wrecks = Array.from(byKey.values());
     renderApp();
-    renderMapMarkers();
+    refreshLeafletMarkers();
   };
   for(const p of READ_COLLECTIONS){
     try{
@@ -339,78 +345,84 @@ async function startData(){
   }
 }
 
-/* ------------------------------ Static Map ------------------------------ */
-function lonLatToXY(lon, lat, w, h){
-  const x = (lon + 180) / 360 * w;
-  const y = (90 - lat) / 180 * h;
-  return { x, y };
+/* ------------------------------ Image Aggregation (Uploads only) ------------------------------ */
+function collectUploadedImages(it){
+  // Only include phase2.assets with source 'upload'
+  const results = [];
+  if(Array.isArray(it?.phase2?.assets)){
+    for(const a of it.phase2.assets){
+      if(!a?.url) continue;
+      if(a.source !== 'upload') continue;
+      if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
+      results.push({url:a.url, source:'Upload'});
+    }
+  }
+  return results;
 }
-let mapImageEl = null;
-let mapMarkersLayer = null;
-let mapWrapper = null;
-
-function setupStaticMap(){
-  mapWrapper = $('#static-map-wrapper');
-  if(!mapWrapper) return;
-  mapImageEl = $('#static-map-image');
-  mapMarkersLayer = $('#static-map-markers');
-  if(!mapImageEl || !mapMarkersLayer) return;
-  const place = () => renderMapMarkers();
-  mapImageEl.addEventListener('load', place);
-  window.addEventListener('resize', place);
-  place();
+function firstUploadThumb(it){
+  const imgs = collectUploadedImages(it);
+  return imgs[0]?.url || PLACEHOLDER_SVG;
 }
 
-function renderMapMarkers(){
-  if(!mapImageEl || !mapMarkersLayer) return;
-  mapMarkersLayer.innerHTML = "";
-  const imgRect = mapImageEl.getBoundingClientRect();
-  const wrapperRect = mapWrapper.getBoundingClientRect();
-  const w = imgRect.width; const h = imgRect.height;
-  if(!w || !h) return;
-
-  const offsetLeft = imgRect.left - wrapperRect.left;
-  const offsetTop  = imgRect.top  - wrapperRect.top;
+/* ------------------------------ Leaflet Map ------------------------------ */
+function initLeaflet(){
+  if(state.leafletMap || typeof L === 'undefined') return;
+  state.leafletMap = L.map('leaflet-map',{ zoomControl:true }).setView([10,150],3);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
+    attribution:"&copy; OpenStreetMap contributors"
+  }).addTo(state.leafletMap);
+}
+function markerIconFor(band){
+  const color = band==='alert'?'red':band==='warning'?'orange':'green';
+  return L.icon({
+    iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+    shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+    iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+  });
+}
+function refreshLeafletMarkers(){
+  if(!state.leafletMap) return;
+  // Clear old
+  for(const m of state.leafletMarkers.values()){
+    try{ state.leafletMap.removeLayer(m);}catch{}
+  }
+  state.leafletMarkers.clear();
 
   const riskFilter = state.filters.band;
-  const stageFilter = state.filters.stage;
+  const stageFilter= state.filters.stage;
   const term = state.filters.search.toLowerCase();
 
-  let noCoordCount = 0;
-
   const filtered = state.wrecks.filter(it=>{
-    const rb = riskBand(it);
+    const rb=riskBand(it);
     if(riskFilter!=='all' && rb!==riskFilter) return false;
-    const st = stageFromItem(it);
+    const st=stageFromItem(it);
     if(stageFilter!=='all' && st!==stageFilter) return false;
     if(term && !vesselName(it).toLowerCase().includes(term)) return false;
-    const coord=resolveCoordinates(it);
-    if(!coord){ noCoordCount++; return false; }
-    return true;
+    return resolveCoordinates(it)!=null;
   });
 
-  for(const it of filtered){
-    const coord=resolveCoordinates(it);
-    if(!coord) continue;
-    const { x, y } = lonLatToXY(coord.lng ?? coord.lon ?? coord.longitude, coord.lat, w, h);
-    const band = riskBand(it);
-    const marker = document.createElement('button');
-    marker.className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 h-4 w-4 rounded-full ring-2 ring-white/60";
-    const bg = band==='alert' ? 'bg-rose-500' : band==='warning' ? 'bg-amber-400' : 'bg-emerald-400';
-    marker.classList.add(...bg.split(' '));
-    marker.style.left = `${offsetLeft + x}px`;
-    marker.style.top  = `${offsetTop + y}px`;
-    marker.title = vesselName(it);
-    marker.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      location.hash = `#/wreck/${encodeURIComponent(it.id)}`;
-    });
-    mapMarkersLayer.appendChild(marker);
-  }
-
-  if(noCoordCount>0){
-    console.debug(`Skipped ${noCoordCount} wreck(s) without coordinates.`);
-  }
+  filtered.forEach(it=>{
+    const coord = resolveCoordinates(it);
+    if(!coord) return;
+    const band=riskBand(it);
+    const marker = L.marker([coord.lat, coord.lng], { icon: markerIconFor(band) });
+    const thumb = firstUploadThumb(it);
+    const popupHtml = `
+      <div style="min-width:200px">
+        <div style="font-weight:600;font-size:14px">${escapeHtml(vesselName(it))}</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:4px">Stage: ${stageFromItem(it)}</div>
+        <div style="margin:4px 0 6px">
+          <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'"
+               style="width:100%;max-height:140px;object-fit:cover;border:1px solid #334155;border-radius:6px"/>
+        </div>
+        <a href="#/wreck/${encodeURIComponent(it.id)}"
+           style="display:inline-block;font-size:12px;color:#0ea5e9;text-decoration:underline;">View Assessment</a>
+      </div>
+    `;
+    marker.bindPopup(popupHtml);
+    marker.addTo(state.leafletMap);
+    state.leafletMarkers.set(it.id, marker);
+  });
 }
 
 /* ------------------------------ Debounce ------------------------------ */
@@ -488,10 +500,7 @@ function buildMapCard(){
       </div>
     </div>
     <div class="relative">
-      <div id="static-map-wrapper" class="relative w-full bg-slate-950 overflow-hidden">
-        <img id="static-map-image" src="${WORLD_MAP_SRC}" alt="World map" class="w-full h-auto object-contain select-none pointer-events-none">
-        <div id="static-map-markers" class="pointer-events-none absolute inset-0"></div>
-      </div>
+      <div id="leaflet-map" class="w-full h-[550px] bg-slate-800"></div>
     </div>
     <div class="p-4 border-t border-white/10">
       <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
@@ -533,34 +542,26 @@ function renderReassessList(){
   });
 }
 
-/* ------------------------------ Image Aggregation ------------------------------ */
-function collectImages(it){
-  const set = new Set();
-  const results = [];
-  if(Array.isArray(it?.media?.images)){
-    for(const entry of it.media.images){
-      if(!entry) continue;
-      if(typeof entry==='string'){
-        if(!set.has(entry)){ set.add(entry); results.push({url:entry, source:'Media'}); }
-      } else if(entry.url){
-        if(!set.has(entry.url)){ set.add(entry.url); results.push({url:entry.url, source:'Media'}); }
-      }
-    }
-  }
-  if(Array.isArray(it?.phase2?.assets)){
-    for(const a of it.phase2.assets){
-      if(!a?.url) continue;
-      if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
-      if(!set.has(a.url)){
-        set.add(a.url);
-        results.push({url:a.url, source:a.source==='upload'?'Upload': (a.source==='reference'?'Reference':'Asset')});
-      }
-    }
-  }
-  return results;
+/* ------------------------------ Image Aggregation (Uploads only gallery) ------------------------------ */
+function firstUploadThumb(it){
+  return collectUploadedImages(it)[0]?.url || PLACEHOLDER_SVG;
 }
 
-/* ------------------------------ Home ------------------------------ */
+/* ------------------------------ Leaflet marker updates after functions defined ------------------------------ */
+function initLeafletMapIfNeeded(){
+  if(!state.leafletMap){
+    initLeaflet();
+  }
+}
+function initLeaflet(){
+  if(state.leafletMap || typeof L === 'undefined') return;
+  state.leafletMap = L.map('leaflet-map',{ zoomControl:true }).setView([10,150],3);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
+    attribution:"&copy; OpenStreetMap contributors"
+  }).addTo(state.leafletMap);
+}
+
+/* ------------------------------ Auth UI ------------------------------ */
 function updateAuthUI(){
   const signedIn=!!state.user;
   $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
@@ -582,6 +583,7 @@ function updateAuthUI(){
   }
 }
 
+/* ------------------------------ Home ------------------------------ */
 function renderHome(){
   const app=$('#app');
   app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
@@ -655,21 +657,22 @@ function renderHome(){
   document.querySelectorAll('[data-filter-risk]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       state.filters.band = btn.getAttribute('data-filter-risk');
-      renderMapMarkers();
+      refreshLeafletMarkers();
     });
   });
   document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       state.filters.stage = btn.getAttribute('data-filter-stage');
-      renderMapMarkers();
+      refreshLeafletMarkers();
     });
   });
   $('#map-search')?.addEventListener('input', debounce(e=>{
     state.filters.search = e.target.value || '';
-    renderMapMarkers();
+    refreshLeafletMarkers();
   },250));
 
-  setupStaticMap();
+  initLeafletMapIfNeeded();
+  refreshLeafletMarkers();
   renderReassessList();
   updateAuthUI();
 }
@@ -708,7 +711,7 @@ function rpmFinalMultiplier(it){
   return Number.isFinite(m)?m:1;
 }
 
-/* ------------------------------ Radar Chart (Actionable Threshold Model) ------------------------------ */
+/* ------------------------------ Radar (Updated Threshold Model) ------------------------------ */
 function drawRadar(vWCS, vPHS, vESI, vRPM){
   const ctx=document.getElementById('werp-radar');
   if(!ctx) return;
@@ -716,12 +719,11 @@ function drawRadar(vWCS, vPHS, vESI, vRPM){
 
   const max=20;
   const dataPoints = [
-    Math.max(0, Math.min(20, Number(vWCS || 0))),                        // WCS 0–20
-    Math.max(0, Math.min(20, (Number(vPHS || 0) / 10) * 20)),            // PHS 0–10 → 0–20
-    Math.max(0, Math.min(20, (Number(vESI || 0) / 40) * 20)),            // ESI 0–40 → 0–20 (adjust if needed)
-    Math.max(0, Math.min(20, ((Math.min(Math.max(Number(vRPM || 1), 0.5), 2.5) - 0.5) / 2.0) * 20)) // RPM normalized
+    Math.max(0, Math.min(20, Number(vWCS || 0))),
+    Math.max(0, Math.min(20, (Number(vPHS || 0) / 10) * 20)),
+    Math.max(0, Math.min(20, (Number(vESI || 0) / 40) * 20)),
+    Math.max(0, Math.min(20, ((Math.min(Math.max(Number(vRPM || 1), 0.5), 2.5) - 0.5) / 2.0) * 20))
   ];
-
   const severityScore = computeSeverityTotal({
     wcs: Number(vWCS || 0),
     phs: Number(vPHS || 0),
@@ -812,20 +814,25 @@ function drawRadar(vWCS, vPHS, vESI, vRPM){
   `;
 }
 
-/* ------------------------------ Phase 2 Save & Upload ------------------------------ */
-async function savePhase2Summary(){
+/* ------------------------------ Phase 2 Save & Upload + Entries ------------------------------ */
+async function savePhase2Entry(){
   if(!state.currentWreck) return;
   const path=state.byIdPath.get(state.currentWreck.id);
   if(!path){ showToast("Path not found","error"); return; }
   const val=getText($('#phase2-notes').value);
+  if(!val){ showToast("Enter text","error"); return; }
   $('#phase2-status').textContent='Saving...';
+  const userIdent = state.user?.email || state.user?.uid || 'anonymous';
   try{
     await updateDoc(doc(db,path,state.currentWreck.id),{
-      "phase2.summary": val,
+      "phase2.entries": arrayUnion({ text: val, createdAtMs: Date.now(), user: userIdent }),
+      "phase2.summary": val.slice(0,240),
       "phase2.updatedAt": serverTimestamp()
     });
     $('#phase2-status').textContent='Saved.';
-    showToast("Phase 2 updated","success");
+    showToast("Entry saved","success");
+    $('#phase2-notes').value="";
+    appendPhase2EntryLocal({ text: val, createdAtMs: Date.now(), user: userIdent });
   }catch(e){
     $('#phase2-status').textContent='Error';
     showToast(e?.message||"Save failed","error");
@@ -833,42 +840,20 @@ async function savePhase2Summary(){
     setTimeout(()=>$('#phase2-status').textContent='',2000);
   }
 }
-function sanitizeFileName(name=""){
-  return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`;
-}
-async function handleUploadSelection(e){
-  const files=Array.from(e.target.files||[]);
-  if(!files.length || !state.currentWreck) return;
-  const path=state.byIdPath.get(state.currentWreck.id);
-  if(!path){ showToast("Path not found","error"); return; }
-  $('#phase2-status').textContent=`Uploading ${files.length} file(s)...`;
-  const basePath=`artifacts/${appId}/public/uploads/${state.currentWreck.id}/user`;
-  let ok=0, fail=0;
-  for(const f of files){
-    try{
-      if(!/^image\//i.test(f.type)){ fail++; continue; }
-      const safe = sanitizeFileName(f.name);
-      const fileKey = `${Date.now()}_${safe}`;
-      const ref = storageRef(storage, `${basePath}/${fileKey}`);
-      await uploadBytes(ref, f, { contentType:f.type });
-      const url = await getDownloadURL(ref);
-      const asset = {
-        name:f.name, path:`${basePath}/${fileKey}`, url,
-        contentType:f.type, bytes:f.size, source:'upload', uploadedAtMs:Date.now()
-      };
-      await updateDoc(doc(db,path,state.currentWreck.id),{
-        "phase2.assets": arrayUnion(asset),
-        "phase2.assetsUpdatedAt": serverTimestamp()
-      });
-      ok++;
-    }catch(ex){
-      console.error("Upload failed",ex);
-      fail++;
-    }
-  }
-  $('#phase2-status').textContent = ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
-  showToast($('#phase2-status').textContent, ok?'success':'error');
-  setTimeout(()=>$('#phase2-status').textContent='',3000);
+function appendPhase2EntryLocal(entry){
+  const list = $('#phase2-entries');
+  if(!list) return;
+  const li=document.createElement('div');
+  li.className='note-block rounded-lg p-3 text-sm space-y-1';
+  const ts=new Date(entry.createdAtMs).toLocaleString();
+  li.innerHTML=`
+    <div class="flex items-center justify-between">
+      <span class="text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(entry.user||'user')}</span>
+      <span class="text-xs text-slate-400">${ts}</span>
+    </div>
+    <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(entry.text)}</div>
+  `;
+  list.prepend(li);
 }
 
 /* ------------------------------ Exports ------------------------------ */
@@ -886,23 +871,26 @@ function exportHtml(it){
   if(actionPanel && !clone.querySelector('#action-threshold-panel')){
     clone.appendChild(actionPanel.cloneNode(true));
   }
+  const entries = $('#phase2-entries');
+  if(entries && !clone.querySelector('#phase2-entries')) {
+    clone.appendChild(entries.cloneNode(true));
+  }
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${clone.outerHTML}</body></html>`;
   downloadBlob(`${vessel.replace(/\s+/g,'_')}.html`, new Blob([html],{type:'text/html;charset=utf-8'}));
 }
 function exportMarkdown(it){
   const vessel=vesselName(it);
-  // NOTE: if you want severity score here, recompute using same formula:
   const sev = computeSeverityTotal({
     wcs: Number(it?.totals?.wcs || 0),
     phs: Number(it?.totals?.phs || 0),
     esi: Number(it?.totals?.esi || 0),
     rpm: rpmFinalMultiplier(it)
-  }).toFixed(2);
+  });
   const cat = ACTION_MATRIX[categorizeSeverity(sev)];
   const lines=[
     `# ${vessel}`,
     ``,
-    `**Severity Score:** ${sev} (${cat.label})`,
+    `**Severity Score:** ${sev.toFixed(2)} (${cat.label})`,
     ``,
     `- WCS: ${toNum(it?.totals?.wcs)?.toFixed(2) ?? ''}`,
     `- PHS: ${toNum(it?.totals?.phs)?.toFixed(2) ?? ''}`,
@@ -920,10 +908,13 @@ function exportJson(it){
 function exportPdf(it){
   const node=$('#report-export-root'); if(!node) return;
   const vessel=vesselName(it);
-  // Include action panel clone if not directly inside
   const actionPanel=document.getElementById('action-threshold-panel');
   if(actionPanel && !node.querySelector('#action-threshold-panel')){
     node.appendChild(actionPanel.cloneNode(true));
+  }
+  const entries = $('#phase2-entries');
+  if(entries && !node.querySelector('#phase2-entries')) {
+    node.appendChild(entries.cloneNode(true));
   }
   const opt={
     margin:0.4,
@@ -967,8 +958,7 @@ function renderList(){
           const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
                       band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
                       'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
-          const imgs=collectImages(it);
-            const thumb=imgs[0]?.url || PLACEHOLDER_SVG;
+          const thumb=firstUploadThumb(it);
           return `
             <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
               <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
@@ -1001,7 +991,7 @@ function renderReport(route){
     app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
     return;
   }
-  const images = collectImages(it);
+  const images = collectUploadedImages(it); // Only uploaded images now
   const wcsParams = Array.isArray(it?.wcs?.parameters)?it.wcs.parameters:[];
   const phsParams = Array.isArray(it?.phs?.parameters)?it.phs.parameters:[];
   const esiParams = Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
@@ -1041,14 +1031,14 @@ function renderReport(route){
 
   const galleryHtml = images.length
     ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-        ${images.slice(0,12).map(img=>`
+        ${images.slice(0,18).map(img=>`
           <div class="relative rounded-lg overflow-hidden border border-white/10 bg-slate-800 group">
-            <img src="${img.url}" loading="lazy" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-40 object-cover group-hover:opacity-90" alt="image">
+            <img src="${img.url}" loading="lazy" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-40 object-cover group-hover:opacity-90" alt="upload">
             <span class="img-badge">${img.source}</span>
           </div>
         `).join("")}
       </div>`
-    : `<div class="text-xs text-slate-500">No images available.</div>`;
+    : `<div class="text-xs text-slate-500">No uploaded images yet.</div>`;
 
   app.innerHTML = `
     <div class="flex flex-wrap items-center gap-3 mb-6">
@@ -1081,7 +1071,7 @@ function renderReport(route){
       <div class="p-5 grid grid-cols-1 lg:grid-cols-3 gap-6" id="report-export-root">
         <div class="space-y-6 lg:col-span-1">
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-            <h3 class="font-medium mb-3">Historical</h3>
+            <h3 class="font-medium mb-3">Historical / Images</h3>
             <ul class="text-sm space-y-1 text-slate-300">
               ${it?.historical?.vesselType? `<li><span class="text-slate-400">Type:</span> ${escapeHtml(it.historical.vesselType)}</li>`:''}
               ${it?.historical?.vesselSizeTonnage? `<li><span class="text-slate-400">Size:</span> ${escapeHtml(it.historical.vesselSizeTonnage)}</li>`:''}
@@ -1090,22 +1080,18 @@ function renderReport(route){
               ${it?.historical?.location?.depthMeters!=null? `<li><span class="text-slate-400">Depth (m):</span> ${escapeHtml(String(it.historical.location.depthMeters))}</li>`:''}
               ${coordLine? `<li><span class="text-slate-400">Coords:</span> ${coordLine}</li>`:''}
             </ul>
-            <div class="mt-4">
-              <h4 class="font-medium mb-2 text-sm text-slate-200">Images</h4>
-              ${galleryHtml}
-            </div>
+            <div class="mt-4">${galleryHtml}</div>
           </div>
 
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-            <h3 class="font-medium mb-3">Phase 2: In-situ</h3>
-            <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Survey notes...">${escapeHtml(getText(it?.phase2?.summary)||"")}</textarea>
+            <h3 class="font-medium mb-3">Phase 2: In-situ Report</h3>
+            <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Enter new in-situ observation..."></textarea>
             <div class="flex gap-2 mt-3 flex-wrap">
               <input id="phase2-files" type="file" multiple class="hidden" />
               <button id="btn-select-files" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm">Select Files</button>
-              <button id="btn-save-phase2" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Save Notes</button>
+              <button id="btn-save-phase2" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Save Note</button>
               <span id="phase2-status" class="text-xs text-slate-400 self-center"></span>
             </div>
-            <div id="upload-gallery" class="grid grid-cols-2 gap-2 mt-4"></div>
           </div>
         </div>
 
@@ -1161,17 +1147,34 @@ function renderReport(route){
               </table>
             </div>
           </div>
+
+          <div id="phase2-entries-wrapper" class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h4 class="font-medium mb-3">In-situ Note Log</h4>
+            <div id="phase2-entries" class="space-y-3 text-sm">
+              ${(Array.isArray(it?.phase2?.entries)?[...it.phase2.entries]:[])
+                 .sort((a,b)=>(b?.createdAtMs||0)-(a?.createdAtMs||0))
+                 .map(e=>{
+                   const ts=e?.createdAtMs? new Date(e.createdAtMs).toLocaleString(): '';
+                   return `<div class="note-block rounded-lg p-3 space-y-1">
+                     <div class="flex items-center justify-between">
+                       <span class="text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(e.user||'user')}</span>
+                       <span class="text-xs text-slate-400">${escapeHtml(ts)}</span>
+                     </div>
+                     <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(e.text||'')}</div>
+                   </div>`;
+                 }).join('') || '<div class="text-xs text-slate-500">No entries yet.</div>'}
+            </div>
+          </div>
         </div>
       </div>
     </section>
   `;
 
-  renderUploadsGallery(it);
   drawRadar(vWCS,vPHS,vESI,vRPM);
   wireExports(it);
   const isContributor=['admin','contributor'].includes(state.role);
   if(isContributor){
-    $('#btn-save-phase2')?.addEventListener('click', savePhase2Summary);
+    $('#btn-save-phase2')?.addEventListener('click', savePhase2Entry);
     $('#btn-select-files')?.addEventListener('click', ()=>{ $('#phase2-files').value=""; $('#phase2-files').click(); });
     $('#phase2-files')?.addEventListener('change', handleUploadSelection);
   } else {
@@ -1181,24 +1184,6 @@ function renderReport(route){
     });
   }
   updateAuthUI();
-}
-
-function renderUploadsGallery(it){
-  const wrap=$('#upload-gallery'); if(!wrap) return;
-  wrap.innerHTML='';
-  const assets=Array.isArray(it?.phase2?.assets)?it.phase2.assets:[];
-  const imgs=assets.filter(a=>a?.url && /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(String(a?.name||a?.path||'')));
-  if(!imgs.length){
-    wrap.innerHTML='<div class="col-span-2 text-xs text-slate-500">No uploaded images.</div>';
-    return;
-  }
-  imgs.slice(0,12).forEach(a=>{
-    const div=document.createElement('div');
-    div.className='relative group rounded-lg overflow-hidden border border-white/10';
-    div.innerHTML=`<img src="${a.url}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-28 object-cover group-hover:opacity-90" alt="asset">
-      <span class="img-badge">${(a.source||'upload').toUpperCase()}</span>`;
-    wrap.appendChild(div);
-  });
 }
 
 /* ------------------------------ Router ------------------------------ */
@@ -1253,7 +1238,7 @@ function renderApp(){
     renderHome();
   }
   if(route.name==='home'){
-    renderMapMarkers();
+    refreshLeafletMarkers();
     renderReassessList();
   }
 }
@@ -1281,13 +1266,13 @@ window.ProjectGuardian = {
   loadData(payload){
     if(!payload || !Array.isArray(payload.wrecks)) return;
     state.wrecks = payload.wrecks.map(w=>({...w, id:w.id || w.name || crypto.randomUUID()}));
-    renderApp(); renderMapMarkers();
+    renderApp(); refreshLeafletMarkers();
   },
   setFilters({ band, stage, search }={}){
     if(band) state.filters.band=band;
     if(stage) state.filters.stage=stage;
     if(typeof search==='string') state.filters.search=search;
-    renderApp(); renderMapMarkers();
+    renderApp(); refreshLeafletMarkers();
   },
   getState(){
     return {
