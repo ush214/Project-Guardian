@@ -10,14 +10,9 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { initializeApp } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
+import { FieldValue } from "firebase-admin/firestore";
 import { v4 as uuidv4 } from "uuid";
-
-initializeApp();
-const db = getFirestore();
-const storage = getStorage();
+import { db, storage } from "./admin.js";
 
 // ---------- Helpers: URL and image candidate discovery ----------
 
@@ -388,4 +383,4 @@ export const autoCacheReferenceMedia = onDocumentWritten(
 
 // Import and export new functions
 export { analyzeWerps } from "./analyzeWerps.js";
-export { reassessWerps } from "./reassessWerps.js";;
+export { reassessWerps } from "./reassessWerps.js";
