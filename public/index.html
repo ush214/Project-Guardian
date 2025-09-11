@@ -84,36 +84,14 @@ const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screensho
 const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
 /* ---------- Actionable Severity Thresholds ---------- */
-const ACTION_THRESHOLDS = {
-  critical: 60,
-  high: 45,
-  medium: 30
-};
+const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
 const ACTION_MATRIX = {
-  critical: {
-    label: "Critical",
-    color: { fill: "rgba(239,68,68,0.30)", stroke: "rgba(239,68,68,1)" },
-    action: "Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning."
-  },
-  high: {
-    label: "High",
-    color: { fill: "rgba(245,158,11,0.28)", stroke: "rgba(245,158,11,1)" },
-    action: "Active Monitoring: Non‑invasive ROV survey in 2–3 years."
-  },
-  medium: {
-    label: "Medium",
-    color: { fill: "rgba(250,204,21,0.22)", stroke: "rgba(250,204,21,1)" },
-    action: "Periodic Review: Reassess every 5 years or after major events."
-  },
-  low: {
-    label: "Low",
-    color: { fill: "rgba(16,185,129,0.28)", stroke: "rgba(16,185,129,1)" },
-    action: "Archive: No further action unless new information emerges."
-  }
+  critical: { label:"Critical", color:{ fill:"rgba(239,68,68,0.30)", stroke:"rgba(239,68,68,1)" }, action:"Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning." },
+  high: { label:"High", color:{ fill:"rgba(245,158,11,0.28)", stroke:"rgba(245,158,11,1)" }, action:"Active Monitoring: Non‑invasive ROV survey in 2–3 years." },
+  medium: { label:"Medium", color:{ fill:"rgba(250,204,21,0.22)", stroke:"rgba(250,204,21,1)" }, action:"Periodic Review: Reassess every 5 years or after major events." },
+  low: { label:"Low", color:{ fill:"rgba(16,185,129,0.28)", stroke:"rgba(16,185,129,1)" }, action:"Archive: No further action unless new information emerges." }
 };
-function computeSeverityTotal({ wcs, phs, esi, rpm }) {
-  return (wcs + phs + (esi / 3)) * rpm;
-}
+function computeSeverityTotal({ wcs, phs, esi, rpm }) { return (wcs + phs + (esi / 3)) * rpm; }
 function categorizeSeverity(score) {
   if (score > ACTION_THRESHOLDS.critical) return "critical";
   if (score >= ACTION_THRESHOLDS.high) return "high";
@@ -144,10 +122,9 @@ const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
 const storage = getStorage(fbApp);
 const functions = getFunctions(fbApp, "us-central1");
-
-let callable = { analyzeWerps: null, reassessWerps: null };
-try { callable.analyzeWerps = httpsCallable(functions, "analyzeWerps"); } catch {}
-try { callable.reassessWerps = httpsCallable(functions, "reassessWerps"); } catch {}
+let callable = { analyzeWerps:null, reassessWerps:null };
+try { callable.analyzeWerps = httpsCallable(functions,"analyzeWerps"); } catch {}
+try { callable.reassessWerps = httpsCallable(functions,"reassessWerps"); } catch {}
 
 /* ------------------------------ State ------------------------------ */
 const state = {
@@ -166,9 +143,7 @@ const state = {
 
 /* ------------------------------ Utilities ------------------------------ */
 const $ = sel => document.querySelector(sel);
-function escapeHtml(s){
-  return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c));
-}
+function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c)); }
 const getText = v => v==null ? "" : String(v).trim();
 const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
 function showToast(msg,type='info'){
@@ -181,17 +156,10 @@ function showToast(msg,type='info'){
   requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
   setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },2800);
 }
-
-const PLACEHOLDER_SVG = "data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
+const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
 
 /* ------------------------------ Severity & Stage ------------------------------ */
-function severityBandFromValue(val){
-  const v=Number(val);
-  if(!Number.isFinite(v)) return 'stable';
-  if(v>=50) return 'alert';
-  if(v>=25) return 'warning';
-  return 'stable';
-}
+function severityBandFromValue(val){ const v=Number(val); if(!Number.isFinite(v)) return 'stable'; if(v>=50) return 'alert'; if(v>=25) return 'warning'; return 'stable'; }
 function riskBand(item){
   const b=(item?.severity?.band||"").toLowerCase();
   if(b==='high') return 'alert';
@@ -218,9 +186,7 @@ function stageFromItem(it){
 }
 
 /* ------------------------------ Data helpers ------------------------------ */
-function vesselName(it){
-  return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown");
-}
+function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
 function vesselSummary(it){
   return getText(it?.historical?.circumstancesOfLoss) ||
          getText(it?.historical?.summary) ||
@@ -228,7 +194,7 @@ function vesselSummary(it){
          "No summary available.";
 }
 function resolveCoordinates(item){
-  const toNumL = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
+  const toNumL=v=>{ const n=Number(v); return Number.isFinite(n)?n:null; };
   function extract(obj){
     if(!obj)return null;
     if(Array.isArray(obj)&&obj.length>=2){
@@ -239,15 +205,13 @@ function resolveCoordinates(item){
       return null;
     }
     if(obj.coordinates){
-      const nested=extract(obj.coordinates);
-      if(nested)return nested;
+      const nested=extract(obj.coordinates); if(nested)return nested;
     }
     const lat=toNumL(obj.latitude ?? obj.lat ?? obj.y);
     const lng=toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
     if(lat!=null && lng!=null) return {lat,lng};
     if(obj.latlng){
-      const ll=extract(obj.latlng);
-      if(ll)return ll;
+      const ll=extract(obj.latlng); if(ll)return ll;
     }
     return null;
   }
@@ -262,17 +226,14 @@ function resolveCoordinates(item){
     item?.geometry?.coordinates,
     item?.geometry
   ];
-  for(const c of cands){
-    const got=extract(c);
-    if(got) return got;
-  }
+  for(const c of cands){ const got=extract(c); if(got) return got; }
   return null;
 }
 
 /* ------------------------------ Role / Auth ------------------------------ */
 async function fetchRoleFor(uid){
   try{
-    const allow = await getDoc(doc(db,"system","allowlist","users",uid));
+    const allow=await getDoc(doc(db,"system","allowlist","users",uid));
     if(allow.exists()){
       const d=allow.data()||{};
       let r=d.role ?? d.Role ?? d.ROLE;
@@ -288,7 +249,7 @@ async function fetchRoleFor(uid){
     }
   }catch{}
   try{
-    const legacy = await getDoc(doc(db,`artifacts/${appId}/private/users/${uid}`));
+    const legacy=await getDoc(doc(db,`artifacts/${appId}/private/users/${uid}`));
     if(legacy.exists()){
       const d=legacy.data()||{};
       let r=d.role ?? d.Role ?? d.ROLE;
@@ -306,10 +267,7 @@ async function fetchRoleFor(uid){
 }
 
 /* ------------------------------ Firestore Listeners ------------------------------ */
-function detachListeners(){
-  for(const u of state.listeners){ try{u();}catch{} }
-  state.listeners=[];
-}
+function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
 function normalizeDoc(d){
   const out={...d};
   if(d && typeof d.data==='object') Object.assign(out,d.data);
@@ -325,8 +283,7 @@ async function startData(){
     snap.forEach(docSnap=>{
       const raw=docSnap.data()||{};
       const d={...normalizeDoc(raw), id: raw.id || docSnap.id, _path: basePath};
-      const t=String(d?.type||"").toUpperCase();
-      if(t.includes("SEISMIC_EVENT")) return;
+      if(String(d?.type||"").toUpperCase().includes("SEISMIC_EVENT")) return;
       d.severity = d.severity && typeof d.severity==='object'? d.severity : {};
       if(d.severity.value==null) d.severity.value = raw?.severity?.value ?? raw?.severityValue;
       if(!d.severity.band) d.severity.band = severityBandFromValue(d.severity.value);
@@ -339,7 +296,7 @@ async function startData(){
   };
   for(const p of READ_COLLECTIONS){
     try{
-      const un = onSnapshot(collection(db,p),(snap)=>applySnap(snap,p),(err)=>console.error("Snapshot error",p,err));
+      const un=onSnapshot(collection(db,p),(snap)=>applySnap(snap,p),(err)=>console.error("Snapshot error",p,err));
       state.listeners.push(un);
     }catch(e){ console.error("Listener error",p,e); }
   }
@@ -347,12 +304,11 @@ async function startData(){
 
 /* ------------------------------ Image Aggregation (Uploads only) ------------------------------ */
 function collectUploadedImages(it){
-  // Only include phase2.assets with source 'upload'
-  const results = [];
+  const results=[];
   if(Array.isArray(it?.phase2?.assets)){
     for(const a of it.phase2.assets){
       if(!a?.url) continue;
-      if(a.source !== 'upload') continue;
+      if(a.source!=='upload') continue;
       if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
       results.push({url:a.url, source:'Upload'});
     }
@@ -360,20 +316,20 @@ function collectUploadedImages(it){
   return results;
 }
 function firstUploadThumb(it){
-  const imgs = collectUploadedImages(it);
+  const imgs=collectUploadedImages(it);
   return imgs[0]?.url || PLACEHOLDER_SVG;
 }
 
 /* ------------------------------ Leaflet Map ------------------------------ */
 function initLeaflet(){
-  if(state.leafletMap || typeof L === 'undefined') return;
+  if(state.leafletMap || typeof L==='undefined') return;
   state.leafletMap = L.map('leaflet-map',{ zoomControl:true }).setView([10,150],3);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
     attribution:"&copy; OpenStreetMap contributors"
   }).addTo(state.leafletMap);
 }
 function markerIconFor(band){
-  const color = band==='alert'?'red':band==='warning'?'orange':'green';
+  const color=band==='alert'?'red':band==='warning'?'orange':'green';
   return L.icon({
     iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
     shadowUrl:"https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
@@ -382,17 +338,12 @@ function markerIconFor(band){
 }
 function refreshLeafletMarkers(){
   if(!state.leafletMap) return;
-  // Clear old
-  for(const m of state.leafletMarkers.values()){
-    try{ state.leafletMap.removeLayer(m);}catch{}
-  }
+  for(const m of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(m);}catch{} }
   state.leafletMarkers.clear();
-
-  const riskFilter = state.filters.band;
-  const stageFilter= state.filters.stage;
-  const term = state.filters.search.toLowerCase();
-
-  const filtered = state.wrecks.filter(it=>{
+  const riskFilter=state.filters.band;
+  const stageFilter=state.filters.stage;
+  const term=state.filters.search.toLowerCase();
+  const filtered=state.wrecks.filter(it=>{
     const rb=riskBand(it);
     if(riskFilter!=='all' && rb!==riskFilter) return false;
     const st=stageFromItem(it);
@@ -400,14 +351,13 @@ function refreshLeafletMarkers(){
     if(term && !vesselName(it).toLowerCase().includes(term)) return false;
     return resolveCoordinates(it)!=null;
   });
-
   filtered.forEach(it=>{
-    const coord = resolveCoordinates(it);
+    const coord=resolveCoordinates(it);
     if(!coord) return;
     const band=riskBand(it);
-    const marker = L.marker([coord.lat, coord.lng], { icon: markerIconFor(band) });
-    const thumb = firstUploadThumb(it);
-    const popupHtml = `
+    const marker=L.marker([coord.lat,coord.lng],{ icon:markerIconFor(band) });
+    const thumb=firstUploadThumb(it);
+    const popupHtml=`
       <div style="min-width:200px">
         <div style="font-weight:600;font-size:14px">${escapeHtml(vesselName(it))}</div>
         <div style="font-size:11px;color:#64748b;margin-bottom:4px">Stage: ${stageFromItem(it)}</div>
@@ -417,16 +367,16 @@ function refreshLeafletMarkers(){
         </div>
         <a href="#/wreck/${encodeURIComponent(it.id)}"
            style="display:inline-block;font-size:12px;color:#0ea5e9;text-decoration:underline;">View Assessment</a>
-      </div>
-    `;
+      </div>`;
     marker.bindPopup(popupHtml);
     marker.addTo(state.leafletMap);
     state.leafletMarkers.set(it.id, marker);
   });
 }
+function initLeafletMapIfNeeded(){ if(!state.leafletMap){ initLeaflet(); } }
 
 /* ------------------------------ Debounce ------------------------------ */
-function debounce(fn, ms=250){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+function debounce(fn,ms=250){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
 
 /* ------------------------------ Auth Panel ------------------------------ */
 function buildAuthPanel(){
@@ -542,25 +492,6 @@ function renderReassessList(){
   });
 }
 
-/* ------------------------------ Image Aggregation (Uploads only gallery) ------------------------------ */
-function firstUploadThumb(it){
-  return collectUploadedImages(it)[0]?.url || PLACEHOLDER_SVG;
-}
-
-/* ------------------------------ Leaflet marker updates after functions defined ------------------------------ */
-function initLeafletMapIfNeeded(){
-  if(!state.leafletMap){
-    initLeaflet();
-  }
-}
-function initLeaflet(){
-  if(state.leafletMap || typeof L === 'undefined') return;
-  state.leafletMap = L.map('leaflet-map',{ zoomControl:true }).setView([10,150],3);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
-    attribution:"&copy; OpenStreetMap contributors"
-  }).addTo(state.leafletMap);
-}
-
 /* ------------------------------ Auth UI ------------------------------ */
 function updateAuthUI(){
   const signedIn=!!state.user;
@@ -579,7 +510,8 @@ function updateAuthUI(){
   });
   const notes=$('#phase2-notes');
   if(notes){
-    if(!isContributor) notes.setAttribute('disabled','true'); else notes.removeAttribute('disabled');
+    if(!isContributor) notes.setAttribute('disabled','true');
+    else notes.removeAttribute('disabled');
   }
 }
 
@@ -589,39 +521,29 @@ function renderHome(){
   app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
 
   $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
-
   $('#btn-signin')?.addEventListener('click', async ()=>{
-    const email=$('#login-email').value.trim();
-    const pass=$('#login-pass').value;
+    const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
     $('#auth-msg').textContent='Signing in...';
-    try{
-      await signInWithEmailAndPassword(auth,email,pass);
-      $('#auth-msg').textContent='Signed in.';
-    }catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+    try{ await signInWithEmailAndPassword(auth,email,pass); $('#auth-msg').textContent='Signed in.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
   });
   $('#btn-create')?.addEventListener('click', async ()=>{
-    const email=$('#login-email').value.trim();
-    const pass=$('#login-pass').value;
+    const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
     $('#auth-msg').textContent='Creating...';
-    try{
-      await createUserWithEmailAndPassword(auth,email,pass);
-      $('#auth-msg').textContent='Account created.';
-    }catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+    try{ await createUserWithEmailAndPassword(auth,email,pass); $('#auth-msg').textContent='Account created.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
   });
   $('#btn-reset')?.addEventListener('click', async ()=>{
     const email=$('#login-email').value.trim();
-    if(!email){ $('#auth-msg').textContent='Enter email first.'; return;}
-    try{
-      await sendPasswordResetEmail(auth,email);
-      $('#auth-msg').textContent='Reset email sent.';
-    }catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+    if(!email){ $('#auth-msg').textContent='Enter email first.'; return; }
+    try{ await sendPasswordResetEmail(auth,email); $('#auth-msg').textContent='Reset email sent.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
   });
   $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOut(auth);}catch{} });
 
   $('#analyze-form')?.addEventListener('submit', async e=>{
     e.preventDefault();
-    const isContrib=['admin','contributor'].includes(state.role);
-    if(!isContrib){ showToast("Insufficient role","error"); return; }
+    if(!['admin','contributor'].includes(state.role)){ showToast("Insufficient role","error"); return; }
     const name=getText($('#analysis-input').value);
     if(!name){ showToast("Enter vessel name","error"); return; }
     $('#analyze-status').textContent='Requesting analysis...';
@@ -637,8 +559,7 @@ function renderHome(){
     }
   });
   $('#btn-reassess')?.addEventListener('click', async ()=>{
-    const isContrib=['admin','contributor'].includes(state.role);
-    if(!isContrib){ showToast("Insufficient role","error"); return; }
+    if(!['admin','contributor'].includes(state.role)){ showToast("Insufficient role","error"); return; }
     const name=getText($('#analysis-input').value);
     if(!name){ showToast("Enter vessel name","error"); return; }
     $('#analyze-status').textContent='Requesting reassessment...';
@@ -655,29 +576,23 @@ function renderHome(){
   });
 
   document.querySelectorAll('[data-filter-risk]').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      state.filters.band = btn.getAttribute('data-filter-risk');
-      refreshLeafletMarkers();
-    });
+    btn.addEventListener('click',()=>{ state.filters.band = btn.getAttribute('data-filter-risk'); refreshLeafletMarkers(); });
   });
   document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      state.filters.stage = btn.getAttribute('data-filter-stage');
-      refreshLeafletMarkers();
-    });
+    btn.addEventListener('click',()=>{ state.filters.stage = btn.getAttribute('data-filter-stage'); refreshLeafletMarkers(); });
   });
   $('#map-search')?.addEventListener('input', debounce(e=>{
     state.filters.search = e.target.value || '';
     refreshLeafletMarkers();
   },250));
 
-  initLeafletMapIfNeeded();
+  initLeaflet();
   refreshLeafletMarkers();
   renderReassessList();
   updateAuthUI();
 }
 
-/* ------------------------------ RPM + Report ------------------------------ */
+/* ------------------------------ RPM + Report Helpers ------------------------------ */
 function readRPMFactors(it){
   const rpm=it?.rpm;
   if(!rpm) return [];
@@ -711,107 +626,64 @@ function rpmFinalMultiplier(it){
   return Number.isFinite(m)?m:1;
 }
 
-/* ------------------------------ Radar (Updated Threshold Model) ------------------------------ */
+/* ------------------------------ Radar (Threshold Model) ------------------------------ */
 function drawRadar(vWCS, vPHS, vESI, vRPM){
-  const ctx=document.getElementById('werp-radar');
-  if(!ctx) return;
+  const ctx=document.getElementById('werp-radar'); if(!ctx) return;
   if(state.chart){ try{ state.chart.destroy(); }catch{} }
-
   const max=20;
-  const dataPoints = [
-    Math.max(0, Math.min(20, Number(vWCS || 0))),
-    Math.max(0, Math.min(20, (Number(vPHS || 0) / 10) * 20)),
-    Math.max(0, Math.min(20, (Number(vESI || 0) / 40) * 20)),
-    Math.max(0, Math.min(20, ((Math.min(Math.max(Number(vRPM || 1), 0.5), 2.5) - 0.5) / 2.0) * 20))
+  const dataPoints=[
+    Math.max(0,Math.min(20,Number(vWCS||0))),
+    Math.max(0,Math.min(20,(Number(vPHS||0)/10)*20)),
+    Math.max(0,Math.min(20,(Number(vESI||0)/40)*20)),
+    Math.max(0,Math.min(20,((Math.min(Math.max(Number(vRPM||1),0.5),2.5)-0.5)/2.0)*20))
   ];
-  const severityScore = computeSeverityTotal({
-    wcs: Number(vWCS || 0),
-    phs: Number(vPHS || 0),
-    esi: Number(vESI || 0),
-    rpm: Number(vRPM || 1)
-  });
-  const categoryKey = categorizeSeverity(severityScore);
-  const cat = ACTION_MATRIX[categoryKey];
-
-  const centerTextPlugin = {
-    id: 'centerText',
+  const severityScore=computeSeverityTotal({ wcs:Number(vWCS||0), phs:Number(vPHS||0), esi:Number(vESI||0), rpm:Number(vRPM||1) });
+  const categoryKey=categorizeSeverity(severityScore);
+  const cat=ACTION_MATRIX[categoryKey];
+  const centerTextPlugin={
+    id:'centerText',
     afterDraw(chart){
-      const { ctx, chartArea: { width, height, left, top } } = chart;
+      const { ctx, chartArea:{ width,height,left,top } }=chart;
       ctx.save();
-      ctx.font = '600 15px Inter, Arial, sans-serif';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.textAlign='center';
-      ctx.textBaseline='middle';
-      ctx.fillText(cat.label, left+width/2, top+height/2 - 8);
-      ctx.font = '500 11px Inter, Arial';
+      ctx.font='600 15px Inter, Arial, sans-serif';
+      ctx.fillStyle='#e2e8f0';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(cat.label,left+width/2, top+height/2-8);
+      ctx.font='500 11px Inter, Arial';
       ctx.fillStyle='#94a3b8';
-      ctx.fillText(severityScore.toFixed(1), left+width/2, top+height/2 + 12);
+      ctx.fillText(severityScore.toFixed(1), left+width/2, top+height/2+12);
       ctx.restore();
     }
   };
-
-  state.chart = new Chart(ctx,{
+  state.chart=new Chart(ctx,{
     type:'radar',
-    data:{
-      labels:['WCS','PHS','ESI','RPM'],
-      datasets:[
-        {
-          label:'Risk Profile',
-          data:dataPoints,
-          backgroundColor:cat.color.fill,
-          borderColor:cat.color.stroke,
-          borderWidth:2,
-          pointBackgroundColor:cat.color.stroke,
-          pointBorderColor:cat.color.stroke,
-          pointRadius:3
-        }
-      ]
-    },
+    data:{ labels:['WCS','PHS','ESI','RPM'], datasets:[{ label:'Risk Profile', data:dataPoints, backgroundColor:cat.color.fill, borderColor:cat.color.stroke, borderWidth:2, pointBackgroundColor:cat.color.stroke, pointBorderColor:cat.color.stroke, pointRadius:3 }]},
     options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      scales:{ r:{
-        beginAtZero:true, min:0, max,
-        ticks:{ stepSize:4, showLabelBackdrop:false, color:'#64748b' },
-        grid:{ color:'rgba(148,163,184,0.25)' },
-        angleLines:{ color:'rgba(148,163,184,0.25)' },
-        pointLabels:{ color:'#e2e8f0', font:{ size:11 } }
-      }},
-      plugins:{
-        legend:{ display:false },
-        tooltip:{ callbacks:{ label:ctx => `${ctx.label}: ${ctx.formattedValue}` } }
-      }
+      responsive:true, maintainAspectRatio:false,
+      scales:{ r:{ beginAtZero:true, min:0, max, ticks:{ stepSize:4, showLabelBackdrop:false, color:'#64748b' }, grid:{ color:'rgba(148,163,184,0.25)' }, angleLines:{ color:'rgba(148,163,184,0.25)' }, pointLabels:{ color:'#e2e8f0', font:{ size:11 } } } },
+      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:ctx=>`${ctx.label}: ${ctx.formattedValue}` } } }
     },
     plugins:[centerTextPlugin]
   });
-
-  let panel = document.getElementById('action-threshold-panel');
+  let panel=document.getElementById('action-threshold-panel');
   if(!panel){
     panel=document.createElement('div');
     panel.id='action-threshold-panel';
     panel.className='mt-4 rounded-lg border border-white/10 bg-slate-800/60 p-4 text-sm';
     ctx.canvas.parentElement.appendChild(panel);
   }
-  panel.innerHTML = `
+  panel.innerHTML=`
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
       <div>
-        <div class="text-slate-300">
-          <span class="font-medium text-slate-200">Severity Score:</span>
-          <span class="font-semibold">${severityScore.toFixed(2)}</span>
-        </div>
+        <div class="text-slate-300"><span class="font-medium text-slate-200">Severity Score:</span> <span class="font-semibold">${severityScore.toFixed(2)}</span></div>
         <div class="mt-1">
-          <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold"
-                style="background:${cat.color.fill};color:${cat.color.stroke}">
-            ${cat.label.toUpperCase()}
-          </span>
+          <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold" style="background:${cat.color.fill};color:${cat.color.stroke}">${cat.label.toUpperCase()}</span>
         </div>
       </div>
       <div class="md:text-right text-slate-400 leading-snug">
-        <span class="text-slate-300 font-medium">Required Action:</span><br>
-        ${escapeHtml(cat.action)}
+        <span class="text-slate-300 font-medium">Required Action:</span><br>${escapeHtml(cat.action)}
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 /* ------------------------------ Phase 2 Save & Upload + Entries ------------------------------ */
@@ -841,8 +713,7 @@ async function savePhase2Entry(){
   }
 }
 function appendPhase2EntryLocal(entry){
-  const list = $('#phase2-entries');
-  if(!list) return;
+  const list=$('#phase2-entries'); if(!list) return;
   const li=document.createElement('div');
   li.className='note-block rounded-lg p-3 text-sm space-y-1';
   const ts=new Date(entry.createdAtMs).toLocaleString();
@@ -851,42 +722,66 @@ function appendPhase2EntryLocal(entry){
       <span class="text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(entry.user||'user')}</span>
       <span class="text-xs text-slate-400">${ts}</span>
     </div>
-    <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(entry.text)}</div>
-  `;
+    <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(entry.text)}</div>`;
   list.prepend(li);
+}
+function sanitizeFileName(name=""){ return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`; }
+async function handleUploadSelection(e){
+  const files=Array.from(e.target.files||[]);
+  if(!files.length || !state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id);
+  if(!path){ showToast("Path not found","error"); return; }
+  $('#phase2-status').textContent=`Uploading ${files.length} file(s)...`;
+  const basePath=`artifacts/${appId}/public/uploads/${state.currentWreck.id}/user`;
+  let ok=0, fail=0;
+  for(const f of files){
+    try{
+      if(!/^image\//i.test(f.type)){ fail++; continue; }
+      const safe=sanitizeFileName(f.name);
+      const fileKey=`${Date.now()}_${safe}`;
+      const ref=storageRef(storage,`${basePath}/${fileKey}`);
+      await uploadBytes(ref,f,{ contentType:f.type });
+      const url=await getDownloadURL(ref);
+      const asset={ name:f.name, path:`${basePath}/${fileKey}`, url, contentType:f.type, bytes:f.size, source:'upload', uploadedAtMs:Date.now() };
+      await updateDoc(doc(db,path,state.currentWreck.id),{
+        "phase2.assets": arrayUnion(asset),
+        "phase2.assetsUpdatedAt": serverTimestamp()
+      });
+      ok++;
+    }catch(ex){ console.error("Upload failed",ex); fail++; }
+  }
+  $('#phase2-status').textContent = ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
+  showToast($('#phase2-status').textContent, ok?'success':'error');
+  setTimeout(()=>$('#phase2-status').textContent='',3000);
 }
 
 /* ------------------------------ Exports ------------------------------ */
 function wireExports(it){
-  $('#btn-export-pdf')?.addEventListener('click', ()=>exportPdf(it));
-  $('#btn-export-html')?.addEventListener('click', ()=>exportHtml(it));
-  $('#btn-export-md')?.addEventListener('click', ()=>exportMarkdown(it));
-  $('#btn-export-json')?.addEventListener('click', ()=>exportJson(it));
+  $('#btn-export-pdf')?.addEventListener('click',()=>exportPdf(it));
+  $('#btn-export-html')?.addEventListener('click',()=>exportHtml(it));
+  $('#btn-export-md')?.addEventListener('click',()=>exportMarkdown(it));
+  $('#btn-export-json')?.addEventListener('click',()=>exportJson(it));
 }
 function exportHtml(it){
   const node=$('#report-export-root'); if(!node) return;
   const vessel=vesselName(it);
   const actionPanel=document.getElementById('action-threshold-panel');
-  const clone = node.cloneNode(true);
-  if(actionPanel && !clone.querySelector('#action-threshold-panel')){
-    clone.appendChild(actionPanel.cloneNode(true));
-  }
-  const entries = $('#phase2-entries');
-  if(entries && !clone.querySelector('#phase2-entries')) {
-    clone.appendChild(entries.cloneNode(true));
-  }
+  const clone=node.cloneNode(true);
+  if(actionPanel && !clone.querySelector('#action-threshold-panel')) clone.appendChild(actionPanel.cloneNode(true));
+  const entries=$('#phase2-entries');
+  if(entries && !clone.querySelector('#phase2-entries')) clone.appendChild(entries.cloneNode(true));
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${clone.outerHTML}</body></html>`;
   downloadBlob(`${vessel.replace(/\s+/g,'_')}.html`, new Blob([html],{type:'text/html;charset=utf-8'}));
 }
 function exportMarkdown(it){
   const vessel=vesselName(it);
-  const sev = computeSeverityTotal({
-    wcs: Number(it?.totals?.wcs || 0),
-    phs: Number(it?.totals?.phs || 0),
-    esi: Number(it?.totals?.esi || 0),
-    rpm: rpmFinalMultiplier(it)
+  const sev=computeSeverityTotal({
+    wcs:Number(it?.totals?.wcs||0),
+    phs:Number(it?.totals?.phs||0),
+    esi:Number(it?.totals?.esi||0),
+    rpm:rpmFinalMultiplier(it)
   });
-  const cat = ACTION_MATRIX[categorizeSeverity(sev)];
+  const cat=ACTION_MATRIX[categorizeSeverity(sev)];
   const lines=[
     `# ${vessel}`,
     ``,
@@ -909,13 +804,9 @@ function exportPdf(it){
   const node=$('#report-export-root'); if(!node) return;
   const vessel=vesselName(it);
   const actionPanel=document.getElementById('action-threshold-panel');
-  if(actionPanel && !node.querySelector('#action-threshold-panel')){
-    node.appendChild(actionPanel.cloneNode(true));
-  }
-  const entries = $('#phase2-entries');
-  if(entries && !node.querySelector('#phase2-entries')) {
-    node.appendChild(entries.cloneNode(true));
-  }
+  if(actionPanel && !node.querySelector('#action-threshold-panel')) node.appendChild(actionPanel.cloneNode(true));
+  const entries=$('#phase2-entries');
+  if(entries && !node.querySelector('#phase2-entries')) node.appendChild(entries.cloneNode(true));
   const opt={
     margin:0.4,
     filename:`${vessel.replace(/\s+/g,'_')}_Report.pdf`,
@@ -969,12 +860,10 @@ function renderList(){
                 </div>
                 <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
               </div>
-            </a>
-          `;
+            </a>`;
         }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
       </div>
-    </div>
-  `;
+    </div>`;
   $('#list-search')?.addEventListener('input', e=>{
     state.filters.search = e.target.value || '';
     renderList();
@@ -991,29 +880,25 @@ function renderReport(route){
     app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
     return;
   }
-  const images = collectUploadedImages(it); // Only uploaded images now
+  const images=collectUploadedImages(it);
   const wcsParams = Array.isArray(it?.wcs?.parameters)?it.wcs.parameters:[];
   const phsParams = Array.isArray(it?.phs?.parameters)?it.phs.parameters:[];
   const esiParams = Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
   const rpmFactors=readRPMFactors(it);
-
   const vWCS = toNum(it?.totals?.wcs) ?? wcsParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
   const vPHS = toNum(it?.totals?.phs) ?? (phsParams.length? Math.min(10, phsParams.reduce((s,p)=>s+(toNum(p.score)||0),0)/phsParams.length):0);
   const vESI = toNum(it?.totals?.esi) ?? esiParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
   const vRPM = rpmFinalMultiplier(it);
-
-  function tableRows(list, withWeight=false){
+  function tableRows(list,withWeight=false){
     if(!list.length) return `<tr><td class="py-2 text-slate-500" colspan="${withWeight?4:3}">No data.</td></tr>`;
     return list.map(p=>{
       const w=p.weightPercent ?? p.weightPct ?? p.percentage ?? p.percent ?? p.weight;
-      return `
-        <tr class="border-t border-white/5">
-          <td class="py-2 pr-3">${escapeHtml(p.name||p.parameter||'')}</td>
-          <td class="py-2 pr-3 text-slate-300">${escapeHtml(p.rationale||'')}</td>
-          ${withWeight? `<td class="py-2 pr-3 text-right">${w!=null?Number(w).toFixed(0)+'%':''}</td>`:''}
-          <td class="py-2 pr-3 text-right tabular-nums">${toNum(p.score)?.toFixed(2) ?? ''}</td>
-        </tr>
-      `;
+      return `<tr class="border-t border-white/5">
+        <td class="py-2 pr-3">${escapeHtml(p.name||p.parameter||'')}</td>
+        <td class="py-2 pr-3 text-slate-300">${escapeHtml(p.rationale||'')}</td>
+        ${withWeight? `<td class="py-2 pr-3 text-right">${w!=null?Number(w).toFixed(0)+'%':''}</td>`:''}
+        <td class="py-2 pr-3 text-right tabular-nums">${toNum(p.score)?.toFixed(2) ?? ''}</td>
+      </tr>`;
     }).join("");
   }
   function rpmRows(){
@@ -1025,34 +910,28 @@ function renderReport(route){
         <td class="py-2 pr-3 text-right tabular-nums">${escapeHtml(String(f.value??f.multiplier??''))}</td>
       </tr>`).join("");
   }
-
-  const coords = resolveCoordinates(it);
-  const coordLine = coords? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : '';
-
+  const coords=resolveCoordinates(it);
+  const coordLine=coords? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : '';
   const galleryHtml = images.length
     ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-3">
         ${images.slice(0,18).map(img=>`
           <div class="relative rounded-lg overflow-hidden border border-white/10 bg-slate-800 group">
             <img src="${img.url}" loading="lazy" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-40 object-cover group-hover:opacity-90" alt="upload">
             <span class="img-badge">${img.source}</span>
-          </div>
-        `).join("")}
+          </div>`).join("")}
       </div>`
     : `<div class="text-xs text-slate-500">No uploaded images yet.</div>`;
-
-  app.innerHTML = `
+  app.innerHTML=`
     <div class="flex flex-wrap items-center gap-3 mb-6">
       <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
       <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
       <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
     </div>
-
     <div class="flex items-center justify-between mb-4 bg-slate-900/70 border border-white/10 rounded-lg px-4 py-2">
       <img src="${LOGO_LEFT}" alt="Logo Left" class="h-10 w-auto rounded border border-white/10">
       <h2 class="text-base md:text-lg font-semibold tracking-wide text-cyan-200 text-center flex-1">WERP Risk Report</h2>
       <img src="${LOGO_RIGHT}" alt="Logo Right" class="h-10 w-auto rounded border border-white/10">
     </div>
-
     <section class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
       <div class="p-5 border-b border-white/10 flex flex-col md:flex-row md:items-end gap-4 justify-between">
         <div>
@@ -1067,7 +946,6 @@ function renderReport(route){
           <button id="btn-export-json" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">JSON</button>
         </div>
       </div>
-
       <div class="p-5 grid grid-cols-1 lg:grid-cols-3 gap-6" id="report-export-root">
         <div class="space-y-6 lg:col-span-1">
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
@@ -1082,7 +960,6 @@ function renderReport(route){
             </ul>
             <div class="mt-4">${galleryHtml}</div>
           </div>
-
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
             <h3 class="font-medium mb-3">Phase 2: In-situ Report</h3>
             <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Enter new in-situ observation..."></textarea>
@@ -1094,7 +971,6 @@ function renderReport(route){
             </div>
           </div>
         </div>
-
         <div class="space-y-6 lg:col-span-2">
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4 radar-wrapper">
             <h3 class="font-medium mb-3">Risk Radar</h3>
@@ -1103,7 +979,6 @@ function renderReport(route){
               WCS: ${Number(vWCS||0).toFixed(2)} • PHS: ${Number(vPHS||0).toFixed(2)} • ESI: ${Number(vESI||0).toFixed(2)} • RPM: ${Number(vRPM||1).toFixed(2)}×
             </p>
           </div>
-
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
               <h4 class="font-medium mb-3">WCS</h4>
@@ -1115,7 +990,6 @@ function renderReport(route){
               </div>
               <p class="text-sm text-slate-300 mt-2">Total: <span class="font-semibold">${Number(vWCS||0).toFixed(2)}</span></p>
             </div>
-
             <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
               <h4 class="font-medium mb-3">RPM</h4>
               <div class="overflow-x-auto">
@@ -1127,7 +1001,6 @@ function renderReport(route){
               <p class="text-sm text-slate-300 mt-2">Final Multiplier: <span class="font-semibold">${Number(vRPM||1).toFixed(2)}×</span></p>
             </div>
           </div>
-
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
             <h4 class="font-medium mb-3">PHS (Pollution Hazard)</h4>
             <div class="overflow-x-auto">
@@ -1137,7 +1010,6 @@ function renderReport(route){
               </table>
             </div>
           </div>
-
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
             <h4 class="font-medium mb-3">ESI (Environmental Sensitivity)</h4>
             <div class="overflow-x-auto">
@@ -1147,7 +1019,6 @@ function renderReport(route){
               </table>
             </div>
           </div>
-
           <div id="phase2-entries-wrapper" class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
             <h4 class="font-medium mb-3">In-situ Note Log</h4>
             <div id="phase2-entries" class="space-y-3 text-sm">
@@ -1167,57 +1038,36 @@ function renderReport(route){
           </div>
         </div>
       </div>
-    </section>
-  `;
-
+    </section>`;
   drawRadar(vWCS,vPHS,vESI,vRPM);
   wireExports(it);
   const isContributor=['admin','contributor'].includes(state.role);
   if(isContributor){
     $('#btn-save-phase2')?.addEventListener('click', savePhase2Entry);
-    $('#btn-select-files')?.addEventListener('click', ()=>{ $('#phase2-files').value=""; $('#phase2-files').click(); });
+    $('#btn-select-files')?.addEventListener('click',()=>{ $('#phase2-files').value=""; $('#phase2-files').click(); });
     $('#phase2-files')?.addEventListener('change', handleUploadSelection);
   } else {
-    ['phase2-notes','btn-save-phase2','btn-select-files'].forEach(id=>{
-      const el=$('#'+id);
-      if(el) el.setAttribute('disabled','true');
-    });
+    ['phase2-notes','btn-save-phase2','btn-select-files'].forEach(id=>$('#'+id)?.setAttribute('disabled','true'));
   }
   updateAuthUI();
 }
 
 /* ------------------------------ Router ------------------------------ */
-const routes = {
-  home: /^#\/?$/,
-  report: /^#\/wreck\/([^/]+)$/,
-  list: /^#\/list\/?$/
-};
+const routes={ home:/^#\/?$/, report:/^#\/wreck\/([^/]+)$/, list:/^#\/list\/?$/ };
 function parseRoute(){
-  const h=location.hash || '#/';
+  const h=location.hash||'#/';
   if(routes.home.test(h)) return { name:'home' };
-  const mReport = h.match(routes.report);
-  if(mReport) return { name:'report', id: decodeURIComponent(mReport[1]) };
+  const m=h.match(routes.report); if(m) return { name:'report', id:decodeURIComponent(m[1]) };
   if(routes.list.test(h)) return { name:'list' };
   return { name:'home' };
 }
-window.addEventListener('hashchange', ()=>renderApp());
-
+window.addEventListener('hashchange',()=>renderApp());
 function setActiveNav(route){
-  const map = { home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
-  document.querySelectorAll('nav a').forEach(a=>{
-    a.classList.remove('ring-2','ring-cyan-500');
-    a.removeAttribute('aria-current');
-  });
-  const sel=map[route.name];
-  if(sel){
-    const el=document.querySelector(sel);
-    if(el){
-      el.classList.add('ring-2','ring-cyan-500');
-      el.setAttribute('aria-current','page');
-    }
-  }
+  const map={ home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
+  document.querySelectorAll('nav a').forEach(a=>{ a.classList.remove('ring-2','ring-cyan-500'); a.removeAttribute('aria-current'); });
+  const sel=map[route.name]; if(sel){ const el=document.querySelector(sel); if(el){ el.classList.add('ring-2','ring-cyan-500'); el.setAttribute('aria-current','page'); } }
   if(route.name==='report' && state.currentWreck){
-    const cr = document.querySelector('#nav-current-report');
+    const cr=document.querySelector('#nav-current-report');
     cr?.classList.remove('hidden');
     cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
   }
@@ -1228,16 +1078,12 @@ function renderApp(){
   const route=parseRoute();
   state.currentRoute=route;
   setActiveNav(route);
+  if(route.name==='home') renderHome();
+  else if(route.name==='report') renderReport(route);
+  else if(route.name==='list') renderList();
+  else renderHome();
   if(route.name==='home'){
-    renderHome();
-  } else if(route.name==='report'){
-    renderReport(route);
-  } else if(route.name==='list'){
-    renderList();
-  } else {
-    renderHome();
-  }
-  if(route.name==='home'){
+    initLeaflet();
     refreshLeafletMarkers();
     renderReassessList();
   }
@@ -1252,7 +1098,7 @@ onAuthStateChanged(auth, async (user)=>{
     renderApp();
     return;
   }
-  state.role = await fetchRoleFor(user.uid);
+  state.role=await fetchRoleFor(user.uid);
   updateAuthUI();
   renderApp();
   startData();
@@ -1262,10 +1108,10 @@ onAuthStateChanged(auth, async (user)=>{
 renderApp();
 
 /* ------------------------------ Public API ------------------------------ */
-window.ProjectGuardian = {
+window.ProjectGuardian={
   loadData(payload){
     if(!payload || !Array.isArray(payload.wrecks)) return;
-    state.wrecks = payload.wrecks.map(w=>({...w, id:w.id || w.name || crypto.randomUUID()}));
+    state.wrecks=payload.wrecks.map(w=>({...w, id:w.id || w.name || crypto.randomUUID()}));
     renderApp(); refreshLeafletMarkers();
   },
   setFilters({ band, stage, search }={}){
@@ -1277,14 +1123,12 @@ window.ProjectGuardian = {
   getState(){
     return {
       wrecks: state.wrecks.slice(),
-      filters: {...state.filters},
+      filters:{...state.filters},
       role: state.role,
       user: state.user?.email || null
     };
   },
-  debugState(){
-    console.log("State", state);
-  }
+  debugState(){ console.log("State", state); }
 };
 </script>
 </body>
