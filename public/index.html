@@ -80,6 +80,44 @@ const WORLD_MAP_SRC = "https://upload.wikimedia.org/wikipedia/commons/8/80/World
 const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
 const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
+/* ---------- Actionable Severity Thresholds & Model ---------- */
+const ACTION_THRESHOLDS = {
+  critical: 60,
+  high: 45,
+  medium: 30
+};
+const ACTION_MATRIX = {
+  critical: {
+    label: "Critical",
+    color: { fill: "rgba(239,68,68,0.30)", stroke: "rgba(239,68,68,1)" },
+    action: "Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning."
+  },
+  high: {
+    label: "High",
+    color: { fill: "rgba(245,158,11,0.28)", stroke: "rgba(245,158,11,1)" },
+    action: "Active Monitoring: Non‑invasive ROV survey in 2–3 years."
+  },
+  medium: {
+    label: "Medium",
+    color: { fill: "rgba(250,204,21,0.22)", stroke: "rgba(250,204,21,1)" },
+    action: "Periodic Review: Reassess every 5 years or after major events."
+  },
+  low: {
+    label: "Low",
+    color: { fill: "rgba(16,185,129,0.28)", stroke: "rgba(16,185,129,1)" },
+    action: "Archive: No further action unless new information emerges."
+  }
+};
+function computeSeverityTotal({ wcs, phs, esi, rpm }) {
+  return (wcs + phs + (esi / 3)) * rpm;
+}
+function categorizeSeverity(score) {
+  if (score > ACTION_THRESHOLDS.critical) return "critical";
+  if (score >= ACTION_THRESHOLDS.high) return "high";
+  if (score >= ACTION_THRESHOLDS.medium) return "medium";
+  return "low";
+}
+
 /* ------------------------------ Imports ------------------------------ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
@@ -124,7 +162,7 @@ const state = {
 /* ------------------------------ Utilities ------------------------------ */
 const $ = sel => document.querySelector(sel);
 function escapeHtml(s){
-  return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c] || c));
+  return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c));
 }
 const getText = v => v==null ? "" : String(v).trim();
 const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
@@ -301,7 +339,7 @@ async function startData(){
   }
 }
 
-/* ------------------------------ Map (Static Image + Markers) ------------------------------ */
+/* ------------------------------ Static Map ------------------------------ */
 function lonLatToXY(lon, lat, w, h){
   const x = (lon + 180) / 360 * w;
   const y = (90 - lat) / 180 * h;
@@ -670,6 +708,291 @@ function rpmFinalMultiplier(it){
   return Number.isFinite(m)?m:1;
 }
 
+/* ------------------------------ Radar Chart (Actionable Threshold Model) ------------------------------ */
+function drawRadar(vWCS, vPHS, vESI, vRPM){
+  const ctx=document.getElementById('werp-radar');
+  if(!ctx) return;
+  if(state.chart){ try{ state.chart.destroy(); }catch{} }
+
+  const max=20;
+  const dataPoints = [
+    Math.max(0, Math.min(20, Number(vWCS || 0))),                        // WCS 0–20
+    Math.max(0, Math.min(20, (Number(vPHS || 0) / 10) * 20)),            // PHS 0–10 → 0–20
+    Math.max(0, Math.min(20, (Number(vESI || 0) / 40) * 20)),            // ESI 0–40 → 0–20 (adjust if needed)
+    Math.max(0, Math.min(20, ((Math.min(Math.max(Number(vRPM || 1), 0.5), 2.5) - 0.5) / 2.0) * 20)) // RPM normalized
+  ];
+
+  const severityScore = computeSeverityTotal({
+    wcs: Number(vWCS || 0),
+    phs: Number(vPHS || 0),
+    esi: Number(vESI || 0),
+    rpm: Number(vRPM || 1)
+  });
+  const categoryKey = categorizeSeverity(severityScore);
+  const cat = ACTION_MATRIX[categoryKey];
+
+  const centerTextPlugin = {
+    id: 'centerText',
+    afterDraw(chart){
+      const { ctx, chartArea: { width, height, left, top } } = chart;
+      ctx.save();
+      ctx.font = '600 15px Inter, Arial, sans-serif';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.fillText(cat.label, left+width/2, top+height/2 - 8);
+      ctx.font = '500 11px Inter, Arial';
+      ctx.fillStyle='#94a3b8';
+      ctx.fillText(severityScore.toFixed(1), left+width/2, top+height/2 + 12);
+      ctx.restore();
+    }
+  };
+
+  state.chart = new Chart(ctx,{
+    type:'radar',
+    data:{
+      labels:['WCS','PHS','ESI','RPM'],
+      datasets:[
+        {
+          label:'Risk Profile',
+          data:dataPoints,
+          backgroundColor:cat.color.fill,
+          borderColor:cat.color.stroke,
+          borderWidth:2,
+          pointBackgroundColor:cat.color.stroke,
+          pointBorderColor:cat.color.stroke,
+          pointRadius:3
+        }
+      ]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      scales:{ r:{
+        beginAtZero:true, min:0, max,
+        ticks:{ stepSize:4, showLabelBackdrop:false, color:'#64748b' },
+        grid:{ color:'rgba(148,163,184,0.25)' },
+        angleLines:{ color:'rgba(148,163,184,0.25)' },
+        pointLabels:{ color:'#e2e8f0', font:{ size:11 } }
+      }},
+      plugins:{
+        legend:{ display:false },
+        tooltip:{ callbacks:{ label:ctx => `${ctx.label}: ${ctx.formattedValue}` } }
+      }
+    },
+    plugins:[centerTextPlugin]
+  });
+
+  let panel = document.getElementById('action-threshold-panel');
+  if(!panel){
+    panel=document.createElement('div');
+    panel.id='action-threshold-panel';
+    panel.className='mt-4 rounded-lg border border-white/10 bg-slate-800/60 p-4 text-sm';
+    ctx.canvas.parentElement.appendChild(panel);
+  }
+  panel.innerHTML = `
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div>
+        <div class="text-slate-300">
+          <span class="font-medium text-slate-200">Severity Score:</span>
+          <span class="font-semibold">${severityScore.toFixed(2)}</span>
+        </div>
+        <div class="mt-1">
+          <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold"
+                style="background:${cat.color.fill};color:${cat.color.stroke}">
+            ${cat.label.toUpperCase()}
+          </span>
+        </div>
+      </div>
+      <div class="md:text-right text-slate-400 leading-snug">
+        <span class="text-slate-300 font-medium">Required Action:</span><br>
+        ${escapeHtml(cat.action)}
+      </div>
+    </div>
+  `;
+}
+
+/* ------------------------------ Phase 2 Save & Upload ------------------------------ */
+async function savePhase2Summary(){
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id);
+  if(!path){ showToast("Path not found","error"); return; }
+  const val=getText($('#phase2-notes').value);
+  $('#phase2-status').textContent='Saving...';
+  try{
+    await updateDoc(doc(db,path,state.currentWreck.id),{
+      "phase2.summary": val,
+      "phase2.updatedAt": serverTimestamp()
+    });
+    $('#phase2-status').textContent='Saved.';
+    showToast("Phase 2 updated","success");
+  }catch(e){
+    $('#phase2-status').textContent='Error';
+    showToast(e?.message||"Save failed","error");
+  } finally {
+    setTimeout(()=>$('#phase2-status').textContent='',2000);
+  }
+}
+function sanitizeFileName(name=""){
+  return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`;
+}
+async function handleUploadSelection(e){
+  const files=Array.from(e.target.files||[]);
+  if(!files.length || !state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id);
+  if(!path){ showToast("Path not found","error"); return; }
+  $('#phase2-status').textContent=`Uploading ${files.length} file(s)...`;
+  const basePath=`artifacts/${appId}/public/uploads/${state.currentWreck.id}/user`;
+  let ok=0, fail=0;
+  for(const f of files){
+    try{
+      if(!/^image\//i.test(f.type)){ fail++; continue; }
+      const safe = sanitizeFileName(f.name);
+      const fileKey = `${Date.now()}_${safe}`;
+      const ref = storageRef(storage, `${basePath}/${fileKey}`);
+      await uploadBytes(ref, f, { contentType:f.type });
+      const url = await getDownloadURL(ref);
+      const asset = {
+        name:f.name, path:`${basePath}/${fileKey}`, url,
+        contentType:f.type, bytes:f.size, source:'upload', uploadedAtMs:Date.now()
+      };
+      await updateDoc(doc(db,path,state.currentWreck.id),{
+        "phase2.assets": arrayUnion(asset),
+        "phase2.assetsUpdatedAt": serverTimestamp()
+      });
+      ok++;
+    }catch(ex){
+      console.error("Upload failed",ex);
+      fail++;
+    }
+  }
+  $('#phase2-status').textContent = ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
+  showToast($('#phase2-status').textContent, ok?'success':'error');
+  setTimeout(()=>$('#phase2-status').textContent='',3000);
+}
+
+/* ------------------------------ Exports ------------------------------ */
+function wireExports(it){
+  $('#btn-export-pdf')?.addEventListener('click', ()=>exportPdf(it));
+  $('#btn-export-html')?.addEventListener('click', ()=>exportHtml(it));
+  $('#btn-export-md')?.addEventListener('click', ()=>exportMarkdown(it));
+  $('#btn-export-json')?.addEventListener('click', ()=>exportJson(it));
+}
+function exportHtml(it){
+  const node=$('#report-export-root'); if(!node) return;
+  const vessel=vesselName(it);
+  const actionPanel=document.getElementById('action-threshold-panel');
+  const clone = node.cloneNode(true);
+  if(actionPanel && !clone.querySelector('#action-threshold-panel')){
+    clone.appendChild(actionPanel.cloneNode(true));
+  }
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${clone.outerHTML}</body></html>`;
+  downloadBlob(`${vessel.replace(/\s+/g,'_')}.html`, new Blob([html],{type:'text/html;charset=utf-8'}));
+}
+function exportMarkdown(it){
+  const vessel=vesselName(it);
+  // NOTE: if you want severity score here, recompute using same formula:
+  const sev = computeSeverityTotal({
+    wcs: Number(it?.totals?.wcs || 0),
+    phs: Number(it?.totals?.phs || 0),
+    esi: Number(it?.totals?.esi || 0),
+    rpm: rpmFinalMultiplier(it)
+  }).toFixed(2);
+  const cat = ACTION_MATRIX[categorizeSeverity(sev)];
+  const lines=[
+    `# ${vessel}`,
+    ``,
+    `**Severity Score:** ${sev} (${cat.label})`,
+    ``,
+    `- WCS: ${toNum(it?.totals?.wcs)?.toFixed(2) ?? ''}`,
+    `- PHS: ${toNum(it?.totals?.phs)?.toFixed(2) ?? ''}`,
+    `- ESI: ${toNum(it?.totals?.esi)?.toFixed(2) ?? ''}`,
+    `- RPM: ${rpmFinalMultiplier(it).toFixed(2)}×`,
+    ``,
+    `**Required Action:** ${cat.action}`
+  ];
+  downloadBlob(`${vessel.replace(/\s+/g,'_')}.md`, new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'}));
+}
+function exportJson(it){
+  const vessel=vesselName(it);
+  downloadBlob(`${vessel.replace(/\s+/g,'_')}.json`, new Blob([JSON.stringify(it,null,2)],{type:'application/json;charset=utf-8'}));
+}
+function exportPdf(it){
+  const node=$('#report-export-root'); if(!node) return;
+  const vessel=vesselName(it);
+  // Include action panel clone if not directly inside
+  const actionPanel=document.getElementById('action-threshold-panel');
+  if(actionPanel && !node.querySelector('#action-threshold-panel')){
+    node.appendChild(actionPanel.cloneNode(true));
+  }
+  const opt={
+    margin:0.4,
+    filename:`${vessel.replace(/\s+/g,'_')}_Report.pdf`,
+    image:{type:'jpeg',quality:0.95},
+    html2canvas:{scale:2, backgroundColor:'#050816'},
+    jsPDF:{unit:'in', format:'a4', orientation:'portrait'}
+  };
+  window.html2pdf ? html2pdf().from(node).set(opt).save() : showToast("html2pdf not loaded","error");
+}
+function downloadBlob(filename, blob){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+/* ------------------------------ List View ------------------------------ */
+function renderList(){
+  const app=$('#app');
+  const term=state.filters.search.toLowerCase();
+  const items=state.wrecks.filter(it=>vesselName(it).toLowerCase().includes(term));
+  app.innerHTML=`
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+      <div class="p-4 border-b border-white/10 flex flex-col md:flex-row md:items-center gap-3">
+        <div class="text-lg font-semibold text-cyan-200">All Wrecks</div>
+        <div class="md:ml-auto w-full md:w-80">
+          <input id="list-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        </div>
+      </div>
+      <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="list-grid">
+        ${items.map(it=>{
+          const band=riskBand(it);
+          const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                      band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                      'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+          const imgs=collectImages(it);
+            const thumb=imgs[0]?.url || PLACEHOLDER_SVG;
+          return `
+            <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
+              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
+              <div class="p-3">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
+                  <span class="px-2 py-0.5 rounded-md text-xs border ${badge}">${band.toUpperCase()}</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
+              </div>
+            </a>
+          `;
+        }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
+      </div>
+    </div>
+  `;
+  $('#list-search')?.addEventListener('input', e=>{
+    state.filters.search = e.target.value || '';
+    renderList();
+  });
+  updateAuthUI();
+}
+
+/* ------------------------------ Report View ------------------------------ */
 function renderReport(route){
   const app=$('#app');
   const it=state.wrecks.find(w=>String(w.id)===String(route.id));
@@ -749,9 +1072,9 @@ function renderReport(route){
         </div>
         <div class="flex gap-2 flex-wrap">
           <button id="btn-export-pdf" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">PDF</button>
-            <button id="btn-export-html" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">HTML</button>
-            <button id="btn-export-md" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">MD</button>
-            <button id="btn-export-json" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">JSON</button>
+          <button id="btn-export-html" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">HTML</button>
+          <button id="btn-export-md" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">MD</button>
+          <button id="btn-export-json" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">JSON</button>
         </div>
       </div>
 
@@ -876,196 +1199,6 @@ function renderUploadsGallery(it){
       <span class="img-badge">${(a.source||'upload').toUpperCase()}</span>`;
     wrap.appendChild(div);
   });
-}
-
-function drawRadar(vWCS,vPHS,vESI,vRPM){
-  const ctx=document.getElementById('werp-radar');
-  if(!ctx) return;
-  if(state.chart){ try{ state.chart.destroy(); }catch{} }
-  const max=20;
-  const data = [
-    Math.max(0,Math.min(20,Number(vWCS||0))),
-    Math.max(0,Math.min(20,(Number(vPHS||0)/10)*20)),
-    Math.max(0,Math.min(20,(Number(vESI||0)/40)*20)),
-    Math.max(0,Math.min(20,((Math.min(Math.max(Number(vRPM||1),0.5),2.5)-0.5)/2.0)*20))
-  ];
-  state.chart = new Chart(ctx,{
-    type:'radar',
-    data:{
-      labels:['WCS','PHS','ESI','RPM'],
-      datasets:[
-        { label:'Risk Profile', data, backgroundColor:'rgba(34,197,94,0.25)', borderColor:'rgba(34,197,94,1)', pointBackgroundColor:'rgba(34,197,94,1)', borderWidth:2 },
-        { label:'High', data:[20,20,20,20], backgroundColor:'rgba(239,68,68,0.1)', borderColor:'rgba(239,68,68,0.6)', pointRadius:0 },
-        { label:'Medium', data:[12,12,12,12], backgroundColor:'rgba(245,158,11,0.1)', borderColor:'rgba(245,158,11,0.6)', pointRadius:0 },
-        { label:'Low', data:[6,6,6,6], backgroundColor:'rgba(16,185,129,0.1)', borderColor:'rgba(16,185,129,0.6)', pointRadius:0 }
-      ]
-    },
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      scales:{ r:{ beginAtZero:true, min:0, max, ticks:{ stepSize:4 },
-        grid:{ color:'rgba(148,163,184,0.25)' }, angleLines:{ color:'rgba(148,163,184,0.25)' } } },
-      plugins:{ legend:{ position:'bottom', labels:{ color:'#cbd5e1' } } }
-    }
-  });
-}
-
-/* ------------------------------ Phase 2 Save & Upload ------------------------------ */
-async function savePhase2Summary(){
-  if(!state.currentWreck) return;
-  const path=state.byIdPath.get(state.currentWreck.id);
-  if(!path){ showToast("Path not found","error"); return; }
-  const val=getText($('#phase2-notes').value);
-  $('#phase2-status').textContent='Saving...';
-  try{
-    await updateDoc(doc(db,path,state.currentWreck.id),{
-      "phase2.summary": val,
-      "phase2.updatedAt": serverTimestamp()
-    });
-    $('#phase2-status').textContent='Saved.';
-    showToast("Phase 2 updated","success");
-  }catch(e){
-    $('#phase2-status').textContent='Error';
-    showToast(e?.message||"Save failed","error");
-  } finally {
-    setTimeout(()=>$('#phase2-status').textContent='',2000);
-  }
-}
-function sanitizeFileName(name=""){
-  return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`;
-}
-async function handleUploadSelection(e){
-  const files=Array.from(e.target.files||[]);
-  if(!files.length || !state.currentWreck) return;
-  const path=state.byIdPath.get(state.currentWreck.id);
-  if(!path){ showToast("Path not found","error"); return; }
-  $('#phase2-status').textContent=`Uploading ${files.length} file(s)...`;
-  const basePath=`artifacts/${appId}/public/uploads/${state.currentWreck.id}/user`;
-  let ok=0, fail=0;
-  for(const f of files){
-    try{
-      if(!/^image\//i.test(f.type)){ fail++; continue; }
-      const safe = sanitizeFileName(f.name);
-      const fileKey = `${Date.now()}_${safe}`;
-      const ref = storageRef(storage, `${basePath}/${fileKey}`);
-      await uploadBytes(ref, f, { contentType:f.type });
-      const url = await getDownloadURL(ref);
-      const asset = {
-        name:f.name, path:`${basePath}/${fileKey}`, url,
-        contentType:f.type, bytes:f.size, source:'upload', uploadedAtMs:Date.now()
-      };
-      await updateDoc(doc(db,path,state.currentWreck.id),{
-        "phase2.assets": arrayUnion(asset),
-        "phase2.assetsUpdatedAt": serverTimestamp()
-      });
-      ok++;
-    }catch(ex){
-      console.error("Upload failed",ex);
-      fail++;
-    }
-  }
-  $('#phase2-status').textContent = ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
-  showToast($('#phase2-status').textContent, ok?'success':'error');
-  setTimeout(()=>$('#phase2-status').textContent='',3000);
-}
-
-/* ------------------------------ Exports ------------------------------ */
-function wireExports(it){
-  $('#btn-export-pdf')?.addEventListener('click', ()=>exportPdf(it));
-  $('#btn-export-html')?.addEventListener('click', ()=>exportHtml(it));
-  $('#btn-export-md')?.addEventListener('click', ()=>exportMarkdown(it));
-  $('#btn-export-json')?.addEventListener('click', ()=>exportJson(it));
-}
-function exportHtml(it){
-  const node=$('#report-export-root'); if(!node) return;
-  const vessel=vesselName(it);
-  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vessel)}</title></head><body>${node.outerHTML}</body></html>`;
-  downloadBlob(`${vessel.replace(/\s+/g,'_')}.html`, new Blob([html],{type:'text/html;charset=utf-8'}));
-}
-function exportMarkdown(it){
-  const vessel=vesselName(it);
-  const lines=[
-    `# ${vessel}`,
-    '',
-    `- WCS: ${toNum(it?.totals?.wcs)?.toFixed(2) ?? ''}`,
-    `- PHS: ${toNum(it?.totals?.phs)?.toFixed(2) ?? ''}`,
-    `- ESI: ${toNum(it?.totals?.esi)?.toFixed(2) ?? ''}`,
-    `- RPM: ${rpmFinalMultiplier(it).toFixed(2)}×`
-  ];
-  downloadBlob(`${vessel.replace(/\s+/g,'_')}.md`, new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'}));
-}
-function exportJson(it){
-  const vessel=vesselName(it);
-  downloadBlob(`${vessel.replace(/\s+/g,'_')}.json`, new Blob([JSON.stringify(it,null,2)],{type:'application/json;charset=utf-8'}));
-}
-function exportPdf(it){
-  const node=$('#report-export-root'); if(!node) return;
-  const vessel=vesselName(it);
-  const opt={
-    margin:0.4,
-    filename:`${vessel.replace(/\s+/g,'_')}_Report.pdf`,
-    image:{type:'jpeg',quality:0.95},
-    html2canvas:{scale:2, backgroundColor:'#050816'},
-    jsPDF:{unit:'in', format:'a4', orientation:'portrait'}
-  };
-  window.html2pdf ? html2pdf().from(node).set(opt).save() : showToast("html2pdf not loaded","error");
-}
-function downloadBlob(filename, blob){
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url; a.download=filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-
-/* ------------------------------ List View ------------------------------ */
-function renderList(){
-  const app=$('#app');
-  const term=state.filters.search.toLowerCase();
-  const items=state.wrecks.filter(it=>vesselName(it).toLowerCase().includes(term));
-  app.innerHTML=`
-    <div class="flex flex-wrap items-center gap-3 mb-6">
-      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
-      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
-    </div>
-    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
-      <div class="p-4 border-b border-white/10 flex flex-col md:flex-row md:items-center gap-3">
-        <div class="text-lg font-semibold text-cyan-200">All Wrecks</div>
-        <div class="md:ml-auto w-full md:w-80">
-          <input id="list-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-        </div>
-      </div>
-      <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="list-grid">
-        ${items.map(it=>{
-          const band=riskBand(it);
-          const badge=band==='alert'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
-                      band==='warning'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
-                      'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
-          const imgs=collectImages(it);
-          const thumb=imgs[0]?.url || PLACEHOLDER_SVG;
-          return `
-            <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
-              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
-              <div class="p-3">
-                <div class="flex items-center justify-between gap-3">
-                  <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
-                  <span class="px-2 py-0.5 rounded-md text-xs border ${badge}">${band.toUpperCase()}</span>
-                </div>
-                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
-              </div>
-            </a>
-          `;
-        }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
-      </div>
-    </div>
-  `;
-  $('#list-search')?.addEventListener('input', e=>{
-    state.filters.search = e.target.value || '';
-    renderList();
-  });
-  updateAuthUI();
 }
 
 /* ------------------------------ Router ------------------------------ */
