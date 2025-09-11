@@ -3,6 +3,8 @@
 // - Robust PHS weights parsing: accepts weightPercent/percent strings and falls back to equal weights
 // - Image uploads wired: Upload button + hidden file input -> Storage -> append to phase2.assets
 // - Robust coordinate resolver for map markers: supports lon vs lng and nested paths like historical.location.coordinates
+// - RPM breakdown reader supports multiple shapes (parameters, factors, breakdown, factorMap, object maps)
+// - Assessment details layout: single tile/container with vertical sections and consistent spacing
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
@@ -153,8 +155,10 @@ const isFiniteNum = (n) => typeof n === "number" && Number.isFinite(n);
 const getText = (v) => { if (v == null) return null; const s = String(v).trim(); return s.length ? s : null; };
 const deepGet = (obj, path) => path.split(".").reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj);
 
-// Robust placeholder (no backticks)
-const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">Image unavailable</text></svg>');
+// Placeholder SVG
+const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="200" y="120" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="14">No image</text></svg>'
+);
 
 // External image helpers
 const WEB_IMG_EXT_RX = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(?:\?|#|$)/i;
@@ -249,7 +253,7 @@ function resolveCoordinates(item) {
   };
 
   // Extract lat/lng from an object or array
-  function extract(obj, hint = null) {
+  function extract(obj) {
     if (!obj) return null;
 
     // GeoJSON [lng, lat]
@@ -266,20 +270,19 @@ function resolveCoordinates(item) {
 
     // If object has a nested coordinates field, prefer that
     if (obj.coordinates) {
-      const nested = extract(obj.coordinates, "nested");
+      const nested = extract(obj.coordinates);
       if (nested) return nested;
     }
 
     // Try common keys
     const lat = toNum(obj.latitude ?? obj.lat ?? obj.y);
-    // Note: include "lon" here
     const lng = toNum(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
 
     if (lat != null && lng != null) return { lat, lng };
 
     // Some shapes like { latlng: { lat, lng } }
     if (obj.latlng) {
-      const ll = extract(obj.latlng, "latlng");
+      const ll = extract(obj.latlng);
       if (ll) return ll;
     }
     return null;
@@ -327,7 +330,7 @@ function upsertMarker(item) {
   const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : "N/A";
 
   const imgUrl = getMarkerImageUrl(item) || PLACEHOLDER_SVG;
-  const imgHtml = `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:auto;max-height:180px;object-fit:contain;border-radius:6px;border:1px solid #e5e7eb;background:#f8fafc" loading="lazy"></div>`;
+  const imgHtml = `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:auto;max-height:140px;border:1px solid #e5e7eb;border-radius:6px;object-fit:cover;"></div>`;
 
   const popupHtml = `
     <div>
@@ -399,8 +402,8 @@ function normalizeWcsParameters(rawParams = []) {
   const scaleNote = maxScore > 5;
   const rx = {
     age: [/\bage\b/i, /\byear/i, /\bbuilt\b/i, /\blaunched\b/i, /\bcommission/i, /\bdecommission/i, /since\s*sink/i, /\bsubmerged\b/i, /\bdecade/i, /\bcentur/i, /\bmodern\b/i],
-    vessel: [/\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i, /\bdisplacement\b/i, /\blength\b/i, /\bbeam\b/i, /\bdraft\b/i, /\bauxiliary\b/i, /\boiler\b/i, /\btanker\b/i, /\bdestroyer\b/i, /\bcruiser\b/i, /\bmerchant\b/i, /\bsubmarine\b/i, /\btransport\b/i],
-    trauma: [/\btorpedo/i, /\btype\s*93\b/i, /\bdepth\s*charge/i, /\bmine\b/i, /\bbomb/i, /\bexplosion/i, /\bdetonat/i, /\bshell(hit|ing)?\b/i, /\bgunfire\b/i, /\bcollision\b/i, /\bgrounding\b/i, /\bscuttl/i, /\bsinking\b/i, /\bbreach\b/i, /\bcatastroph/i],
+    vessel: [/\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i, /\bdisplacement\b/i, /\blength\b/i, /\bbeam\b/i, /\bdraft\b/i, /\bauxiliary\b/i, /\boil\b/i, /\bfuel\b/i, /\bballast\b/i],
+    trauma: [/\btorpedo/i, /\btype\s*93\b/i, /\bdepth\s*charge/i, /\bmine\b/i, /\bbomb/i, /\bexplosion/i, /\bdetonat/i, /\bshell(hit|ing)?\b/i, /\bgunfire\b/i, /\bcollision\b/i, /\bgrounding\b/i],
     integrity: [/\bstructur/i, /\bintegrit/i, /\bintact\b/i, /\bcollaps/i, /\bfragment/i, /\bbroken\b/i, /\bruptur/i, /\bbuckl/i, /\bcondition\b/i, /\bhull\b/i, /\bsection/i, /\bsevered\b/i]
   };
   function matchScore(p, patterns) {
@@ -448,7 +451,7 @@ function normalizePhsWeights(params = []) {
       "weightPct", "weight_percent", "weightPercent",
       "percentage", "percent", "Percent", "Percentage",
       "Weight (%)", "Weight %", "Weight(%)",
-      "weightPercent" // the dataset uses this key
+      "weightPercent"
     ];
     for (const key of candidates) {
       if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
@@ -590,7 +593,7 @@ function buildOverviewHtml(item) {
   ].filter(([_, v]) => !!v);
   if (!rows.length) return "";
   const trs = rows.map(([k, v]) => `<tr><th style="white-space:nowrap">${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`).join("");
-  return `<section><h3>Vessel Overview</h3><table><tbody>${trs}</tbody></table></section>`;
+  return `<section class="space-y-2"><h3 class="text-lg font-semibold">Vessel Overview</h3><table><tbody>${trs}</tbody></table></section>`;
 }
 function buildSourcesHtml(item) {
   const src = Array.isArray(item?.sources) ? item.sources : [];
@@ -600,14 +603,14 @@ function buildSourcesHtml(item) {
     return t ? `<li><a href="${safe}" target="_blank" rel="noopener">${safe}</a></li>` : "";
   }).filter(Boolean).join("");
   if (!links) return "";
-  return `<section><h3>Sources</h3><ul class="list-disc ml-5">${links}</ul></section>`;
+  return `<section class="space-y-2"><h3 class="text-lg font-semibold">Sources</h3><ul class="list-disc ml-5">${links}</ul></section>`;
 }
 function buildAssumptionsHtml(item) {
   const arr = Array.isArray(item?.assumptions) ? item.assumptions : [];
   if (!arr.length) return "";
   const lis = arr.map(s => `<li>${escapeHtml(String(s || ""))}</li>`).join("");
   if (!lis) return "";
-  return `<section><h3>Assumptions</h3><ul class="list-disc ml-5">${lis}</ul></section>`;
+  return `<section class="space-y-2"><h3 class="text-lg font-semibold">Assumptions</h3><ul class="list-disc ml-5">${lis}</ul></section>`;
 }
 function buildConfidenceHtml(item) {
   const c = item?.confidence || {};
@@ -616,7 +619,7 @@ function buildConfidenceHtml(item) {
   if (getText(c?.confidenceLabel)) parts.push(`<div><strong>Label:</strong> ${escapeHtml(c.confidenceLabel)}</div>`);
   if (getText(c?.basis)) parts.push(`<div><strong>Basis:</strong> ${escapeHtml(c.basis)}</div>`);
   if (!parts.length) return "";
-  return `<section><h3>Confidence</h3><div class="text-sm space-y-1">${parts.join("")}</div></section>`;
+  return `<section class="space-y-2"><h3 class="text-lg font-semibold">Confidence</h3><div class="text-sm space-y-1">${parts.join("")}</div></section>`;
 }
 function factorSummaryTable(item) {
   const rows = [];
@@ -636,8 +639,56 @@ function factorSummaryTable(item) {
     rows.push(`<tr><th>ESI</th><td>${E.toFixed(2)}</td><td>0–30/40</td></tr>`);
     rows.push(`<tr><th>RPM</th><td>${R.toFixed(2)}×</td><td>multiplier</td></tr>`);
   }
-  return `<h3>Factor Scores Summary</h3><table><thead><tr><th>Factor</th><th>Score</th><th>Scale</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  return `<h3 class="text-lg font-semibold">Factor Scores Summary</h3><table><thead><tr><th>Factor</th><th>Score</th><th>Scale</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
 }
+
+// RPM factor reader supporting multiple shapes
+function readRPMFactors(item) {
+  const rpm = item?.rpm;
+  if (!rpm) return [];
+
+  // 1) Known arrays
+  if (Array.isArray(rpm?.parameters)) return rpm.parameters;
+  if (Array.isArray(rpm?.factors)) return rpm.factors;
+  if (Array.isArray(rpm?.breakdown)) return rpm.breakdown;
+  if (Array.isArray(rpm?.factorBreakdown)) return rpm.factorBreakdown;
+
+  // 2) Known maps
+  const map = rpm?.breakdown || rpm?.factorMap || null;
+  if (map && typeof map === "object") {
+    return Object.entries(map).map(([name, v]) => {
+      if (v && typeof v === "object") {
+        return {
+          name,
+          value: v.value ?? v.multiplier ?? v.weight ?? v.score ?? "",
+          rationale: v.rationale ?? v.reason ?? ""
+        };
+      }
+      return { name, value: v ?? "", rationale: "" };
+    });
+  }
+
+  // 3) Treat rest of rpm as map (excluding known scalars)
+  if (rpm && typeof rpm === "object") {
+    const skip = new Set(["finalMultiplier", "multiplier", "notes", "rationale", "comment", "comments"]);
+    const entries = Object.entries(rpm).filter(([k]) => !skip.has(k));
+    if (entries.length) {
+      return entries.map(([name, v]) => {
+        if (v && typeof v === "object") {
+          return {
+            name,
+            value: v.value ?? v.multiplier ?? v.weight ?? v.score ?? "",
+            rationale: v.rationale ?? v.reason ?? ""
+          };
+        }
+        return { name, value: v ?? "", rationale: "" };
+      });
+    }
+  }
+
+  return [];
+}
+
 function renderReportV2HTML(item) {
   const v = v2Totals(item);
   const overview = buildOverviewHtml(item);
@@ -648,8 +699,8 @@ function renderReportV2HTML(item) {
         ${v.wcsRows.map(r => `<tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.rationale)}</td><td>${(Number(r.normalized) || 0).toFixed(2)}</td></tr>`).join("")}
       </tbody>
     </table>
-    <p class="mt-2"><strong>Total:</strong> ${v.wcs} / 20</p>
-    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500 mt-1">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
+    <p class="mt-1"><strong>Total:</strong> ${v.wcs} / 20</p>
+    ${v.wcsScaleNote ? '<p class="text-xs text-gray-500">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
   `;
   const phsRowsHtml = (v.phsRows || []).map(r => `
     <tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.rationale)}</td><td>${r.weightPct.toFixed(0)}%</td><td>${r.score.toFixed(2)}</td><td>${r.weighted.toFixed(2)}</td></tr>
@@ -658,38 +709,59 @@ function renderReportV2HTML(item) {
   const esiRowsHtml = esiParams.map(p => `
     <tr><td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td><td>${escapeHtml(p?.rationale ?? "")}</td><td>${escapeHtml(String(p?.score ?? ""))}</td></tr>
   `).join("");
-  const rpmList = Array.isArray(item?.rpm?.parameters) ? item.rpm.parameters : Array.isArray(item?.rpm?.factors) ? item.rpm.factors : [];
-  const rpmRowsHtml = Array.isArray(rpmList)
-    ? rpmList.map(f => `<tr><td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td><td>${escapeHtml(f?.rationale ?? "Not specified.")}</td><td>${escapeHtml(String(f?.value ?? ""))}</td></tr>`).join("")
-    : "";
+
+  // RPM table using robust factor reader
+  const rpmFactors = readRPMFactors(item);
+  const rpmRowsHtml = rpmFactors.map(f => `
+    <tr>
+      <td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td>
+      <td>${escapeHtml(f?.rationale ?? "Not specified.")}</td>
+      <td>${escapeHtml(String(f?.value ?? f?.multiplier ?? ""))}</td>
+    </tr>
+  `).join("");
+  const rpmTableHtml = rpmRowsHtml
+    ? `<table>
+         <thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead>
+         <tbody>${rpmRowsHtml}</tbody>
+       </table>`
+    : '<p class="text-gray-600">No factor breakdown provided. Using final multiplier if supplied.</p>';
+  const finalMultiplier = (Number(item?.rpm?.finalMultiplier ?? item?.rpm?.multiplier) || 1).toFixed(2);
 
   const sources = buildSourcesHtml(item);
   const assumptions = buildAssumptionsHtml(item);
   const confidence = buildConfidenceHtml(item);
 
+  // Single container tile layout
   return `
-    ${overview || ""}
-    ${factorSummaryTable(item)}
-    <section><h3>Phase 3: WCS (Hull & Structure)</h3>${wcsTable}</section>
-    <section>
-      <h3>Phase 3: PHS (Pollution Hazard)</h3>
-      <p class="text-xs text-gray-600 mb-2">Weights normalized to sum to 100%. Weighted = Score × Weight.</p>
-      <table>
-        <thead><tr><th>Parameter</th><th>Rationale</th><th>Weight (%)</th><th>Score (0–10)</th><th>Weighted</th></tr></thead>
-        <tbody>${phsRowsHtml}</tbody>
-      </table>
-      <p class="mt-2"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
-      ${v.phsRenormalized ? '<p class="text-xs text-gray-500 mt-1">Note: input weights normalized.</p>' : ''}
-    </section>
-    <section><h3>Phase 3: ESI (Environmental Sensitivity)</h3>
-      <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
-      <p class="mt-2"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
-    </section>
-    <section><h3>Phase 3: RPM (Release Probability Modifier)</h3>
-      ${rpmRowsHtml || '<p class="text-gray-600">No factor breakdown provided. Using final multiplier if supplied.</p>'}
-      <p class="mt-2"><strong>Final Multiplier:</strong> ${(Number(item?.rpm?.finalMultiplier) || 1).toFixed(2)}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
-    </section>
-    ${sources || ""}${assumptions || ""}${confidence || ""}
+    <div class="rounded-lg border p-4 bg-white shadow-sm space-y-6">
+      ${overview || ""}
+      ${factorSummaryTable(item)}
+      <section class="space-y-2">
+        <h3 class="text-lg font-semibold">Phase 3: WCS (Hull & Structure)</h3>
+        ${wcsTable}
+      </section>
+      <section class="space-y-2">
+        <h3 class="text-lg font-semibold">Phase 3: PHS (Pollution Hazard)</h3>
+        <p class="text-xs text-gray-600">Weights normalized to sum to 100%. Weighted = Score × Weight.</p>
+        <table>
+          <thead><tr><th>Parameter</th><th>Rationale</th><th>Weight (%)</th><th>Score (0–10)</th><th>Weighted</th></tr></thead>
+          <tbody>${phsRowsHtml}</tbody>
+        </table>
+        <p class="mt-1"><strong>Total Weighted Score (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
+        ${v.phsRenormalized ? '<p class="text-xs text-gray-500">Note: input weights normalized.</p>' : ''}
+      </section>
+      <section class="space-y-2">
+        <h3 class="text-lg font-semibold">Phase 3: ESI (Environmental Sensitivity)</h3>
+        <table><thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead><tbody>${esiRowsHtml}</tbody></table>
+        <p class="mt-1"><strong>Total:</strong> ${v.esi} / ${v.esiMax}</p>
+      </section>
+      <section class="space-y-2">
+        <h3 class="text-lg font-semibold">Phase 3: RPM (Release Probability Modifier)</h3>
+        ${rpmTableHtml}
+        <p class="mt-1"><strong>Final Multiplier:</strong> ${finalMultiplier}× <span class="text-xs text-gray-500">(1.00 baseline)</span></p>
+      </section>
+      ${sources || ""}${assumptions || ""}${confidence || ""}
+    </div>
   `;
 }
 function buildReportHtml(item) {
@@ -718,7 +790,8 @@ function buildReportHtml(item) {
   if (sources) blocks.push(sources);
   if (assumptions) blocks.push(assumptions);
   if (confidence) blocks.push(confidence);
-  return blocks.join("\n");
+  // Wrap legacy report in a single container too
+  return `<div class="rounded-lg border p-4 bg-white shadow-sm space-y-6">${blocks.join("\n")}</div>`;
 }
 
 // Radar visuals
@@ -755,7 +828,7 @@ function renderRadarGeneric(item) {
       ring(b.high, "Benchmark High", chartConfig.colors.high, chartConfig.colors.highBorder),
       ring(b.medium, "Benchmark Medium", chartConfig.colors.medium, chartConfig.colors.mediumBorder),
       ring(b.low, "Benchmark Low", chartConfig.colors.low, chartConfig.colors.lowBorder),
-      { label: "Wreck Risk", data: wreck, fill:true, backgroundColor: chartConfig.colors.wreck, borderColor: chartConfig.colors.wreckBorder, pointBackgroundColor: chartConfig.colors.wreckBorder, pointRadius: 3, borderWidth: 2 }
+      { label: "Wreck Risk", data: wreck, fill:true, backgroundColor: chartConfig.colors.wreck, borderColor: chartConfig.colors.wreckBorder, pointBackgroundColor: chartConfig.colors.wreckBorder, pointBorderColor: chartConfig.colors.wreckBorder, pointRadius: 3, borderWidth: 2 }
     ]
   };
   const options = { responsive: true, maintainAspectRatio: false,
