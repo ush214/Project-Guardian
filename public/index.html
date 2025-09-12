@@ -45,10 +45,29 @@
       font-size:10px; padding:2px 5px; border-radius:4px;
       letter-spacing:.5px; text-transform:uppercase;
     }
+    .note-block { border:1px solid rgba(255,255,255,0.08); background:#0f172a; }
+    .admin-btn { opacity:.85; }
+    .admin-btn:hover { opacity:1; }
 
-    .radar-wrapper { height: 320px; position: relative; }
+    @media print {
+      .page-break { page-break-before: always; }
+      .no-print { display:none!important; }
+      body { background:#ffffff!important; }
+    }
+
+    .radar-wrapper { height: 240px; position: relative; }
     @media (max-width: 640px){
-      .radar-wrapper { height: 260px; }
+      .radar-wrapper { height: 200px; }
+    }
+    .radar-grid {
+      display: grid;
+      gap: 1rem;
+    }
+    @media (min-width: 768px) {
+      .radar-grid {
+        grid-template-columns: 1fr 260px;
+        align-items: stretch;
+      }
     }
 
     #map-status-badge {
@@ -56,8 +75,8 @@
       top:8px;
       right:8px;
       background:rgba(15,23,42,0.65);
-      -webkit-backdrop-filter:blur(4px);
       backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
       color:#e2e8f0;
       font-size:11px;
       padding:4px 8px;
@@ -66,145 +85,109 @@
       z-index:500;
       pointer-events:none;
     }
-    .map-toggle {
-      position:absolute;
-      top:8px;
-      left:8px;
-      z-index:501;
-      display:flex;
-      gap:6px;
-    }
-    .map-toggle button {
-      background:rgba(15,23,42,0.65);
-      -webkit-backdrop-filter:blur(4px);
-      backdrop-filter:blur(4px);
-      border:1px solid rgba(255,255,255,0.18);
-      color:#e2e8f0;
-      font-size:11px;
-      padding:4px 8px;
-      border-radius:6px;
-      cursor:pointer;
-      transition:background .15s;
-    }
-    .map-toggle button.active {
-      background:rgba(14,165,233,0.75);
-      border-color:rgba(125,211,252,0.5);
-      color:#fff;
-    }
-    .map-toggle button:hover {
-      background:rgba(30,41,59,0.8);
-    }
-
     .leaflet-container { background:#0f172a; }
-    .leaflet-marker-icon { cursor: pointer; }
-    .custom-marker div {
-      width:18px!important;
-      height:18px!important;
-    }
 
-    #leaflet-map { min-height:550px; }
-
-    .sr-only {
-      position:absolute;
-      width:1px;
-      height:1px;
-      padding:0;
-      margin:-1px;
-      overflow:hidden;
-      clip:rect(0 0 0 0);
-      border:0;
+    /* === Added patch styling for restored layout === */
+    .card-surface {
+      background: rgba(15,23,42,0.70);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
     }
-    .logo-img { height:70px; }
-
-    .report-section h3 {
-      font-weight:600;
-      color:#e2e8f0;
-      margin-bottom:.5rem;
-      font-size:1rem;
+    .card-inner {
+      background: rgba(30,41,59,0.50);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
     }
-    .report-table {
+    .report-grid-main {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+    @media (min-width: 1024px) {
+      .report-grid-main {
+        grid-template-columns: 320px 1fr;
+      }
+    }
+    .table-mini {
       width:100%;
-      border-collapse:collapse;
-      font-size:.75rem;
-      line-height:1.15rem;
+      border-collapse: collapse;
+      font-size: 12px;
+      line-height:1.25rem;
     }
-    .report-table th, .report-table td {
-      border:1px solid rgba(255,255,255,0.1);
-      padding:4px 6px;
-      vertical-align:top;
-    }
-    .report-table th {
-      background:rgba(30,41,59,0.55);
-      font-weight:600;
+    .table-mini thead th {
+      text-align:left;
+      padding:6px 8px;
+      font-weight:500;
+      background:rgba(255,255,255,0.04);
+      color:#cbd5e1;
       white-space:nowrap;
     }
-    .gallery-grid {
-      display:grid;
-      grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
-      gap:.75rem;
+    .table-mini tbody td {
+      padding:6px 8px;
+      border-top:1px solid rgba(255,255,255,0.08);
+      vertical-align:top;
     }
-    .gallery-item {
+    .table-mini tbody tr:first-child td { border-top:none; }
+    .score-right {
+      text-align:right;
+      font-variant-numeric: tabular-nums;
+      white-space:nowrap;
+    }
+    .severity-panel-compact {
+      background: rgba(30,41,59,0.55);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
+      padding: 1rem 1rem 0.9rem;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+    }
+    .severity-panel-compact .severity-score {
+      font-size:2.25rem;
+    }
+    .upload-thumb {
       position:relative;
-      border:1px solid rgba(255,255,255,0.08);
+      border:1px solid rgba(255,255,255,0.12);
       background:#1e293b;
-      border-radius:8px;
+      border-radius:0.6rem;
       overflow:hidden;
-      box-shadow:0 2px 4px rgba(0,0,0,0.4);
     }
-    .gallery-item img {
+    .upload-thumb img {
       width:100%;
-      height:120px;
+      height:130px;
       object-fit:cover;
       display:block;
     }
-    .pill {
-      font-size:10px;
-      letter-spacing:.5px;
-      font-weight:600;
-      padding:3px 8px;
-      border-radius:6px;
-      border:1px solid rgba(255,255,255,0.15);
-      display:inline-block;
-      background:rgba(255,255,255,0.06);
-      color:#e2e8f0;
-    }
-    .feedback-item {
-      background:rgba(255,255,255,0.05);
-      border:1px solid rgba(255,255,255,0.08);
-      border-radius:8px;
-      padding:.5rem .65rem;
-    }
-    .btn {
-      display:inline-flex;
-      align-items:center;
-      gap:.4rem;
-      font-size:.75rem;
-      padding:.55rem .85rem;
-      font-weight:500;
-      border-radius:.65rem;
-      border:1px solid rgba(255,255,255,0.15);
-      background:rgba(255,255,255,0.05);
-      color:#f1f5f9;
-      transition:.18s;
-    }
-    .btn:hover { background:rgba(255,255,255,0.12); }
-    .btn-primary {
+    .pill-btn {
       background:#0891b2;
-      border-color:#06b6d4;
+      border:1px solid #06b6d4;
+      color:#fff;
+      padding:6px 14px;
+      font-size:12px;
+      border-radius:.6rem;
+      font-weight:500;
     }
-    .btn-primary:hover { background:#0ea5e9; }
-    .btn-danger {
-      background:#dc2626;
-      border-color:#f87171;
-    }
-    .btn-danger:hover { background:#ef4444; }
-    .tag {
+    .pill-btn:hover { background:#0ea5e9; }
+    .btn-neutral {
       background:rgba(255,255,255,0.08);
-      padding:2px 7px;
-      font-size:10px;
-      border-radius:999px;
-      letter-spacing:.5px;
-      font-weight:600;
+      border:1px solid rgba(255,255,255,0.15);
+      color:#f1f5f9;
+    }
+    .btn-neutral:hover { background:rgba(255,255,255,0.14); }
+    .note-item {
+      border:1px solid rgba(255,255,255,0.08);
+      background:#0f172a;
+      border-radius:0.6rem;
+      padding:.65rem .75rem;
+    }
+    .radar-flex {
+      display:grid;
+      gap:1rem;
+    }
+    @media (min-width: 900px) {
+      .radar-flex {
+        grid-template-columns: 1fr 250px;
+      }
     }
   </style>
 </head>
@@ -221,9 +204,9 @@
     </nav>
     <div class="hidden md:flex items-center gap-4">
       <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true"
-           alt="Logo Left" class="logo-img w-auto rounded shadow-soft border border-white/10">
+           alt="Logo Left" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
       <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true"
-           alt="Logo Right" class="logo-img w-auto rounded shadow-soft border border-white/10">
+           alt="Logo Right" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
     </div>
   </div>
 </header>
@@ -232,7 +215,7 @@
 <div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
 
 <script type="module">
-/* ====================== CONFIG & CONSTANTS ====================== */
+/* =============== CONFIG & CONSTANTS =============== */
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",
@@ -242,7 +225,6 @@ const firebaseConfig = {
   appId: "1:84395007243:web:b07e5f4c4264d27611160e",
   measurementId: "G-NRLH3WSCQ9"
 };
-
 const appId = "guardian";
 const READ_COLLECTIONS = [
   "artifacts/guardian/public/data/werpassessments",
@@ -252,75 +234,13 @@ const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/w
 const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
 const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
-const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
-const MAPBOX_STYLE_SAT = "mapbox/satellite-v9";
-const MAPBOX_STYLE_ALT = "mapbox/satellite-streets-v12";
-const MAPBOX_STYLE_OSM_FALLBACK = "osm";
-let currentBaseStyle = MAPBOX_STYLE_SAT;
-
 const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
 const ACTION_MATRIX = {
-  critical: {
-    label:"Critical",
-    color:{ fill:"rgba(239,68,68,0.30)", stroke:"rgba(239,68,68,1)" },
-    action:"Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning."
-  },
-  high: {
-    label:"High",
-    color:{ fill:"rgba(245,158,11,0.28)", stroke:"rgba(245,158,11,1)" },
-    action:"Active Monitoring: Non‑invasive ROV survey in 2–3 years."
-  },
-  medium: {
-    label:"Medium",
-    color:{ fill:"rgba(250,204,21,0.22)", stroke:"rgba(250,204,21,1)" },
-    action:"Periodic Review: Reassess every 5 years or after major events."
-  },
-  low: {
-    label:"Low",
-    color:{ fill:"rgba(16,185,129,0.28)", stroke:"rgba(16,185,129,1)" },
-    action:"Archive: No further action unless new information emerges."
-  }
+  critical: { label:"Critical", color:{ fill:"rgba(239,68,68,0.30)", stroke:"rgba(239,68,68,1)" }, action:"Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning." },
+  high: { label:"High", color:{ fill:"rgba(245,158,11,0.28)", stroke:"rgba(245,158,11,1)" }, action:"Active Monitoring: Non‑invasive ROV survey in 2–3 years." },
+  medium: { label:"Medium", color:{ fill:"rgba(250,204,21,0.22)", stroke:"rgba(250,204,21,1)" }, action:"Periodic Review: Reassess every 5 years or after major events." },
+  low: { label:"Low", color:{ fill:"rgba(16,185,129,0.28)", stroke:"rgba(16,185,129,1)" }, action:"Archive: No further action unless new information emerges." }
 };
-
-/* ====================== GLOBAL STATE ====================== */
-const state = {
-  wrecks: [],
-  byIdPath: new Map(),
-  currentWreck: null,
-  currentRoute: null,
-  role: 'user',
-  user: null,
-  listeners: [],
-  filters: { severity:'all', stage:'all', search:'' },
-  chart: null,
-  leafletMap: null,
-  leafletMarkers: new Map(),
-  mapStatus: 'init',
-  mapBaseLayers: { satellite:null, alt:null, osm:null },
-  tileErrorCount: 0,
-  reportRadar: null
-};
-window.pgState = state;
-
-/* ====================== UTILITIES ====================== */
-const $ = sel => document.querySelector(sel);
-function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c)); }
-function getText(v){ return v==null ? "" : String(v).trim(); }
-function toNum(v){ const n=Number(v); return Number.isFinite(n)?n:null; }
-function debounce(fn,ms=250){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
-function showToast(msg,type='info'){
-  const stack=$('#toast-stack'); if(!stack)return;
-  const color=type==='success'?'bg-emerald-600':type==='error'?'bg-rose-600':'bg-slate-700';
-  const div=document.createElement('div');
-  div.className=`${color} text-white px-4 py-2 rounded-lg shadow-soft border border-white/10 transition fade-enter`;
-  div.textContent=msg;
-  stack.appendChild(div);
-  requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
-  setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
-}
-const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
-
-/* ====================== SEVERITY HELPERS ====================== */
 function computeSeverityTotal({ wcs, phs, esi, rpm }) { return (wcs + phs + (esi / 3)) * rpm; }
 function categorizeSeverity(score) {
   if (score > ACTION_THRESHOLDS.critical) return "critical";
@@ -335,6 +255,68 @@ function severityCategoryForItem(it) {
   const rpm = rpmFinalMultiplier(it);
   return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
 }
+
+/* =============== FIREBASE IMPORTS =============== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail, signOut
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection,
+  onSnapshot, arrayUnion
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+/* =============== FIREBASE INIT =============== */
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const auth = getAuth(fbApp);
+const storage = getStorage(fbApp);
+const functions = getFunctions(fbApp, "us-central1");
+let callable = { analyzeWerps:null, reassessWerps:null };
+try { callable.analyzeWerps = httpsCallable(functions,"analyzeWerps"); } catch {}
+try { callable.reassessWerps = httpsCallable(functions,"reassessWerps"); } catch {}
+
+/* =============== STATE =============== */
+const state = {
+  wrecks: [],
+  byIdPath: new Map(),
+  currentWreck: null,
+  currentRoute: null,
+  role: 'user',
+  user: null,
+  listeners: [],
+  filters: { severity:'all', stage:'all', search:'' },
+  chart: null,
+  leafletMap: null,
+  leafletMarkers: new Map(),
+  mapStatus: 'init'
+};
+window.pgState = state;
+
+/* =============== UTILITIES =============== */
+const $ = s => document.querySelector(s);
+const getText = v => v==null ? "" : String(v).trim();
+const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
+function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;","\">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c)); }
+function debounce(fn,ms=250){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+function showToast(msg,type='info'){
+  const stack=$('#toast-stack'); if(!stack)return;
+  const color=type==='success'?'bg-emerald-600':type==='error'?'bg-rose-600':'bg-slate-700';
+  const div=document.createElement('div');
+  div.className=`${color} text-white px-4 py-2 rounded-lg shadow-soft border border-white/10 transition fade-enter`;
+  div.textContent=msg;
+  stack.appendChild(div);
+  requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
+  setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
+}
+const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
+
+/* =============== STAGE LOGIC =============== */
 function stageFromItem(it){
   const phase2HasNotes = !!getText(it?.phase2?.summary);
   const phase2Entries = Array.isArray(it?.phase2?.entries) && it.phase2.entries.length;
@@ -350,32 +332,7 @@ function stageFromItem(it){
   return isCompleted ? 'completed' : 'initial';
 }
 
-/* ====================== FIREBASE IMPORTS ====================== */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import {
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendPasswordResetEmail, signOut
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import {
-  getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection,
-  onSnapshot, arrayUnion
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import {
-  getStorage, ref as storageRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
-
-/* ====================== FIREBASE INIT ====================== */
-const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
-const auth = getAuth(fbApp);
-const storage = getStorage(fbApp);
-const functions = getFunctions(fbApp, "us-central1");
-let callable = { analyzeWerps:null, reassessWerps:null };
-try { callable.analyzeWerps = httpsCallable(functions,"analyzeWerps"); } catch {}
-try { callable.reassessWerps = httpsCallable(functions,"reassessWerps"); } catch {}
-
-/* ====================== DATA NORMALIZATION HELPERS ====================== */
+/* =============== DATA HELPERS =============== */
 function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
 function vesselSummary(it){
   return getText(it?.historical?.circumstancesOfLoss) ||
@@ -390,6 +347,7 @@ function resolveCoordinates(item){
     if(Array.isArray(obj)&&obj.length>=2){
       const lng=toNumL(obj[0]); const lat=toNumL(obj[1]);
       if(lat!=null && lng!=null) return {lat,lng};
+      return null;
     }
     if(obj.coordinates){
       const nested=extract(obj.coordinates); if(nested)return nested;
@@ -416,173 +374,8 @@ function resolveCoordinates(item){
   for(const c of cands){ const got=extract(c); if(got) return got; }
   return null;
 }
-function collectUploadedImages(it){
-  const out=[];
-  if(Array.isArray(it?.phase2?.assets)){
-    for(const a of it.phase2.assets){
-      if(!a?.url) continue;
-      if(a.source!=='upload') continue;
-      if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
-      out.push(a);
-    }
-  }
-  return out;
-}
-function firstUploadThumb(it){
-  const imgs=collectUploadedImages(it);
-  return imgs[0]?.url || PLACEHOLDER_SVG;
-}
 
-/* ====================== WCS/PHS/RPM NORMALIZERS (restored) ====================== */
-function normalizeWcsParameters(rawParams = []) {
-  const params = (Array.isArray(rawParams) ? rawParams : [])
-    .map(p => ({
-      title: String(p?.name ?? p?.parameter ?? "").trim(),
-      rationale: String(p?.rationale ?? "").trim(),
-      score: Number(p?.score)
-    }))
-    .filter(p => (p.title || p.rationale) && Number.isFinite(p.score));
-  const rawScores = params.map(p => p.score);
-  const maxScore = rawScores.length ? Math.max(...rawScores) : 0;
-  const scale = maxScore > 5 && maxScore <= 10 ? 10 : 5;
-  const scaleNote = maxScore > 5;
-  const rx = {
-    age: [/\bage\b/i, /\byear/i, /\bbuilt\b/i, /\blaunched\b/i, /\bcommission/i, /\bdecommission/i, /since\s*sink/i, /\bsubmerged\b/i, /\bdecade/i, /\bcentur/i, /\bmodern\b/i],
-    vessel: [/\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i, /\bdisplacement\b/i, /\blength\b/i, /\bbeam\b/i, /\bdraft\b/i],
-    trauma: [/\btorpedo/i, /\bmine\b/i, /\bdepth\s*charge/i, /\bexplosion/i, /\bbomb/i, /\bshell/i, /\bgunfire\b/i, /\bcollision\b/i, /\bgrounding\b/i],
-    integrity: [/\bstructur/i, /\bintegrit/i, /\bintact\b/i, /\bcollaps/i, /\bfragment/i, /\bbroken\b/i, /\bruptur/i, /\bcondition\b/i, /\bhull\b/i]
-  };
-  function matchScore(p, patterns) {
-    const name = p.title || "", rat = p.rationale || ""; let s = 0;
-    for (const re of patterns) { if (re.test(name)) s += 3; if (re.test(rat)) s += 1; }
-    return s;
-  }
-  function best(patterns) {
-    let best=null;
-    for(const p of params){
-      const s=matchScore(p,patterns);
-      if(s>0 && (!best||s>best.s)) best={p,s};
-    }
-    return best?.p;
-  }
-  const picks = { age:best(rx.age), vessel:best(rx.vessel), trauma:best(rx.trauma), integrity:best(rx.integrity) };
-  const norm = (v)=>!Number.isFinite(v)?0: (scale===10? Math.max(0,Math.min(5,v/2)) : Math.max(0,Math.min(5,v)));
-  let traumaNormalized, traumaRationale="Not provided.";
-  if(picks.trauma){ traumaNormalized = norm(picks.trauma.score); traumaRationale=picks.trauma.rationale||"Not provided."; }
-  else if(picks.integrity){
-    const rat=picks.integrity.rationale||"", name=picks.integrity.title||"";
-    const looks=rx.trauma.some(re=>re.test(rat)||re.test(name));
-    traumaNormalized = looks?5:0;
-    traumaRationale = looks? (rat||"Derived from integrity rationale.") : "Not provided.";
-  } else traumaNormalized=0;
-  const rows = [
-    { title:"Age", rationale:picks.age?.rationale||"Not provided.", normalized:norm(picks.age?.score??0) },
-    { title:"Vessel Type/Size", rationale:picks.vessel?.rationale||"Not provided.", normalized:norm(picks.vessel?.score??0) },
-    { title:"Sinking Trauma", rationale:traumaRationale, normalized:norm(picks.trauma?.score??0) },
-    { title:"Current Structural Integrity", rationale:picks.integrity?.rationale||"Not provided.", normalized:norm(picks.integrity?.score??0) }
-  ];
-  const total=rows.reduce((s,r)=>s+(Number(r.normalized)||0),0);
-  return { rows, total:Number(total.toFixed(2)), scaleNote };
-}
-function normalizePhsWeights(params = []) {
-  function parseNum(v){
-    if(typeof v==='number' && Number.isFinite(v)) return v;
-    if(typeof v==='string'){
-      const m=v.match(/-?\d+(\.\d+)?/);
-      if(m) return Number(m[0]);
-    }
-    return NaN;
-  }
-  function extractWeight(p){
-    const keys=["weight","weightPercent","weightPct","percent","percentage","Weight","Percent","Weight (%)","Weight %","Weight(%)"];
-    for(const k of keys){
-      if(p && Object.prototype.hasOwnProperty.call(p,k)){
-        const raw=p[k];
-        if(typeof raw==='number' && Number.isFinite(raw)) return { value:raw, percent: raw>1.5 };
-        if(typeof raw==='string'){
-          const hadPct=/%/.test(raw);
-            const num=parseFloat(raw.replace(/%/g,''));
-            if(Number.isFinite(num)) return { value:num, percent: hadPct|| num>1.5 };
-        }
-      }
-    }
-    return { value:NaN, percent:false };
-  }
-  const items=(Array.isArray(params)?params:[]).map(p=>{
-    const name=String(p?.name ?? p?.parameter ?? p?.title ?? "").trim();
-    const rationale=String(p?.rationale ?? p?.notes ?? "").trim();
-    const score=parseNum(p?.score ?? p?.value);
-    const { value: wRaw, percent } = extractWeight(p);
-    return { name, rationale, score, wRaw, percent };
-  }).filter(i=>i.name && Number.isFinite(i.score));
-  if(!items.length) return { rows:[], totalWeighted:0, renormalized:false };
-  let hasWeights=false;
-  let anyPercent=false;
-  const weights=items.map(i=>{
-    if(Number.isFinite(i.wRaw) && i.wRaw>0){ hasWeights=true; if(i.percent) anyPercent=true; return i.wRaw; }
-    return NaN;
-  });
-  let fracs;
-  if(!hasWeights){
-    fracs=items.map(()=>1/items.length);
-  } else {
-    const finite=weights.map(w=>Number.isFinite(w)?w:0);
-    const sum=finite.reduce((a,b)=>a+b,0);
-    if(anyPercent || (sum>85 && sum<115)){
-      fracs=finite.map(w=>w/100);
-    } else {
-      fracs=finite.slice();
-    }
-    const s=fracs.reduce((a,b)=>a+(Number.isFinite(b)?b:0),0);
-    if(!(s>0)){
-      fracs=items.map(()=>1/items.length);
-    } else if(Math.abs(s-1)>0.01){
-      fracs=fracs.map(f=>Number.isFinite(f)? f/s : 0);
-    }
-  }
-  const rows=items.map((i,idx)=>{
-    const f=fracs[idx]||0;
-    return {
-      name:i.name,
-      rationale:i.rationale||"Not provided.",
-      weightPct:(f*100),
-      score:Math.max(0,Math.min(10,i.score)),
-      weighted: Math.max(0,Math.min(10,i.score))*f
-    };
-  });
-  const totalWeighted = rows.reduce((s,r)=>s+r.weighted,0);
-  return { rows, totalWeighted:Number(totalWeighted.toFixed(2)) };
-}
-function readRPMFactors(it){
-  const rpm=it?.rpm;
-  if(!rpm) return [];
-  if(Array.isArray(rpm.parameters)) return rpm.parameters;
-  if(Array.isArray(rpm.factors)) return rpm.factors;
-  const keys=["factors","parameters","breakdown","factorMap"];
-  for(const k of keys){
-    const obj=rpm[k];
-    if(obj && typeof obj==='object' && !Array.isArray(obj)){
-      return Object.entries(obj).map(([name,v])=>{
-        if(v && typeof v==='object')
-          return { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" };
-        return { name, rationale:"", value:v ?? "" };
-      });
-    }
-  }
-  if(rpm && typeof rpm==='object'){
-    return Object.entries(rpm).filter(([k])=>!["finalMultiplier","multiplier","notes","rationale"].includes(k))
-      .map(([name,v])=> (v && typeof v==='object'
-        ? { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" }
-        : { name, rationale:"", value:v ?? "" }));
-  }
-  return [];
-}
-function rpmFinalMultiplier(it){
-  const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
-  return Number.isFinite(m)?m:1;
-}
-
-/* ====================== AUTH / ROLE ====================== */
+/* =============== ROLE / AUTH =============== */
 async function fetchRoleFor(uid){
   try{
     const allow=await getDoc(doc(db,"system","allowlist","users",uid));
@@ -616,7 +409,7 @@ async function fetchRoleFor(uid){
   return 'user';
 }
 
-/* ====================== FIRESTORE LISTENERS ====================== */
+/* =============== FIRESTORE LISTENERS =============== */
 function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
 function normalizeDoc(d){
   const out={...d};
@@ -649,7 +442,6 @@ async function startData(){
         renderReassessList();
       } else {
         if(state.currentRoute?.name==='report'){
-          // ensure we have updated record
           const r = state.wrecks.find(w=>String(w.id)===String(state.currentRoute.id));
           state.currentWreck = r || null;
         }
@@ -666,253 +458,164 @@ async function startData(){
   }
 }
 
-/* ====================== MAP MANAGEMENT (unchanged from previous improved version) ====================== */
+/* =============== IMAGES ================= */
+function collectUploadedImages(it){
+  const out=[];
+  if(Array.isArray(it?.phase2?.assets)){
+    for(const a of it.phase2.assets){
+      if(!a?.url) continue;
+      if(a.source!=='upload') continue;
+      if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
+      out.push(a);
+    }
+  }
+  return out;
+}
+function firstUploadThumb(it){
+  const imgs=collectUploadedImages(it);
+  return imgs[0]?.url || PLACEHOLDER_SVG;
+}
+
+/* =============== MAP (STABLE INIT) =============== */
 function setMapStatus(status, detail=""){
   state.mapStatus=status;
   const badge = document.getElementById('map-status-badge');
   if(!badge) return;
-  let txt = status;
-  if(detail) txt += ' • ' + detail;
-  badge.textContent = txt;
+  badge.textContent = detail ? `${status} • ${detail}` : status;
   badge.style.color = status==='error' ? '#fecaca' : '#e2e8f0';
 }
-function buildMapboxTileLayer(styleId){
-  if(styleId === MAPBOX_STYLE_OSM_FALLBACK){
-    return L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
-      attribution:"© OpenStreetMap contributors",
-      maxZoom:19,
-      crossOrigin:true
-    });
-  }
-  const dpr = (window.devicePixelRatio || 1) > 1 ? "@2x" : "";
-  return L.tileLayer(
-    `https://api.mapbox.com/styles/v1/${styleId}/tiles/512/{z}/{x}/{y}${dpr}?access_token=${MAPBOX_TOKEN}`,
-    {
-      tileSize:512,
-      zoomOffset:-1,
-      maxZoom:19,
-      attribution:'Imagery © <a href="https://www.mapbox.com/" target="_blank" rel="noopener">Mapbox</a>, Data © <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a>, © Maxar',
-      crossOrigin:true,
-      updateWhenIdle:true,
-      keepBuffer:6,
-      detectRetina:true
-    }
-  );
-}
-function highlightBaseToggle(styleKey){
-  document.querySelectorAll('.map-toggle button').forEach(btn=>{
-    const val=btn.getAttribute('data-map-style');
-    btn.classList.toggle('active', val===styleKey);
-  });
-}
-function addBaseLayer(styleKey){
-  if(!state.leafletMap) return;
-  Object.values(state.mapBaseLayers).forEach(l=>{
-    if(l && state.leafletMap.hasLayer(l)) state.leafletMap.removeLayer(l);
-  });
-  let layer;
-  if(styleKey === 'satellite'){
-    layer = state.mapBaseLayers.satellite ||= buildMapboxTileLayer(MAPBOX_STYLE_SAT);
-  } else if(styleKey === 'hybrid'){
-    layer = state.mapBaseLayers.alt ||= buildMapboxTileLayer(MAPBOX_STYLE_ALT);
-  } else {
-    layer = state.mapBaseLayers.osm ||= buildMapboxTileLayer(MAPBOX_STYLE_OSM_FALLBACK);
-  }
-  layer.addTo(state.leafletMap);
-  currentBaseStyle = styleKey === 'satellite' ? MAPBOX_STYLE_SAT :
-                     styleKey === 'hybrid' ? MAPBOX_STYLE_ALT :
-                     MAPBOX_STYLE_OSM_FALLBACK;
-  highlightBaseToggle(styleKey);
-  setMapStatus('ready', styleKey);
-}
-function spawnMapToggle(){
-  const container = document.getElementById('leaflet-map');
-  if(!container) return;
-  if(container.querySelector('.map-toggle')) return;
-  const wrap=document.createElement('div');
-  wrap.className='map-toggle';
-  wrap.innerHTML=`
-    <button data-map-style="satellite" class="active" aria-label="Satellite basemap">Satellite</button>
-    <button data-map-style="hybrid" aria-label="Hybrid basemap">Hybrid</button>
-    <button data-map-style="osm" aria-label="OpenStreetMap basemap">OSM</button>
-  `;
-  container.appendChild(wrap);
-  wrap.querySelectorAll('button[data-map-style]').forEach(b=>{
-    b.addEventListener('click',()=>{
-      const style=b.getAttribute('data-map-style');
-      addBaseLayer(style);
-    });
-  });
-}
-function markerIconFor(category){
-  const color =
-    category==='critical' ? '#ef4444' :
-    category==='high' ? '#f59e0b' :
-    category==='medium' ? '#facc15' : '#10b981';
-  return L.divIcon({
-    className:'custom-marker',
-    html:`<div style="width:18px;height:18px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.35);"></div>`,
-    iconSize:[18,18],
-    iconAnchor:[9,9]
-  });
-}
-function attachMarkerClick(marker){
-  marker.on('mousedown', (e)=>{ if(e.originalEvent) e.originalEvent.stopPropagation(); });
-  marker.on('click', (e)=>{
-    if(e.originalEvent) e.originalEvent.stopPropagation();
-    marker.openPopup();
-  });
-}
-function refreshLeafletMarkers(){
-  if(!state.leafletMap || typeof L === 'undefined') return;
-  try{
-    for(const mk of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(mk);}catch{} }
-    state.leafletMarkers.clear();
-    const sFilter=state.filters.severity;
-    const stageFilter=state.filters.stage;
-    const term=(state.filters.search||'').toLowerCase();
-    const filtered=state.wrecks.filter(it=>{
-      const cat=severityCategoryForItem(it);
-      if(sFilter!=='all' && cat!==sFilter) return false;
-      const st=stageFromItem(it);
-      if(stageFilter!=='all' && st!==stageFilter) return false;
-      if(term && !vesselName(it).toLowerCase().includes(term)) return false;
-      return resolveCoordinates(it)!=null;
-    });
-    filtered.forEach(it=>{
-      try{
-        const coord=resolveCoordinates(it);
-        if(!coord) return;
-        const category=severityCategoryForItem(it);
-        const marker=L.marker([coord.lat, coord.lng], { icon: markerIconFor(category) });
-        const thumb=firstUploadThumb(it);
-        const popupHtml=`
-          <div style="min-width:210px">
-            <div style="font-weight:600;font-size:14px">${escapeHtml(vesselName(it))}</div>
-            <div style="font-size:11px;color:#64748b;margin-bottom:4px">Stage: ${stageFromItem(it)} • ${category.toUpperCase()}</div>
-            <div style="margin:4px 0 6px">
-              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'"
-                   style="width:100%;max-height:140px;object-fit:cover;border:1px solid #334155;border-radius:6px"/>
-            </div>
-            <a href="#/wreck/${encodeURIComponent(it.id)}"
-               style="display:inline-block;font-size:12px;color:#0ea5e9;text-decoration:underline;">View Assessment</a>
-          </div>`;
-        marker.bindPopup(popupHtml);
-        marker.addTo(state.leafletMap);
-        attachMarkerClick(marker);
-        state.leafletMarkers.set(it.id, marker);
-      }catch(inMarker){
-        console.error("Marker creation failed", it.id, inMarker);
-      }
-    });
-  }catch(e){
-    console.error("refreshLeafletMarkers error", e);
-    setMapStatus('error','marker-refresh');
-  }
-}
-function ensureMapSize(){
-  if(state.leafletMap){
-    state.leafletMap.invalidateSize();
-  }
-}
-window.addEventListener('resize', debounce(ensureMapSize, 200));
 function initLeaflet(){
-  if(state.leafletMap && document.getElementById('leaflet-map')?._leaflet_id){
+  if(state.leafletMap && $('#leaflet-map')) {
+    setTimeout(()=>state.leafletMap.invalidateSize(),50);
     return;
   }
-  let attempts = 0;
-  setMapStatus('loading');
-  function tryInit(){
+  let attempts=0;
+  function attempt(){
     attempts++;
-    const container = document.getElementById('leaflet-map');
-    if(typeof L === 'undefined'){
-      if(attempts < 8){ setTimeout(tryInit, 300); return; }
-      setMapStatus('error','leaflet-missing');
-      return;
-    }
+    const container=$('#leaflet-map');
     if(!container){
-      if(attempts < 8){ setTimeout(tryInit, 200); return; }
+      if(attempts<8){ setTimeout(attempt,200); return; }
       setMapStatus('error','no-container');
       return;
     }
+    if(typeof L==='undefined'){
+      if(attempts<8){ setTimeout(attempt,300); return; }
+      setMapStatus('error','leaflet-missing');
+      return;
+    }
     if(container._leaflet_id){
-      try { delete container._leaflet_id; } catch {}
+      try{ delete container._leaflet_id; }catch{}
       container.innerHTML='';
     }
     try{
-      state.leafletMap = L.map(container,{
-        zoomControl:true,
-        doubleClickZoom:false,
-        tap:false,
-        inertia:false,
-        worldCopyJump:true,
-        zoomAnimation:true,
-        preferCanvas:false
-      }).setView([10,150],3);
+      state.leafletMap = L.map(container,{ zoomControl:true }).setView([10,150],3);
       window.pgMap = state.leafletMap;
-      addBaseLayer('satellite');
-      spawnMapToggle();
-      state.leafletMap.on('load', ()=> {
-        setMapStatus('ready','satellite');
-      });
-      state.leafletMap.on('popupopen', ()=> state.leafletMap.dragging.disable());
-      state.leafletMap.on('popupclose', ()=> state.leafletMap.dragging.enable());
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:"© OpenStreetMap contributors",
+        maxZoom:18
+      }).addTo(state.leafletMap);
+      state.leafletMap.on('load',()=>setMapStatus('ready'));
       refreshLeafletMarkers();
-      setTimeout(()=>state.leafletMap.invalidateSize(), 50);
-    }catch(err){
-      console.error("Leaflet init error", err);
-      if(attempts < 5){ setTimeout(tryInit, attempts*300); }
-      else { setMapStatus('error','init-failed'); }
+      setMapStatus('ready');
+      setTimeout(()=>state.leafletMap.invalidateSize(),60);
+    }catch(e){
+      console.error(e);
+      if(attempts<5){ setTimeout(attempt,300*attempts); }
+      else setMapStatus('error','init-failed');
     }
   }
-  tryInit();
+  setMapStatus('loading');
+  attempt();
 }
+function markerIconFor(category){
+  const color =
+    category==='critical' ? '#ef4444':
+    category==='high' ? '#f59e0b':
+    category==='medium' ? '#facc15':'#10b981';
+  return L.divIcon({
+    className:'custom-marker',
+    html:`<div style="width:16px;height:16px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.25);"></div>`,
+    iconSize:[16,16],
+    iconAnchor:[8,8]
+  });
+}
+function refreshLeafletMarkers(){
+  if(!state.leafletMap || typeof L==='undefined') return;
+  for(const m of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(m);}catch{} }
+  state.leafletMarkers.clear();
+  const sFilter=state.filters.severity;
+  const stageFilter=state.filters.stage;
+  const term=state.filters.search.toLowerCase();
+  const filtered=state.wrecks.filter(it=>{
+    const cat=severityCategoryForItem(it);
+    if(sFilter!=='all' && cat!==sFilter) return false;
+    const st=stageFromItem(it);
+    if(stageFilter!=='all' && st!==stageFilter) return false;
+    if(term && !vesselName(it).toLowerCase().includes(term)) return false;
+    return resolveCoordinates(it)!=null;
+  });
+  filtered.forEach(it=>{
+    const coord=resolveCoordinates(it); if(!coord) return;
+    const cat=severityCategoryForItem(it);
+    const marker=L.marker([coord.lat, coord.lng],{ icon: markerIconFor(cat) });
+    const thumb=firstUploadThumb(it);
+    marker.bindPopup(`
+      <div style="min-width:200px">
+        <div style="font-weight:600">${escapeHtml(vesselName(it))}</div>
+        <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${stageFromItem(it)} • ${cat.toUpperCase()}</div>
+        <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin-bottom:4px"/>
+        <a href="#/wreck/${encodeURIComponent(it.id)}" style="font-size:12px;color:#0ea5e9;text-decoration:underline;">Open Report</a>
+      </div>`);
+    marker.addTo(state.leafletMap);
+    state.leafletMarkers.set(it.id, marker);
+  });
+}
+function ensureMapSize(){ if(state.leafletMap) state.leafletMap.invalidateSize(); }
+window.addEventListener('resize', debounce(ensureMapSize,200));
 
-/* ====================== AUTH UI ====================== */
+/* =============== AUTH UI =============== */
 function updateAuthUI(){
   const signedIn=!!state.user;
   $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
   $('#auth-role') && ($('#auth-role').textContent = state.role);
   document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
   document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
-
   const isContributor=['admin','contributor'].includes(state.role);
-  ['btn-analyze','btn-reassess','btn-save-phase2','btn-upload-files','btn-submit-feedback']
-    .forEach(id=>{
-      const el=$('#'+id);
-      if(el){
-        if(!isContributor && id!=='btn-submit-feedback'){ el.disabled=true; el.classList.add('opacity-50','cursor-not-allowed'); }
-        else { el.disabled=false; el.classList.remove('opacity-50','cursor-not-allowed'); }
-      }
-    });
+  ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
+    const el=$('#'+id);
+    if(!el) return;
+    if(!isContributor && id!=='btn-save-phase2'){
+      el.disabled=true; el.classList.add('opacity-50','cursor-not-allowed');
+    } else {
+      el.disabled=false; el.classList.remove('opacity-50','cursor-not-allowed');
+    }
+  });
 }
 
-/* ====================== UI BUILDERS (HOME) ====================== */
+/* =============== UI BUILDERS (HOME) =============== */
 function buildAuthPanel(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
     <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
       <h2 class="text-lg font-semibold text-cyan-200">Authentication</h2>
-      <button id="toggle-auth" class="text-sm text-cyan-300 hover:text-cyan-200 transition" aria-expanded="true">Toggle</button>
+      <button id="toggle-auth" class="text-sm text-cyan-300 hover:text-cyan-200 transition">Toggle</button>
     </div>
     <div id="auth-body" class="p-4 grid md:grid-cols-2 gap-6">
       <form id="auth-form" data-auth-hidden>
-        <label for="login-email" class="block text-sm mb-1">Email</label>
+        <label class="block text-sm mb-1">Email</label>
         <input id="login-email" type="email" autocomplete="username" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="you@example.com"/>
-
-        <label for="login-pass" class="block text-sm mt-3 mb-1">Password</label>
-        <input id="login-pass" type="password" autocomplete="current-password" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="••••••••"/>
-
+        <label class="block text-sm mt-3 mb-1">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
         <div class="flex gap-2 mt-4 flex-wrap">
           <button type="button" id="btn-signin" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Sign In</button>
-          <button type="button" id="btn-create" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">Create</button>
-          <button type="button" id="btn-reset" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">Reset</button>
+          <button type="button" id="btn-create" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">Create Account</button>
+          <button type="button" id="btn-reset" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">Reset Password</button>
         </div>
-        <div id="auth-msg" class="text-xs text-slate-400 mt-2 h-5" aria-live="polite"></div>
+        <div id="auth-msg" class="text-xs text-slate-400 mt-2 h-5"></div>
       </form>
       <div data-auth-visible class="hidden space-y-3">
         <div class="text-sm">
-          <div><span class="font-medium text-slate-300">Signed in:</span> <span id="auth-email" class="text-cyan-300"></span></div>
+          <div><span class="font-medium text-slate-300">Signed in as:</span> <span id="auth-email" class="text-cyan-300"></span></div>
           <div><span class="font-medium text-slate-300">Role:</span> <span id="auth-role" class="text-cyan-300"></span></div>
         </div>
         <button id="btn-signout" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm">Sign Out</button>
@@ -929,14 +632,14 @@ function buildAnalyzePanel(){
       <span class="text-xs text-slate-400">Role: ${state.role}</span>
     </div>
     <div class="p-4 space-y-4">
-      <form id="analyze-form" class="flex flex-col md:flex-row gap-3" aria-label="Analyze or reassess a vessel">
-        <input id="analysis-input" type="text" placeholder="Vessel name..." aria-label="Vessel name" class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+      <form id="analyze-form" class="flex flex-col md:flex-row gap-3">
+        <input id="analysis-input" type="text" placeholder="Vessel name..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
         <div class="flex gap-2">
           <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Analyze</button>
           <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!isContributor?'opacity-50 cursor-not-allowed':''}">Reassess</button>
         </div>
       </form>
-      <div id="analyze-status" class="text-xs text-slate-400 h-5" aria-live="polite"></div>
+      <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
     </div>
   </div>`;
 }
@@ -944,16 +647,15 @@ function buildMapCard(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6" id="map-card">
     <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
-      <div class="flex flex-wrap items-center gap-1 text-sm" aria-label="Filter by risk category">
+      <div class="flex flex-wrap items-center gap-1 text-sm">
         <span class="mr-2 font-medium text-slate-200">Risk:</span>
-        ${['all','critical','high','medium','low'].map(r=>`<button data-filter-sev="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10" aria-pressed="false">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+        ${['all','critical','high','medium','low'].map(r=>`<button data-filter-sev="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
       </div>
-      <div class="flex flex-wrap items-center gap-1 text-sm" aria-label="Filter by stage">
+      <div class="flex flex-wrap items-center gap-1 text-sm">
         <span class="mr-2 font-medium text-slate-200">Stage:</span>
-        ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10" aria-pressed="false">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+        ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
       </div>
       <div class="xl:ml-auto w-full xl:w-72">
-        <label for="map-search" class="sr-only">Search wrecks</label>
         <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
       </div>
     </div>
@@ -964,10 +666,12 @@ function buildMapCard(){
     </div>
     <div class="p-4 border-t border-white/10">
       <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
-      <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" aria-live="polite"></div>
+      <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
     </div>
   </div>`;
 }
+
+/* =============== REASSESS LIST =============== */
 function renderReassessList(){
   const wrap=$('#reassess-list'); if(!wrap) return;
   wrap.innerHTML='';
@@ -1002,26 +706,19 @@ function renderReassessList(){
   });
 }
 
-/* ====================== HOME RENDER ====================== */
+/* =============== HOME RENDER (map preserved) =============== */
 function renderHome(){
   const app=$('#app');
-  const existing = document.getElementById('map-card');
-  app.innerHTML = buildAuthPanel() + buildAnalyzePanel();
-  if (existing) {
-    app.appendChild(existing);
-    if (state.leafletMap) setTimeout(()=>state.leafletMap.invalidateSize(), 0);
+  const existingMap = $('#map-card');
+  if(!existingMap){
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
   } else {
-    app.insertAdjacentHTML('beforeend', buildMapCard());
-    setTimeout(()=>initLeaflet(), 0);
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel();
+    app.appendChild(existingMap);
+    setTimeout(()=>ensureMapSize(),30);
   }
 
-  $('#toggle-auth')?.addEventListener('click',()=>{
-    const body=$('#auth-body');
-    if(body){
-      const hidden=body.classList.toggle('hidden');
-      $('#toggle-auth')?.setAttribute('aria-expanded', String(!hidden));
-    }
-  });
+  $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
   $('#btn-signin')?.addEventListener('click', async ()=>{
     const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
     $('#auth-msg').textContent='Signing in...';
@@ -1055,7 +752,6 @@ function renderHome(){
       $('#analyze-status').textContent='Analysis requested.';
       showToast("Analysis requested","success");
     }catch(e){
-      console.error(e);
       $('#analyze-status').textContent='Error: '+(e?.message||'failed');
       showToast("Analysis failed","error");
     }
@@ -1072,7 +768,6 @@ function renderHome(){
       $('#analyze-status').textContent='Reassessment requested.';
       showToast("Reassessment requested","success");
     }catch(e){
-      console.error(e);
       $('#analyze-status').textContent='Error: '+(e?.message||'failed');
       showToast("Reassessment failed","error");
     }
@@ -1080,16 +775,12 @@ function renderHome(){
 
   document.querySelectorAll('[data-filter-sev]').forEach(btn=>{
     btn.addEventListener('click',()=>{
-      document.querySelectorAll('[data-filter-sev]').forEach(b=>b.setAttribute('aria-pressed','false'));
-      btn.setAttribute('aria-pressed','true');
       state.filters.severity = btn.getAttribute('data-filter-sev');
       refreshLeafletMarkers();
     });
   });
   document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
     btn.addEventListener('click',()=>{
-      document.querySelectorAll('[data-filter-stage]').forEach(b=>b.setAttribute('aria-pressed','false'));
-      btn.setAttribute('aria-pressed','true');
       state.filters.stage = btn.getAttribute('data-filter-stage');
       refreshLeafletMarkers();
     });
@@ -1099,619 +790,279 @@ function renderHome(){
     refreshLeafletMarkers();
   },250));
 
-  if(!state.leafletMap){
-    initLeaflet();
-  } else {
-    setTimeout(()=>state.leafletMap.invalidateSize(), 0);
-  }
+  initLeaflet();
   refreshLeafletMarkers();
   renderReassessList();
   updateAuthUI();
 }
 
-/* ====================== REPORT VIEW (FULL) ====================== */
-function buildReportHTML(it){
-  const cat = severityCategoryForItem(it);
-  const catDef = ACTION_MATRIX[cat] || ACTION_MATRIX.low;
-  const wcsParams = normalizeWcsParameters(it?.wcs?.parameters||[]);
-  const phsNorm = normalizePhsWeights(it?.phs?.parameters||[]);
-  const esiParams = Array.isArray(it?.esi?.parameters)? it.esi.parameters : [];
-  const rpmFactors = readRPMFactors(it);
-  const rpmMult = rpmFinalMultiplier(it);
-
-  const wcsRowsHtml = wcsParams.rows.map(r=>`
-    <tr>
-      <td>${escapeHtml(r.title)}</td>
-      <td>${escapeHtml(r.rationale||"Not provided.")}</td>
-      <td class="text-right">${Number(r.normalized).toFixed(2)}</td>
-    </tr>`).join('') || `<tr><td colspan="3" class="text-center text-slate-400">No WCS parameters</td></tr>`;
-
-  const phsRowsHtml = phsNorm.rows.map(r=>`
-    <tr>
-      <td>${escapeHtml(r.name)}</td>
-      <td>${escapeHtml(r.rationale)}</td>
-      <td class="text-right">${r.weightPct.toFixed(0)}%</td>
-      <td class="text-right">${r.score.toFixed(2)}</td>
-      <td class="text-right font-medium">${r.weighted.toFixed(2)}</td>
-    </tr>`).join('') || `<tr><td colspan="5" class="text-center text-slate-400">No PHS parameters</td></tr>`;
-
-  const esiRowsHtml = esiParams.map(p=>`
-    <tr>
-      <td>${escapeHtml(p?.name || p?.parameter || "")}</td>
-      <td>${escapeHtml(p?.rationale || "")}</td>
-      <td class="text-right">${escapeHtml(String(p?.score ?? ""))}</td>
-    </tr>`).join('') || `<tr><td colspan="3" class="text-center text-slate-400">No ESI parameters</td></tr>`;
-
-  const rpmRowsHtml = rpmFactors.map(f=>`
-    <tr>
-      <td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td>
-      <td>${escapeHtml(f?.rationale || "Not provided.")}</td>
-      <td class="text-right">${escapeHtml(String(f?.value ?? ""))}</td>
-    </tr>`).join('') || `<tr><td colspan="3" class="text-center text-slate-400">No RPM factors. Using final multiplier if supplied.</td></tr>`;
-
-  const coord = resolveCoordinates(it);
-  const coordDisplay = coord ? `${coord.lat.toFixed(4)}°, ${coord.lng.toFixed(4)}°` : '—';
-  const stage = stageFromItem(it);
-
-  return `
-  <div class="flex flex-wrap items-center gap-3 mb-5">
-    <a href="#/" class="btn">← Home</a>
-    <a href="#/list" class="btn">All Wrecks</a>
-    <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
-  </div>
-
-  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card p-5 lg:p-6 space-y-6">
-    <div class="flex flex-col md:flex-row md:items-start gap-6">
-      <div class="flex-1 min-w-0">
-        <h1 class="text-2xl font-semibold text-cyan-200 mb-1">${escapeHtml(vesselName(it))}</h1>
-        <div class="text-sm text-slate-300 leading-relaxed">${escapeHtml(vesselSummary(it))}</div>
-
-        <div class="mt-4 flex flex-wrap gap-2 text-xs">
-          <span class="pill">Stage: ${stage.toUpperCase()}</span>
-          <span class="pill">Risk: ${cat.toUpperCase()}</span>
-          <span class="pill">RPM x${rpmMult.toFixed(2)}</span>
-          ${coord? `<span class="pill">Coords: ${coordDisplay}</span>` : ''}
-        </div>
-      </div>
-      <div class="w-full md:w-72 space-y-3">
-        <div class="p-3 rounded-lg border border-white/10 bg-slate-800/60">
-          <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Action Guidance</div>
-          <div class="text-sm leading-relaxed">${escapeHtml(catDef.action)}</div>
-        </div>
-        <div class="p-3 rounded-lg border border-white/10 bg-slate-800/60">
-          <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Exports</div>
-          <div class="flex flex-wrap gap-2">
-            <button id="export-pdf" class="btn btn-primary">PDF</button>
-            <button id="export-html" class="btn">HTML</button>
-            <button id="export-md" class="btn">MD</button>
-            <button id="export-json" class="btn">JSON</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Radar & Summary -->
-    <div class="grid lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 bg-slate-800/60 border border-white/10 rounded-lg p-4">
-        <h3 class="text-sm font-semibold text-cyan-200 mb-2">Risk Profile Radar</h3>
-        <div class="radar-wrapper">
-          <canvas id="report-radar"></canvas>
-        </div>
-      </div>
-      <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4 text-xs space-y-2">
-        <h3 class="text-sm font-semibold text-cyan-200">Key Metrics</h3>
-        <div class="grid grid-cols-2 gap-2">
-          <div class="p-2 rounded bg-white/5 border border-white/10">
-            <div class="text-[10px] uppercase text-slate-400">WCS Total</div>
-            <div class="font-semibold">${wcsParams.total.toFixed(2)} / 20</div>
-          </div>
-          <div class="p-2 rounded bg-white/5 border border-white/10">
-            <div class="text-[10px] uppercase text-slate-400">PHS Wtd</div>
-            <div class="font-semibold">${phsNorm.totalWeighted.toFixed(2)} / 10</div>
-          </div>
-          <div class="p-2 rounded bg-white/5 border border-white/10">
-            <div class="text-[10px] uppercase text-slate-400">ESI Sum</div>
-            <div class="font-semibold">${esiParams.reduce((s,p)=>s+(Number(p?.score)||0),0).toFixed(2)}</div>
-          </div>
-          <div class="p-2 rounded bg-white/5 border border-white/10">
-            <div class="text-[10px] uppercase text-slate-400">RPM Mult</div>
-            <div class="font-semibold">${rpmMult.toFixed(2)}×</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Factor Tables -->
-    <div class="grid lg:grid-cols-2 gap-6">
-      <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4 space-y-4">
-        <div class="report-section">
-          <h3>WCS Parameters</h3>
-          <table class="report-table">
-            <thead>
-              <tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr>
-            </thead>
-            <tbody>${wcsRowsHtml}</tbody>
-          </table>
-          ${wcsParams.scaleNote?'<p class="text-[10px] text-slate-400 mt-1">Input scale looked 0–10; normalized to 0–5.</p>':''}
-        </div>
-        <div class="report-section">
-          <h3>ESI Parameters</h3>
-            <table class="report-table">
-              <thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead>
-              <tbody>${esiRowsHtml}</tbody>
-            </table>
-        </div>
-      </div>
-      <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4 space-y-4">
-        <div class="report-section">
-          <h3>PHS Parameters</h3>
-          <table class="report-table">
-            <thead>
-              <tr><th>Parameter</th><th>Rationale</th><th>Weight</th><th>Score</th><th>Weighted</th></tr>
-            </thead>
-            <tbody>${phsRowsHtml}</tbody>
-          </table>
-        </div>
-        <div class="report-section">
-          <h3>RPM Factors</h3>
-          <table class="report-table">
-            <thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead>
-            <tbody>${rpmRowsHtml}</tbody>
-          </table>
-          <p class="text-[11px] mt-1"><strong>Final Multiplier:</strong> ${rpmMult.toFixed(2)}× (1.00 baseline)</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Phase 2 & Media -->
-    <div class="grid lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 space-y-6">
-        <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4">
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <h3 class="text-sm font-semibold text-cyan-200 mb-2">Phase 2: Condition / Monitoring Notes</h3>
-            </div>
-            ${['admin','contributor'].includes(state.role) ? '<button id="btn-save-phase2" class="btn btn-primary text-xs h-8">Save</button>' : ''}
-          </div>
-          <textarea id="phase2-notes" class="w-full mt-1 h-40 rounded-lg bg-slate-900/70 border border-white/10 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"
-            placeholder="Enter condition observations, structural changes, corrosion patterns, pollutant leakage indicators, biological colonization notes... (Phase 2)"></textarea>
-          <div id="phase2-save-status" class="text-[11px] text-slate-400 mt-1 h-4"></div>
-        </div>
-
-        <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="text-sm font-semibold text-cyan-200">Uploaded Survey Images (Phase 2)</h3>
-            ${['admin','contributor'].includes(state.role) ? '<button id="btn-upload-files" class="btn text-xs">Upload Images</button>' : ''}
-          </div>
-          <input id="file-input-hidden" type="file" accept="image/*" multiple class="hidden" />
-          <div id="upload-gallery" class="gallery-grid"></div>
-          <div id="upload-gallery-empty" class="text-xs text-slate-400 mt-2 hidden">No uploaded images yet.</div>
-          <div id="upload-status" class="text-[11px] text-slate-400 mt-2 h-4"></div>
-        </div>
-
-        <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="text-sm font-semibold text-cyan-200">Reference / External Media</h3>
-            <span class="text-[10px] text-slate-400">Auto-collected & cached</span>
-          </div>
-          <div id="reference-gallery" class="gallery-grid"></div>
-          <div id="reference-gallery-empty" class="text-xs text-slate-400 mt-2 hidden">No reference media detected.</div>
-        </div>
-
-        <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4">
-          <h3 class="text-sm font-semibold text-cyan-200 mb-2">Feedback / Analyst Notes</h3>
-          <div class="flex gap-2 mb-2">
-            <input id="feedback-input" type="text" placeholder="Add a comment..." class="flex-1 px-3 py-2 rounded-lg bg-slate-900/60 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
-            <button id="btn-submit-feedback" class="btn btn-primary text-xs">Post</button>
-          </div>
-          <div id="feedback-status" class="text-[11px] text-slate-400 h-4 mb-2"></div>
-          <ul id="feedback-list" class="space-y-2 text-xs"></ul>
-        </div>
-      </div>
-      <div class="space-y-6">
-        <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4">
-          <h3 class="text-sm font-semibold text-cyan-200 mb-2">Sources</h3>
-          <ul id="sources-list" class="list-disc ml-5 text-xs space-y-1"></ul>
-          <div id="sources-empty" class="text-xs text-slate-400">No sources listed.</div>
-        </div>
-        <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4">
-          <h3 class="text-sm font-semibold text-cyan-200 mb-2">Assumptions</h3>
-          <ul id="assumptions-list" class="list-disc ml-5 text-xs space-y-1"></ul>
-          <div id="assumptions-empty" class="text-xs text-slate-400">No assumptions recorded.</div>
-        </div>
-        <div class="bg-slate-800/60 border border-white/10 rounded-lg p-4">
-          <h3 class="text-sm font-semibold text-cyan-200 mb-2">Confidence</h3>
-          <div id="confidence-block" class="text-xs space-y-1 text-slate-300"></div>
-          <div id="confidence-empty" class="text-xs text-slate-400">No confidence data.</div>
-        </div>
-      </div>
-    </div>
-  </div>`;
+/* =============== RPM HELPERS & FACTORS =============== */
+function readRPMFactors(it){
+  const rpm=it?.rpm;
+  if(!rpm) return [];
+  if(Array.isArray(rpm.parameters)) return rpm.parameters;
+  if(Array.isArray(rpm.factors)) return rpm.factors;
+  if(Array.isArray(rpm.breakdown)) return rpm.breakdown;
+  if(Array.isArray(rpm.factorBreakdown)) return rpm.factorBreakdown;
+  const maps=['factors','parameters','breakdown','factorMap'];
+  for(const k of maps){
+    const obj=rpm[k];
+    if(obj && typeof obj==='object'){
+      return Object.entries(obj).map(([name,v])=>{
+        if(v && typeof v==='object')
+          return { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" };
+        return { name, rationale:"", value:v ?? "" };
+      });
+    }
+  }
+  const skip=new Set(["finalMultiplier","multiplier","notes","rationale","comment","comments","factors","parameters"]);
+  if(rpm && typeof rpm==='object'){
+    return Object.entries(rpm).filter(([k])=>!skip.has(k)).map(([name,v])=>(
+      v&&typeof v==='object'
+        ? { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" }
+        : { name, rationale:"", value:v ?? "" }
+    ));
+  }
+  return [];
+}
+function rpmFinalMultiplier(it){
+  const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
+  return Number.isFinite(m)?m:1;
 }
 
-/* ---------- REPORT RENDER & INTERACTION ---------- */
-function renderReportRadar(it){
-  const ctx = document.getElementById('report-radar');
-  if(!ctx) return;
-  if(state.reportRadar){ state.reportRadar.destroy(); state.reportRadar=null; }
-
-  // Reconstruct numeric values
-  const wcs = normalizeWcsParameters(it?.wcs?.parameters||[]).total; // out of 20
-  const phs = normalizePhsWeights(it?.phs?.parameters||[]).totalWeighted; // out of 10
-  const esi = (Array.isArray(it?.esi?.parameters)? it.esi.parameters:[])
-                .reduce((s,p)=>s+(Number(p?.score)||0),0); // sum raw
-  const esiMax = (Array.isArray(it?.esi?.parameters)? it.esi.parameters.length:3)*10;
-  const rpm = rpmFinalMultiplier(it);
-
-  // Normalize into comparable 0–20 scale for radar
-  const wcs20 = Math.min(20, Math.max(0, wcs));
-  const phs20 = Math.min(20, Math.max(0, (phs/10)*20));
-  const esi20 = Math.min(20, Math.max(0, (esi/(esiMax||30))*20));
-  const rpm20 = Math.min(20, Math.max(0, ((rpm-0.5)/2.0)*20)); // 0.5–2.5 => 0–20
-
-  const datasets = [
-    { label:"Risk Profile", data:[wcs20, phs20, esi20, rpm20],
-      backgroundColor:"rgba(14,165,233,0.28)", borderColor:"rgba(14,165,233,1)",
-      pointBackgroundColor:"rgba(14,165,233,1)", borderWidth:2 }
+/* =============== RADAR =============== */
+function drawRadar(vWCS,vPHS,vESI,vRPM){
+  const canvas=$('#werp-radar'); if(!canvas) return;
+  if(state.chart){ try{ state.chart.destroy(); }catch{} }
+  const max=20;
+  const dataPoints=[
+    Math.max(0,Math.min(20,Number(vWCS||0))),
+    Math.max(0,Math.min(20,(Number(vPHS||0)/10)*20)),
+    Math.max(0,Math.min(20,(Number(vESI||0)/40)*20)),
+    Math.max(0,Math.min(20,((Math.min(Math.max(Number(vRPM||1),0.5),2.5)-0.5)/2.0)*20))
   ];
-  state.reportRadar = new Chart(ctx, {
+  const sev = computeSeverityTotal({ wcs:Number(vWCS||0), phs:Number(vPHS||0), esi:Number(vESI||0), rpm:Number(vRPM||1) });
+  const catKey=categorizeSeverity(sev);
+  const cat=ACTION_MATRIX[catKey];
+  state.chart=new Chart(canvas,{
     type:'radar',
-    data:{
-      labels:["WCS","PHS","ESI","RPM"],
-      datasets
-    },
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      scales:{ r:{ min:0, max:20, ticks:{ stepSize:5 } } },
+    data:{ labels:['WCS','PHS','ESI','RPM'], datasets:[{
+      label:'Risk Profile',
+      data:dataPoints,
+      backgroundColor:cat.color.fill,
+      borderColor:cat.color.stroke,
+      borderWidth:2,
+      pointBackgroundColor:cat.color.stroke,
+      pointRadius:3
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ r:{ beginAtZero:true, min:0, max, ticks:{ stepSize:4 }, grid:{ color:'rgba(148,163,184,0.25)' }, angleLines:{ color:'rgba(148,163,184,0.25)' }, pointLabels:{ color:'#e2e8f0', font:{ size:11 } } } },
       plugins:{ legend:{ display:false } }
     }
   });
+  $('#severity-score-value') && ($('#severity-score-value').textContent=sev.toFixed(2));
+  $('#severity-category-badge') && ($('#severity-category-badge').innerHTML =
+    `<span class="severity-chip" style="background:${cat.color.fill};color:${cat.color.stroke};border:1px solid ${cat.color.stroke};">${cat.label.toUpperCase()}</span>`
+  );
+  $('#severity-action-text') && ($('#severity-action-text').textContent=cat.action);
 }
 
-function hydrateAuxSections(it){
-  // Sources
-  const sources = Array.isArray(it?.sources)? it.sources : [];
-  const sl=$('#sources-list'); const se=$('#sources-empty');
-  if(sl){
-    sl.innerHTML='';
-    if(!sources.length){ se?.classList.remove('hidden'); }
-    else {
-      se?.classList.add('hidden');
-      sources.forEach(s=>{
-        const li=document.createElement('li');
-        const txt=String(s||'').trim();
-        if(!txt) return;
-        li.innerHTML = /^https?:\/\//i.test(txt)
-          ? `<a class="text-cyan-300 hover:underline break-all" target="_blank" rel="noopener" href="${escapeHtml(txt)}">${escapeHtml(txt)}</a>`
-          : escapeHtml(txt);
-        sl.appendChild(li);
-      });
-    }
-  }
-  // Assumptions
-  const assumptions = Array.isArray(it?.assumptions)? it.assumptions: [];
-  const al=$('#assumptions-list'); const ae=$('#assumptions-empty');
-  if(al){
-    al.innerHTML='';
-    if(!assumptions.length){ ae?.classList.remove('hidden'); }
-    else {
-      ae?.classList.add('hidden');
-      assumptions.forEach(a=>{
-        if(!a) return;
-        const li=document.createElement('li');
-        li.textContent=a;
-        al.appendChild(li);
-      });
-    }
-  }
-  // Confidence
-  const conf=it?.confidence || {};
-  const cb=$('#confidence-block'); const ce=$('#confidence-empty');
-  if(cb){
-    cb.innerHTML='';
-    const lines=[];
-    if(conf.value!=null) lines.push(`<div><span class="text-slate-400">Value:</span> ${Number(conf.value).toFixed(2)}</div>`);
-    if(conf.confidenceLabel) lines.push(`<div><span class="text-slate-400">Label:</span> ${escapeHtml(conf.confidenceLabel)}</div>`);
-    if(conf.basis) lines.push(`<div><span class="text-slate-400">Basis:</span> ${escapeHtml(conf.basis)}</div>`);
-    if(!lines.length) { ce?.classList.remove('hidden'); }
-    else { ce?.classList.add('hidden'); cb.innerHTML=lines.join(''); }
-  }
-}
-
-function renderUploadGallery(it){
-  const wrap = $('#upload-gallery');
-  const empty = $('#upload-gallery-empty');
-  if(!wrap) return;
-  wrap.innerHTML='';
-  const imgs=collectUploadedImages(it);
-  if(!imgs.length){
-    empty?.classList.remove('hidden');
-    return;
-  }
-  empty?.classList.add('hidden');
-  imgs.forEach(a=>{
-    const div=document.createElement('div');
-    div.className='gallery-item';
-    div.innerHTML=`
-      <img src="${a.url}" alt="${escapeHtml(a.name||'upload')}" onerror="this.src='${PLACEHOLDER_SVG}'"/>
-      <div class="absolute bottom-0 left-0 right-0 bg-black/40 text-[10px] px-2 py-1 truncate">${escapeHtml(a.name||'image')}</div>
-    `;
-    wrap.appendChild(div);
-  });
-}
-
-function renderReferenceGallery(it){
-  const wrap=$('#reference-gallery');
-  const empty=$('#reference-gallery-empty');
-  if(!wrap) return;
-  wrap.innerHTML='';
-  const assets=Array.isArray(it?.phase2?.assets)?it.phase2.assets:[];
-  const ref = assets.filter(a=> a?.source==='reference' && a?.url && /\.(png|jpe?g|webp|gif)$/i.test(a?.name||a?.path||''));
-  if(ref.length){
-    empty?.classList.add('hidden');
-    ref.forEach(a=>{
-      const div=document.createElement('div');
-      div.className='gallery-item';
-      div.innerHTML=`<img src="${a.url}" alt="reference" onerror="this.src='${PLACEHOLDER_SVG}'"/>`;
-      wrap.appendChild(div);
-    });
-    return;
-  }
-  // fallback external: scan arrays
-  const gathered=[];
-  (['media','images','photos','gallery','referenceMedia']).forEach(k=>{
-    const arr = it?.[k];
-    if(Array.isArray(arr)){
-      arr.forEach(x=>{
-        const url = (typeof x==='string')? x : (x?.url||x?.src);
-        if(url && /\.(png|jpe?g|webp|gif)$/i.test(url)) gathered.push(url);
-      });
-    }
-  });
-  if(!gathered.length){
-    empty?.classList.remove('hidden');
-    return;
-  }
-  empty?.classList.add('hidden');
-  gathered.slice(0,12).forEach(u=>{
-    const div=document.createElement('div');
-    div.className='gallery-item';
-    div.innerHTML=`<img src="${u}" alt="external" onerror="this.src='${PLACEHOLDER_SVG}'"/>`;
-    wrap.appendChild(div);
-  });
-}
-
-async function savePhase2Notes(it){
-  const txt = $('#phase2-notes')?.value || '';
-  const path = state.byIdPath.get(it.id) || DEFAULT_WRITE_COLLECTION;
-  const statusEl = $('#phase2-save-status');
-  statusEl.textContent='Saving...';
+/* =============== PHASE 2 ENTRIES & UPLOADS =============== */
+async function savePhase2Entry(){
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id) || DEFAULT_WRITE_COLLECTION;
+  const val=getText($('#phase2-notes').value);
+  if(!val){ showToast("Enter text","error"); return; }
+  $('#phase2-status').textContent='Saving...';
+  const entry={
+    entryId:crypto.randomUUID(),
+    text:val,
+    createdAtMs:Date.now(),
+    user: state.user?.email || state.user?.uid || 'anonymous'
+  };
   try{
-    await updateDoc(doc(db,path,it.id), {
-      'phase2.summary': txt,
-      phase2UpdatedAt: serverTimestamp()
+    const ref=doc(db,path,state.currentWreck.id);
+    const snap=await getDoc(ref);
+    const data=snap.exists()?snap.data():{};
+    const list=Array.isArray(data?.phase2?.entries)? data.phase2.entries.slice():[];
+    list.push(entry);
+    await updateDoc(ref,{
+      "phase2.entries": list,
+      "phase2.summary": (data?.phase2?.summary || val.slice(0,240)),
+      "phase2.updatedAt": serverTimestamp()
     });
-    showToast("Phase 2 notes saved","success");
-    statusEl.textContent='Saved.';
-    setTimeout(()=>statusEl.textContent='',2000);
+    $('#phase2-status').textContent='Saved.';
+    showToast("Entry saved","success");
+    $('#phase2-notes').value='';
+    appendPhase2EntryLocal(entry,true);
   }catch(e){
-    statusEl.textContent='Error saving.';
+    $('#phase2-status').textContent='Error';
     showToast("Save failed","error");
+  } finally {
+    setTimeout(()=>$('#phase2-status').textContent='',2000);
   }
 }
-
-function bindReportHandlers(it){
-  $('#phase2-notes') && ($('#phase2-notes').value = getText(it?.phase2?.summary) || '');
-  if($('#btn-save-phase2')){
-    $('#btn-save-phase2').addEventListener('click', ()=> {
-      if(!['admin','contributor'].includes(state.role)) { showToast("Insufficient role","error"); return; }
-      savePhase2Notes(it);
-    });
-  }
-  $('#btn-upload-files')?.addEventListener('click', ()=>{
-    if(!['admin','contributor'].includes(state.role)){ showToast("Insufficient role","error"); return; }
-    $('#file-input-hidden')?.click();
-  });
-  $('#file-input-hidden')?.addEventListener('change', async (e)=>{
-    const files=[...e.target.files];
-    if(!files.length) return;
-    const path = state.byIdPath.get(it.id) || DEFAULT_WRITE_COLLECTION;
-    const status=$('#upload-status');
-    status.textContent='Uploading...';
-    for(const f of files){
-      const safeName = f.name.replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,120);
-      const fullRef = storageRef(storage, `uploads/${it.id}/${Date.now()}_${safeName}`);
-      try{
-        await uploadBytes(fullRef,f);
-        const url = await getDownloadURL(fullRef);
-        await updateDoc(doc(db,path,it.id),{
-          phase2:{ ...(it.phase2||{}), assets:[...(it.phase2?.assets||[]), { url, name:safeName, source:'upload', uploadedAt:Date.now() }] },
-          updatedAt: serverTimestamp()
-        });
-        // Reflect locally
-        if(!it.phase2) it.phase2={};
-        if(!Array.isArray(it.phase2.assets)) it.phase2.assets=[];
-        it.phase2.assets.push({ url, name:safeName, source:'upload', uploadedAt:Date.now() });
-        renderUploadGallery(it);
-        showToast(`Uploaded ${safeName}`,'success');
-      }catch(err){
-        console.error(err);
-        showToast(`Upload failed: ${safeName}`,'error');
-      }
-    }
-    status.textContent='Done';
-    setTimeout(()=>status.textContent='',2000);
-    e.target.value="";
-  });
-
-  // Feedback
-  $('#btn-submit-feedback')?.addEventListener('click', async ()=>{
-    const msg=$('#feedback-input')?.value.trim();
-    const status=$('#feedback-status');
-    if(!msg){
-      status.textContent='Enter text.';
-      setTimeout(()=>status.textContent='',1500);
-      return;
-    }
-    if(!state.user){
-      status.textContent='Sign in first.';
-      setTimeout(()=>status.textContent='',1500);
-      return;
-    }
-    status.textContent='Saving...';
-    const path = state.byIdPath.get(it.id) || DEFAULT_WRITE_COLLECTION;
-    try{
-      await updateDoc(doc(db,path,it.id), {
-        feedback: arrayUnion({ message: msg, user: state.user.email||state.user.uid, createdAtMs: Date.now() }),
-        feedbackUpdatedAt: serverTimestamp()
-      });
-      if(!Array.isArray(it.feedback)) it.feedback=[];
-      it.feedback.unshift({ message: msg, user: state.user.email||state.user.uid, createdAtMs: Date.now() });
-      renderFeedback(it);
-      $('#feedback-input').value='';
-      status.textContent='Saved.';
-      setTimeout(()=>status.textContent='',1500);
-    }catch{
-      status.textContent='Error.';
-      setTimeout(()=>status.textContent='',1500);
-    }
-  });
-
-  // Export buttons
-  $('#export-html')?.addEventListener('click', ()=>exportAssessment(it,'html'));
-  $('#export-md')?.addEventListener('click', ()=>exportAssessment(it,'md'));
-  $('#export-json')?.addEventListener('click', ()=>exportAssessment(it,'json'));
-  $('#export-pdf')?.addEventListener('click', ()=>exportAssessment(it,'pdf'));
-}
-
-function renderFeedback(it){
-  const list=$('#feedback-list');
-  if(!list) return;
-  list.innerHTML='';
-  const entries=Array.isArray(it.feedback)? [...it.feedback]:[];
-  entries.sort((a,b)=>{
-    const aMs=a?.createdAtMs ?? (a?.createdAt?.seconds? a.createdAt.seconds*1000:0);
-    const bMs=b?.createdAtMs ?? (b?.createdAt?.seconds? b.createdAt.seconds*1000:0);
-    return bMs - aMs;
-  });
-  entries.slice(0,25).forEach(e=>{
-    const div=document.createElement('li');
-    div.className='feedback-item';
-    const when= e.createdAtMs? new Date(e.createdAtMs).toLocaleString(): '';
-    div.innerHTML=`
-      <div class="text-[10px] text-slate-400 mb-1">${escapeHtml(e.user||'anon')}${when? ' • '+when:''}</div>
-      <div class="text-xs leading-snug whitespace-pre-wrap">${escapeHtml(e.message||'')}</div>
-    `;
-    list.appendChild(div);
-  });
-}
-
-function renderReport(route){
-  const app=$('#app');
-  const it=state.wrecks.find(w=>String(w.id)===String(route.id));
-  state.currentWreck=it||null;
-  if(!it){
-    app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
-    return;
-  }
-  app.innerHTML=buildReportHTML(it);
-  hydrateAuxSections(it);
-  renderUploadGallery(it);
-  renderReferenceGallery(it);
-  renderFeedback(it);
-  renderReportRadar(it);
-  bindReportHandlers(it);
+function appendPhase2EntryLocal(entry, prepend=false){
+  const list=$('#phase2-entries'); if(!list) return;
+  const ts=entry.createdAtMs? new Date(entry.createdAtMs).toLocaleString() : '';
+  const div=document.createElement('div');
+  div.className='note-item';
+  div.dataset.entryId=entry.entryId;
+  div.innerHTML=`
+    <div class="flex items-center justify-between gap-2 mb-1">
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(entry.user||'user')}</span>
+        <span class="text-[11px] text-slate-400">${escapeHtml(ts)}</span>
+      </div>
+      <button class="hidden text-[10px] px-2 py-0.5 rounded bg-rose-600/60 hover:bg-rose-600 text-white admin-btn" data-admin-only data-delete-entry="${entry.entryId}">Delete</button>
+    </div>
+    <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(entry.text)}</div>
+  `;
+  prepend? list.prepend(div): list.appendChild(div);
   updateAuthUI();
+  div.querySelector('[data-delete-entry]')?.addEventListener('click',()=>deletePhase2Entry(entry.entryId));
+}
+async function deletePhase2Entry(entryId){
+  if(state.role!=='admin') return showToast("Admin only","error");
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id) || DEFAULT_WRITE_COLLECTION;
+  try{
+    const ref=doc(db,path,state.currentWreck.id);
+    const snap=await getDoc(ref);
+    if(!snap.exists()) return;
+    const data=snap.data();
+    const list=Array.isArray(data?.phase2?.entries)? data.phase2.entries.filter(e=>e.entryId!==entryId):[];
+    await updateDoc(ref,{ "phase2.entries": list, "phase2.updatedAt": serverTimestamp() });
+    document.querySelector(`[data-entry-id="${entryId}"]`)?.remove();
+    showToast("Entry deleted","success");
+  }catch{
+    showToast("Delete failed","error");
+  }
+}
+function sanitizeFileName(name=""){ return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`; }
+async function handleUploadSelection(e){
+  const files=Array.from(e.target.files||[]);
+  if(!files.length || !state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id) || DEFAULT_WRITE_COLLECTION;
+  $('#phase2-status').textContent=`Uploading ${files.length} file(s)...`;
+  const basePath=`artifacts/${appId}/public/uploads/${state.currentWreck.id}/user`;
+  let ok=0, fail=0;
+  for(const f of files){
+    try{
+      if(!/^image\//i.test(f.type)){ fail++; continue; }
+      const safe=sanitizeFileName(f.name);
+      const key=`${Date.now()}_${safe}`;
+      const ref=storageRef(storage,`${basePath}/${key}`);
+      await uploadBytes(ref,f,{ contentType:f.type });
+      const url=await getDownloadURL(ref);
+      const asset={ name:f.name, path:`${basePath}/${key}`, url, contentType:f.type, bytes:f.size, source:'upload', uploadedAtMs:Date.now() };
+      const docRef=doc(db,path,state.currentWreck.id);
+      const snap=await getDoc(docRef);
+      const data=snap.exists()? snap.data(): {};
+      const assets=Array.isArray(data?.phase2?.assets)? data.phase2.assets.slice():[];
+      assets.push(asset);
+      await updateDoc(docRef,{
+        "phase2.assets": assets,
+        "phase2.assetsUpdatedAt": serverTimestamp()
+      });
+      appendUploadedImageLocal(asset,true);
+      ok++;
+    }catch{
+      fail++;
+    }
+  }
+  $('#phase2-status').textContent= ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
+  showToast($('#phase2-status').textContent, ok?'success':'error');
+  setTimeout(()=>$('#phase2-status').textContent='',2500);
+  e.target.value="";
+}
+function appendUploadedImageLocal(asset, prepend=false){
+  const g=$('#upload-gallery'); if(!g) return;
+  const wrap=document.createElement('div');
+  wrap.className='upload-thumb group';
+  wrap.dataset.assetPath=asset.path;
+  wrap.innerHTML=`
+    <img src="${asset.url}" onerror="this.src='${PLACEHOLDER_SVG}'" alt="upload">
+    <span class="img-badge">UPLOAD</span>
+    <button data-admin-only data-delete-asset="${asset.path}"
+      class="hidden absolute top-1 right-1 px-2 py-1 rounded bg-rose-600/80 hover:bg-rose-600 text-[10px] text-white admin-btn">×</button>
+  `;
+  prepend? g.prepend(wrap): g.appendChild(wrap);
+  updateAuthUI();
+  wrap.querySelector('[data-delete-asset]')?.addEventListener('click',()=>deleteAsset(asset.path));
+}
+async function deleteAsset(assetPath){
+  if(state.role!=='admin') return showToast("Admin only","error");
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id) || DEFAULT_WRITE_COLLECTION;
+  try{
+    const ref=doc(db,path,state.currentWreck.id);
+    const snap=await getDoc(ref);
+    if(!snap.exists()) return;
+    const data=snap.data();
+    const assets=Array.isArray(data?.phase2?.assets)? data.phase2.assets.filter(a=>a.path!==assetPath):[];
+    await updateDoc(ref,{ "phase2.assets": assets, "phase2.assetsUpdatedAt": serverTimestamp() });
+    document.querySelector(`[data-asset-path="${assetPath}"]`)?.remove();
+    showToast("Image deleted","success");
+  }catch{
+    showToast("Delete failed","error");
+  }
 }
 
-/* ====================== EXPORT FUNCTIONS ====================== */
-function exportAssessment(it, mode){
-  const vessel = vesselName(it) || 'assessment';
-  if(mode==='json'){
-    const blob = new Blob([JSON.stringify(it,null,2)],{type:'application/json'});
-    downloadBlob(blob, `${safeFile(vessel)}.json`);
-    return;
-  }
-  if(mode==='md'){
-    const md = buildMarkdown(it);
-    const blob = new Blob([md],{type:'text/markdown'});
-    downloadBlob(blob, `${safeFile(vessel)}.md`);
-    return;
-  }
-  if(mode==='html'){
-    const html = buildExportHTML(it);
-    const blob = new Blob([html],{type:'text/html'});
-    downloadBlob(blob, `${safeFile(vessel)}.html`);
-    return;
-  }
-  if(mode==='pdf'){
-    const html = buildExportHTML(it,true);
-    const opt = { filename: `${safeFile(vessel)}.pdf`, html2canvas:{ scale:1.2 }, jsPDF:{ unit:'pt', format:'a4', orientation:'portrait' } };
-    html2pdf().from(html).set(opt).save();
-    return;
-  }
+/* =============== EXPORTS (simple) =============== */
+function wireExports(it){
+  $('#btn-export-pdf')?.addEventListener('click',()=>exportPdf(it));
+  $('#btn-export-html')?.addEventListener('click',()=>exportHtml(it));
+  $('#btn-export-md')?.addEventListener('click',()=>exportMarkdown(it));
+  $('#btn-export-json')?.addEventListener('click',()=>exportJson(it));
 }
-function safeFile(name){ return name.replace(/[^\w.-]+/g,'_'); }
-function downloadBlob(blob, filename){
+function exportPdf(it){
+  const container = document.createElement('div');
+  container.innerHTML = `<h1>${escapeHtml(vesselName(it))}</h1><p>${escapeHtml(vesselSummary(it))}</p>`;
+  document.body.appendChild(container);
+  html2pdf().from(container).set({
+    filename: `${vesselName(it).replace(/\s+/g,'_')}.pdf`,
+    html2canvas:{ scale:1.2 },
+    jsPDF:{ unit:'pt', format:'a4', orientation:'portrait' }
+  }).save().then(()=>container.remove()).catch(()=>container.remove());
+}
+function exportHtml(it){
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vesselName(it))}</title></head><body><h1>${escapeHtml(vesselName(it))}</h1><p>${escapeHtml(vesselSummary(it))}</p></body></html>`;
+  downloadFile(`${vesselName(it).replace(/\s+/g,'_')}.html`, new Blob([html],{type:'text/html'}));
+}
+function exportMarkdown(it){
+  const lines=[
+    `# ${vesselName(it)}`,
+    ``,
+    vesselSummary(it)
+  ];
+  downloadFile(`${vesselName(it).replace(/\s+/g,'_')}.md`, new Blob([lines.join('\n')],{type:'text/markdown'}));
+}
+function exportJson(it){
+  downloadFile(`${vesselName(it).replace(/\s+/g,'_')}.json`, new Blob([JSON.stringify(it,null,2)],{type:'application/json'}));
+}
+function downloadFile(name,blob){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=url; a.download=filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  a.href=url; a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function buildMarkdown(it){
-  const wcs=normalizeWcsParameters(it?.wcs?.parameters||[]);
-  const phs=normalizePhsWeights(it?.phs?.parameters||[]);
-  const esiParams=Array.isArray(it?.esi?.parameters)?it.esi.parameters:[];
-  const rpm=rpmFinalMultiplier(it);
-  const lines=[];
-  lines.push(`# ${vesselName(it)}`);
-  lines.push('');
-  lines.push(`Stage: ${stageFromItem(it)}  `);
-  lines.push(`Risk Category: ${severityCategoryForItem(it)}`);
-  lines.push('');
-  lines.push('## Summary');
-  lines.push(vesselSummary(it));
-  lines.push('');
-  lines.push('## Scores');
-  lines.push(`- WCS Total: ${wcs.total.toFixed(2)} / 20`);
-  lines.push(`- PHS Weighted: ${phs.totalWeighted.toFixed(2)} / 10`);
-  const esiSum=esiParams.reduce((s,p)=>s+(Number(p?.score)||0),0);
-  lines.push(`- ESI Sum: ${esiSum.toFixed(2)}`);
-  lines.push(`- RPM Multiplier: ${rpm.toFixed(2)}x`);
-  return lines.join('\n');
-}
-function buildExportHTML(it, printable=false){
-  const base = buildReportHTML(it);
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vesselName(it))}</title>
-  <style>
-    body { font-family: system-ui, Arial, sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }
-    h1,h2,h3 { color:#bae6fd; }
-    table { width:100%; border-collapse:collapse; font-size:12px; }
-    th,td { border:1px solid #334155; padding:4px 6px; vertical-align:top; }
-    th { background:#1e293b; }
-    .pill { background:#1e293b; }
-  </style></head><body>${base}</body></html>`;
-}
 
-/* ====================== LIST PAGE (kept simple) ====================== */
+/* =============== LIST VIEW =============== */
 function renderList(){
   const app=$('#app');
-  const term=(state.filters.search||'').toLowerCase();
+  const term=state.filters.search.toLowerCase();
   const items=state.wrecks.filter(it=>vesselName(it).toLowerCase().includes(term));
   app.innerHTML=`
     <div class="flex flex-wrap items-center gap-3 mb-6">
-      <a href="#/" class="btn">← Home</a>
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
       <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
     </div>
     <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
       <div class="p-4 border-b border-white/10 flex flex-col md:flex-row md:items-center gap-3">
         <div class="text-lg font-semibold text-cyan-200">All Wrecks</div>
         <div class="md:ml-auto w-full md:w-80">
-          <label for="list-search" class="sr-only">Search all wrecks</label>
           <input id="list-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
         </div>
       </div>
@@ -1725,7 +1076,7 @@ function renderList(){
           const thumb=firstUploadThumb(it);
           return `
             <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
-              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="Wreck image">
+              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
               <div class="p-3">
                 <div class="flex items-center justify-between gap-3">
                   <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
@@ -1744,7 +1095,226 @@ function renderList(){
   updateAuthUI();
 }
 
-/* ====================== ROUTER ====================== */
+/* =============== Helper for report table rows (patch) =============== */
+function buildTableRows(rows, withWeight=false){
+  if(!Array.isArray(rows) || !rows.length){
+    return `<tr><td colspan="${withWeight?4:3}" class="py-3 text-slate-500 text-sm">No data.</td></tr>`;
+  }
+  return rows.map(r=>{
+    const weight = r.weightPercent ?? r.weightPct ?? r.percentage ?? r.percent ?? r.weight;
+    return `
+      <tr>
+        <td class="py-2 pr-3 align-top">${escapeHtml(r.name || r.title || r.parameter || '')}</td>
+        <td class="py-2 pr-3 align-top text-slate-300">${escapeHtml(r.rationale || '')}</td>
+        ${withWeight? `<td class="py-2 pr-3 align-top score-right">${weight!=null? Number(weight).toFixed(0)+'%':''}</td>` : ''}
+        <td class="py-2 pr-1 align-top score-right">${toNum(r.score)?.toFixed(2) ?? (toNum(r.normalized)?.toFixed(2) ?? '')}</td>
+      </tr>`;
+  }).join('');
+}
+
+/* =============== REPORT VIEW (Restored Layout) =============== */
+function renderReport(route){
+  const app=$('#app');
+  const it=state.wrecks.find(w=>String(w.id)===String(route.id));
+  state.currentWreck=it||null;
+  if(!it){
+    app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
+    return;
+  }
+
+  const images=collectUploadedImages(it);
+  const wcsParams=Array.isArray(it?.wcs?.parameters)? it.wcs.parameters : [];
+  const phsParams=Array.isArray(it?.phs?.parameters)? it.phs.parameters : [];
+  const esiParams=Array.isArray(it?.esi?.parameters)? it.esi.parameters : [];
+  const rpmFactors=readRPMFactors(it);
+
+  const vWCS = toNum(it?.totals?.wcs) ?? wcsParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
+  const vPHS = toNum(it?.totals?.phs) ?? (phsParams.length? Math.min(10, phsParams.reduce((s,p)=>s+(toNum(p.score)||0),0)/phsParams.length):0);
+  const vESI = toNum(it?.totals?.esi) ?? esiParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
+  const vRPM = rpmFinalMultiplier(it);
+  const sevScore = computeSeverityTotal({ wcs:vWCS, phs:vPHS, esi:vESI, rpm:vRPM });
+  const catKey = categorizeSeverity(sevScore);
+  const cat = ACTION_MATRIX[catKey];
+
+  const coords=resolveCoordinates(it);
+  const coordLine=coords? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : '';
+
+  const gallery = images.length
+    ? `<div class="grid grid-cols-1 gap-3">
+         ${images.slice(0,12).map(a=>`
+           <div class="upload-thumb group" data-asset-path="${a.path}">
+             <img src="${a.url}" onerror="this.src='${PLACEHOLDER_SVG}'" alt="upload">
+             <span class="img-badge">UPLOAD</span>
+             <button data-admin-only data-delete-asset="${a.path}"
+               class="hidden absolute top-1 right-1 px-2 py-1 rounded bg-rose-600/80 hover:bg-rose-600 text-[10px] text-white admin-btn">×</button>
+           </div>`).join('')}
+       </div>`
+    : '<div class="text-xs text-slate-500">No uploaded images yet.</div>';
+
+  function rpmTableRows(){
+    if(!rpmFactors.length)
+      return '<tr><td colspan="3" class="py-3 text-slate-500 text-sm">No factor breakdown supplied.</td></tr>';
+    return rpmFactors.map(f=>`
+      <tr>
+        <td class="py-2 pr-3 align-top">${escapeHtml(f.name||f.factor||'')}</td>
+        <td class="py-2 pr-3 align-top text-slate-300">${escapeHtml(f.rationale||'Not specified.')}</td>
+        <td class="py-2 pr-1 align-top score-right">${escapeHtml(String(f.value??f.multiplier??''))}</td>
+      </tr>`).join('');
+  }
+
+  app.innerHTML = `
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <section class="card-surface p-5 space-y-6">
+      <div class="flex flex-col md:flex-row md:items-start gap-4 justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold text-cyan-200">${escapeHtml(vesselName(it))}</h1>
+          <p class="text-slate-300 text-sm mt-1 leading-relaxed">${escapeHtml(vesselSummary(it))}</p>
+          ${coordLine? `<p class="text-xs text-slate-500 mt-1">Coordinates: ${coordLine}</p>`:''}
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          <button id="btn-export-pdf" class="pill-btn">PDF</button>
+          <button id="btn-export-html" class="pill-btn btn-neutral">HTML</button>
+          <button id="btn-export-md" class="pill-btn btn-neutral">MD</button>
+          <button id="btn-export-json" class="pill-btn btn-neutral" style="background:#f59e0b;border-color:#fbbf24;color:#1e293b;font-weight:600;">JSON</button>
+        </div>
+      </div>
+
+      <div class="report-grid-main">
+        <div class="space-y-6">
+          <div class="card-inner p-4">
+            <h3 class="font-medium mb-3 text-slate-100">Historical / Images</h3>
+            <ul class="text-xs space-y-1 text-slate-300 mb-4">
+              ${it?.historical?.vesselType? `<li><span class="text-slate-400">Type:</span> ${escapeHtml(it.historical.vesselType)}</li>`:''}
+              ${it?.historical?.vesselSizeTonnage? `<li><span class="text-slate-400">Size:</span> ${escapeHtml(it.historical.vesselSizeTonnage)}</li>`:''}
+              ${it?.historical?.ageAndSinking?.launchedYear!=null? `<li><span class="text-slate-400">Launched:</span> ${escapeHtml(String(it.historical.ageAndSinking.launchedYear))}</li>`:''}
+              ${it?.historical?.ageAndSinking?.sunkDate? `<li><span class="text-slate-400">Sunk:</span> ${escapeHtml(String(it.historical.ageAndSinking.sunkDate))}</li>`:''}
+              ${it?.historical?.location?.depthMeters!=null? `<li><span class="text-slate-400">Depth (m):</span> ${escapeHtml(String(it.historical.location.depthMeters))}</li>`:''}
+              ${coordLine? `<li><span class="text-slate-400">Coords:</span> ${coordLine}</li>`:''}
+            </ul>
+            ${gallery}
+          </div>
+          <div class="card-inner p-4 no-print">
+            <h3 class="font-medium mb-3 text-slate-100">Phase 2: In-situ Report</h3>
+            <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Enter new in-situ observation..."></textarea>
+            <div class="flex gap-2 mt-3 flex-wrap">
+              <input id="phase2-files" type="file" multiple class="hidden" />
+              <button id="btn-select-files" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm">Select Files</button>
+              <button id="btn-save-phase2" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Save Note</button>
+              <span id="phase2-status" class="text-xs text-slate-400 self-center"></span>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-6">
+          <div class="card-inner p-4">
+            <h3 class="font-medium mb-3 text-slate-100">Risk Overview</h3>
+            <div class="radar-flex">
+              <div class="radar-wrapper">
+                <canvas id="werp-radar"></canvas>
+              </div>
+              <div class="severity-panel-compact">
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Severity Score</div>
+                  <div class="severity-score text-slate-50" id="severity-score-value">--</div>
+                  <div class="mt-2" id="severity-category-badge"></div>
+                </div>
+                <div class="mt-4">
+                  <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Required Action</div>
+                  <div class="text-xs leading-relaxed text-slate-300" id="severity-action-text">${escapeHtml(cat.action)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="grid md:grid-cols-2 gap-6">
+            <div class="card-inner p-4">
+              <h4 class="font-medium mb-3 text-slate-100">WCS</h4>
+              <div class="overflow-x-auto">
+                <table class="table-mini">
+                  <thead><tr><th>Parameter</th><th>Rationale</th><th class="score-right">Score</th></tr></thead>
+                  <tbody>${buildTableRows(wcsParams,false)}</tbody>
+                </table>
+              </div>
+              <p class="text-xs text-slate-300 mt-2">Total: <span class="font-semibold">${Number(vWCS||0).toFixed(2)}</span></p>
+            </div>
+            <div class="card-inner p-4">
+              <h4 class="font-medium mb-3 text-slate-100">RPM</h4>
+              <div class="overflow-x-auto">
+                <table class="table-mini">
+                  <thead><tr><th>Factor</th><th>Rationale</th><th class="score-right">Value</th></tr></thead>
+                  <tbody>${rpmTableRows()}</tbody>
+                </table>
+              </div>
+              <p class="text-xs text-slate-300 mt-2">Final Multiplier: <span class="font-semibold">${Number(vRPM||1).toFixed(2)}×</span></p>
+            </div>
+          </div>
+          <div class="card-inner p-4">
+            <h4 class="font-medium mb-3 text-slate-100">PHS (Pollution Hazard)</h4>
+            <div class="overflow-x-auto">
+              <table class="table-mini">
+                <thead><tr><th>Parameter</th><th>Rationale</th><th class="score-right">Weight</th><th class="score-right">Score</th></tr></thead>
+                <tbody>${buildTableRows(phsParams,true)}</tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card-inner p-4">
+            <h4 class="font-medium mb-3 text-slate-100">ESI (Environmental Sensitivity)</h4>
+            <div class="overflow-x-auto">
+              <table class="table-mini">
+                <thead><tr><th>Parameter</th><th>Rationale</th><th class="score-right">Score</th></tr></thead>
+                <tbody>${buildTableRows(esiParams,false)}</tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card-inner p-4" id="phase2-entries-wrapper">
+            <h4 class="font-medium mb-3 text-slate-100">In-situ Note Log</h4>
+            <div id="phase2-entries" class="space-y-3 text-xs">
+              ${(Array.isArray(it?.phase2?.entries)?[...it.phase2.entries]:[])
+                 .sort((a,b)=>(b?.createdAtMs||0)-(a?.createdAtMs||0))
+                 .map(e=>{
+                   const ts=e?.createdAtMs? new Date(e.createdAtMs).toLocaleString(): '';
+                   return `<div class="note-item" data-entry-id="${e.entryId||''}">
+                     <div class="flex items-center justify-between gap-2 mb-1">
+                       <div class="flex items-center gap-2">
+                         <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(e.user||'user')}</span>
+                         <span class="text-[11px] text-slate-400">${escapeHtml(ts)}</span>
+                       </div>
+                       <button data-admin-only data-delete-entry="${e.entryId||''}" title="Delete"
+                         class="hidden text-[10px] px-2 py-0.5 rounded bg-rose-600/60 hover:bg-rose-600 text-white admin-btn">Delete</button>
+                     </div>
+                     <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(e.text||'')}</div>
+                   </div>`;
+                 }).join('') || '<div class="text-xs text-slate-500">No entries yet.</div>'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+
+  drawRadar(vWCS,vPHS,vESI,vRPM);
+  wireExports(it);
+  document.querySelectorAll('[data-delete-entry]').forEach(btn=>{
+    const id=btn.getAttribute('data-delete-entry');
+    if(id) btn.addEventListener('click',()=>deletePhase2Entry(id));
+  });
+  document.querySelectorAll('[data-delete-asset]').forEach(btn=>{
+    const path=btn.getAttribute('data-delete-asset');
+    if(path) btn.addEventListener('click',()=>deleteAsset(path));
+  });
+  if(['admin','contributor'].includes(state.role)){
+    $('#btn-save-phase2')?.addEventListener('click', savePhase2Entry);
+    $('#btn-select-files')?.addEventListener('click',()=>{ $('#phase2-files').value=""; $('#phase2-files').click(); });
+    $('#phase2-files')?.addEventListener('change', handleUploadSelection);
+  } else {
+    ['phase2-notes','btn-save-phase2','btn-select-files'].forEach(id=>$('#'+id)?.setAttribute('disabled','true'));
+  }
+  updateAuthUI();
+}
+
+/* =============== ROUTER =============== */
 const routes={ home:/^#\/?$/, report:/^#\/wreck\/([^/]+)$/, list:/^#\/list\/?$/ };
 function parseRoute(){
   const h=location.hash||'#/';
@@ -1775,6 +1345,7 @@ function setActiveNav(route){
 }
 window.addEventListener('hashchange',()=>renderApp());
 
+/* =============== ROOT RENDER =============== */
 function renderApp(){
   const route=parseRoute();
   state.currentRoute=route;
@@ -1784,14 +1355,13 @@ function renderApp(){
   else if(route.name==='list') renderList();
   else renderHome();
   if(route.name==='home'){
-    if(!state.leafletMap) initLeaflet();
-    else setTimeout(()=>state.leafletMap.invalidateSize(),0);
+    initLeaflet();
     refreshLeafletMarkers();
     renderReassessList();
   }
 }
 
-/* ====================== AUTH LISTENER ====================== */
+/* =============== AUTH STATE =============== */
 onAuthStateChanged(auth, async (user)=>{
   state.user=user;
   if(!user){
@@ -1806,34 +1376,13 @@ onAuthStateChanged(auth, async (user)=>{
   startData();
 });
 
-/* ====================== INITIAL RENDER ====================== */
+/* =============== INITIAL =============== */
 renderApp();
 
-/* ====================== PUBLIC API (optional) ====================== */
+/* =============== PUBLIC API (optional) =============== */
 window.ProjectGuardian={
-  loadData(payload){
-    if(!payload || !Array.isArray(payload.wrecks)) return;
-    state.wrecks=payload.wrecks.map(w=>({...w,id:w.id||w.name||crypto.randomUUID()}));
-    if(state.currentRoute?.name==='home'){
-      refreshLeafletMarkers();
-      renderReassessList();
-    } else {
-      renderApp();
-    }
-  },
-  setFilters({ severity, stage, search }={}){
-    if(severity) state.filters.severity=severity;
-    if(stage) state.filters.stage=stage;
-    if(typeof search==='string') state.filters.search=search;
-    if(state.currentRoute?.name==='home'){
-      refreshLeafletMarkers();
-      renderReassessList();
-    } else {
-      renderApp();
-    }
-  },
-  getState(){ return { wrecks: state.wrecks.slice(), filters:{...state.filters}, role: state.role, user: state.user?.email || null }; },
-  debugState(){ console.log("State", state); }
+  debug(){ console.log(state); },
+  getMap(){ return state.leafletMap; }
 };
 </script>
 </body>
