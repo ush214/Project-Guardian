@@ -156,7 +156,7 @@ const getText = (v) => { if (v == null) return null; const s = String(v).trim();
 const deepGet = (obj, path) => path.split(".").reduce((a,k)=> (a && a[k]!==undefined)?a[k]:undefined, obj);
 
 // Robust placeholder (no backticks)
-const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="200" y="120" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="14">No image</text></svg>');
+const PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" text-anchor="middle" fill="#64748b" font-size="14" font-family="Arial">No image</text></svg>');
 
 // External image helpers
 const WEB_IMG_EXT_RX = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(?:\?|#|$)/i;
@@ -328,7 +328,7 @@ function upsertMarker(item) {
   const svTxt = isFiniteNum(sv) ? sv.toFixed(2) : "N/A";
 
   const imgUrl = getMarkerImageUrl(item) || PLACEHOLDER_SVG;
-  const imgHtml = `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:auto;max-height:140px;border:1px solid #e5e7eb;border-radius:6px;object-fit:cover;"></div>`;
+  const imgHtml = `<div style="margin-top:6px"><img src="${imgUrl}" alt="${title}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:220px;height:auto;max-height:180px;object-fit:cover;border:1px solid #ddd;border-radius:6px"></div>`;
 
   const popupHtml = `
     <div>
@@ -400,7 +400,7 @@ function normalizeWcsParameters(rawParams = []) {
   const scaleNote = maxScore > 5;
   const rx = {
     age: [/\bage\b/i, /\byear/i, /\bbuilt\b/i, /\blaunched\b/i, /\bcommission/i, /\bdecommission/i, /since\s*sink/i, /\bsubmerged\b/i, /\bdecade/i, /\bcentur/i, /\bmodern\b/i],
-    vessel: [/\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i, /\bdisplacement\b/i, /\blength\b/i, /\bbeam\b/i, /\bdraft\b/i, /\bauxiliary\b/i, /\boil\b/i, /\bfuel\b/i, /\bballast\b/i],
+    vessel: [/\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i, /\bdisplacement\b/i, /\blength\b/i, /\bbeam\b/i, /\bdraft\b/i, /\bauxiliary\b/i, /\boil\b/i],
     trauma: [/\btorpedo/i, /\btype\s*93\b/i, /\bdepth\s*charge/i, /\bmine\b/i, /\bbomb/i, /\bexplosion/i, /\bdetonat/i, /\bshell(hit|ing)?\b/i, /\bgunfire\b/i, /\bcollision\b/i, /\bgrounding\b/i],
     integrity: [/\bstructur/i, /\bintegrit/i, /\bintact\b/i, /\bcollaps/i, /\bfragment/i, /\bbroken\b/i, /\bruptur/i, /\bbuckl/i, /\bcondition\b/i, /\bhull\b/i, /\bsection\b/i, /\bsevered\b/i]
   };
@@ -460,8 +460,8 @@ function normalizePhsWeights(params = []) {
         if (typeof raw === "string") {
           const trimmed = raw.trim();
           const hadPercent = /%/.test(trimmed);
-          const num = parseFloat(trimmed.replace("%", ""));
-          if (Number.isFinite(num)) return { value: num, hadPercent };
+            const num = parseFloat(trimmed.replace("%", ""));
+            if (Number.isFinite(num)) return { value: num, hadPercent };
         }
       }
     }
@@ -760,7 +760,7 @@ function renderRadarGeneric(item) {
       ring(b.high, "Benchmark High", chartConfig.colors.high, chartConfig.colors.highBorder),
       ring(b.medium, "Benchmark Medium", chartConfig.colors.medium, chartConfig.colors.mediumBorder),
       ring(b.low, "Benchmark Low", chartConfig.colors.low, chartConfig.colors.lowBorder),
-      { label: "Wreck Risk", data: wreck, fill:true, backgroundColor: chartConfig.colors.wreck, borderColor: chartConfig.colors.wreckBorder, pointBackgroundColor: chartConfig.colors.wreckBorder, pointBorderColor: chartConfig.colors.wreckBorder, pointRadius: 3, borderWidth: 2 }
+      { label: "Wreck Risk", data: wreck, fill:true, backgroundColor: chartConfig.colors.wreck, borderColor: chartConfig.colors.wreckBorder, pointBackgroundColor: chartConfig.colors.wreckBorder, pointRadius:4 }
     ]
   };
   const options = { responsive: true, maintainAspectRatio: false,

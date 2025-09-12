@@ -11,12 +11,13 @@
     <h1 class="text-2xl font-bold mb-3">Admin Tools – Deprecated</h1>
     <p class="text-gray-700 mb-4">
       The legacy Admin Tools are no longer used in this deployment.
-      Please use the Import Data tool for data management and the Monitoring page for live status.
+      Use the Import Data tool for data management. Live monitoring is now integrated inside the main application (no separate monitoring.html page).
     </p>
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
       <a href="/import.html" class="bg-indigo-600 text-white px-3 py-2 rounded text-sm">Import Data</a>
-      <a href="/monitoring.html" class="bg-gray-800 text-white px-3 py-2 rounded text-sm">Monitoring</a>
-      <a href="/index.html" class="bg-white border px-3 py-2 rounded text-sm">Back to App</a>
+      <!-- Removed obsolete Monitoring link -->
+      <a href="/index.html#/" class="bg-gray-800 text-white px-3 py-2 rounded text-sm">Main App</a>
+      <a href="/index.html#/list" class="bg-white border px-3 py-2 rounded text-sm">All Wrecks</a>
     </div>
   </main>
 </body>
