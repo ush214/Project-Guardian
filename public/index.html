@@ -46,7 +46,6 @@
       letter-spacing:.5px; text-transform:uppercase;
     }
     .note-block { border:1px solid rgba(255,255,255,0.08); background:#0f172a; }
-
     .admin-btn { opacity:.85; }
     .admin-btn:hover { opacity:1; }
 
@@ -95,6 +94,25 @@
       letter-spacing:.5px;
       margin-left:4px;
     }
+
+    /* Map status overlay */
+    #map-status-badge {
+      position:absolute;
+      top:8px;
+      right:8px;
+      background:rgba(15,23,42,0.65);
+      backdrop-filter:blur(4px);
+      color:#e2e8f0;
+      font-size:11px;
+      padding:4px 8px;
+      border:1px solid rgba(255,255,255,0.15);
+      border-radius:6px;
+      z-index:500;
+      pointer-events:none;
+    }
+    .leaflet-container {
+      background:#0f172a;
+    }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -109,7 +127,6 @@
       <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
     </nav>
     <div class="hidden md:flex items-center gap-4">
-      <!-- Enlarged 75% -->
       <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true"
            alt="Logo Left" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
       <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true"
@@ -122,7 +139,7 @@
 <div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
 
 <script type="module">
-/* ------------------------------ Config & Constants ------------------------------ */
+/* ====================== CONFIG & CONSTANTS ====================== */
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",
@@ -141,7 +158,6 @@ const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/w
 const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
 const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
-/* ---------- Actionable Severity Thresholds ---------- */
 const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
 const ACTION_MATRIX = {
   critical: {
@@ -182,7 +198,7 @@ function severityCategoryForItem(it) {
   return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
 }
 
-/* ------------------------------ Imports ------------------------------ */
+/* ====================== IMPORTS (Firebase) ====================== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -190,7 +206,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection,
-  onSnapshot, arrayUnion
+  onSnapshot
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL
@@ -199,7 +215,7 @@ import {
   getFunctions, httpsCallable
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
-/* ------------------------------ Firebase Init ------------------------------ */
+/* ====================== FIREBASE INIT ====================== */
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
@@ -209,7 +225,7 @@ let callable = { analyzeWerps:null, reassessWerps:null };
 try { callable.analyzeWerps = httpsCallable(functions,"analyzeWerps"); } catch {}
 try { callable.reassessWerps = httpsCallable(functions,"reassessWerps"); } catch {}
 
-/* ------------------------------ State ------------------------------ */
+/* ====================== STATE ====================== */
 const state = {
   wrecks: [],
   byIdPath: new Map(),
@@ -218,13 +234,15 @@ const state = {
   role: 'user',
   user: null,
   listeners: [],
-  filters: { severity:'all', stage:'all', search:'' }, // severity: critical|high|medium|low|all
+  filters: { severity:'all', stage:'all', search:'' },
   chart: null,
   leafletMap: null,
-  leafletMarkers: new Map()
+  leafletMarkers: new Map(),
+  mapStatus: 'init',        // init | loading | ready | error
+  mapMutationObserver: null
 };
 
-/* ------------------------------ Utilities ------------------------------ */
+/* ====================== UTILITIES ====================== */
 const $ = sel => document.querySelector(sel);
 function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c)); }
 const getText = v => v==null ? "" : String(v).trim();
@@ -241,7 +259,7 @@ function showToast(msg,type='info'){
 }
 const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
 
-/* ------------------------------ Stage ------------------------------ */
+/* ====================== STAGE LOGIC ====================== */
 function stageFromItem(it){
   const phase2HasNotes = !!getText(it?.phase2?.summary);
   const phase2Entries = Array.isArray(it?.phase2?.entries) && it.phase2.entries.length;
@@ -257,7 +275,7 @@ function stageFromItem(it){
   return isCompleted ? 'completed' : 'initial';
 }
 
-/* ------------------------------ Data helpers ------------------------------ */
+/* ====================== DATA HELPERS ====================== */
 function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
 function vesselSummary(it){
   return getText(it?.historical?.circumstancesOfLoss) ||
@@ -300,7 +318,7 @@ function resolveCoordinates(item){
   return null;
 }
 
-/* ------------------------------ Role / Auth ------------------------------ */
+/* ====================== ROLE / AUTH ====================== */
 async function fetchRoleFor(uid){
   try{
     const allow=await getDoc(doc(db,"system","allowlist","users",uid));
@@ -334,7 +352,7 @@ async function fetchRoleFor(uid){
   return 'user';
 }
 
-/* ------------------------------ Firestore Listeners ------------------------------ */
+/* ====================== FIRESTORE LISTENERS ====================== */
 function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
 function normalizeDoc(d){
   const out={...d};
@@ -348,18 +366,28 @@ async function startData(){
   detachListeners();
   const accumulator=new Map();
   const applySnap=(snap,path)=>{
+    let changed=false;
     snap.forEach(docSnap=>{
       const raw=docSnap.data()||{};
       const rec={...normalizeDoc(raw), id: raw.id || docSnap.id, _path:path};
       if(String(rec?.type||"").toUpperCase().includes("SEISMIC_EVENT")) return;
       if(!rec.severity) rec.severity = {};
       if(rec.severity.value==null) rec.severity.value = raw?.severity?.value ?? raw?.severityValue;
-      accumulator.set(`${path}::${rec.id}`, rec);
+      const key=`${path}::${rec.id}`;
+      accumulator.set(key, rec);
+      changed=true;
       state.byIdPath.set(rec.id, path);
     });
-    state.wrecks = Array.from(accumulator.values());
-    renderApp();
-    refreshLeafletMarkers();
+    if(changed){
+      state.wrecks = Array.from(accumulator.values());
+      if(state.currentRoute?.name === 'home'){
+        // Avoid full re-render that would nuke map container
+        refreshLeafletMarkers();
+        renderReassessList();
+      } else {
+        renderApp();
+      }
+    }
   };
   for(const p of READ_COLLECTIONS){
     try{
@@ -370,7 +398,7 @@ async function startData(){
   }
 }
 
-/* ------------------------------ Image Aggregation (Uploads only) ------------------------------ */
+/* ====================== IMAGE AGGREGATION ====================== */
 function collectUploadedImages(it){
   const out=[];
   if(Array.isArray(it?.phase2?.assets)){
@@ -388,46 +416,97 @@ function firstUploadThumb(it){
   return imgs[0]?.url || PLACEHOLDER_SVG;
 }
 
-/* ------------------------------ Leaflet Map (with retry) ------------------------------ */
+/* ====================== MAP MANAGEMENT ====================== */
+function setMapStatus(status, detail=""){
+  state.mapStatus=status;
+  const badge = document.getElementById('map-status-badge');
+  if(!badge) return;
+  let txt = status;
+  if(detail) txt += ' • ' + detail;
+  badge.textContent = txt;
+  badge.style.color = status==='error' ? '#fecaca' : '#e2e8f0';
+}
+
+function ensureMapMutationObserver(){
+  if(state.mapMutationObserver) return;
+  const target = document.getElementById('leaflet-map');
+  if(!target) return;
+  state.mapMutationObserver = new MutationObserver(()=>{
+    // If the map container is replaced internally, just refresh markers
+    if(state.leafletMap){
+      refreshLeafletMarkers();
+    }
+  });
+  state.mapMutationObserver.observe(target, { childList:true, subtree:false });
+}
+
 function initLeaflet(){
-  if(state.leafletMap){ return; }
+  if(state.leafletMap){ setMapStatus('ready'); return; }
   let attempts = 0;
+  setMapStatus('loading');
   function tryInit(){
     attempts++;
     if(typeof L === 'undefined'){
-      if(attempts < 10){
-        return setTimeout(tryInit, 200);
-      } else {
-        console.error("Leaflet failed to load after retries.");
-        const mapDiv = document.getElementById('leaflet-map');
-        if(mapDiv){
-          mapDiv.innerHTML = '<div class="text-sm text-rose-400 p-4">Map library failed to load. Check network or CSP policies.</div>';
-        }
+      if(attempts < 12){
+        setTimeout(tryInit, Math.min(1000, attempts*200));
         return;
       }
+      console.error("Leaflet script not available.");
+      setMapStatus('error','script');
+      return;
     }
     const container = document.getElementById('leaflet-map');
     if(!container){
-      if(attempts < 10){
-        return setTimeout(tryInit, 150);
-      } else {
-        console.error("Map container not found.");
+      if(attempts < 8){
+        setTimeout(tryInit, 200);
         return;
       }
+      console.error("Map container missing.");
+      setMapStatus('error','no-container');
+      return;
     }
+    // If container previously had a map (Leaflet stores _leaflet_id) but state lost reference
+    if(container._leaflet_id){ try{ delete container._leaflet_id; }catch{} }
+
     try{
-      state.leafletMap = L.map('leaflet-map',{ zoomControl:true }).setView([10,150],3);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
-        attribution:"&copy; OpenStreetMap contributors"
-      }).addTo(state.leafletMap);
+      state.leafletMap = L.map(container,{ zoomControl:true })
+        .setView([10,150],3);
+
+      const tileLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
+        attribution:"&copy; OpenStreetMap contributors",
+        maxZoom:18,
+        errorTileUrl: ""
+      });
+
+      tileLayer.on('tileerror', (e)=>{
+        console.warn("Tile load error", e);
+        setMapStatus('ready','tile errors');
+      });
+
+      tileLayer.addTo(state.leafletMap);
+
+      state.leafletMap.on('load', ()=>{
+        setMapStatus('ready');
+      });
+
+      state.leafletMap.on('zoomstart', ()=>setMapStatus('ready'));
+      state.leafletMap.on('move', ()=>{ /* no-op for now */ });
+
       refreshLeafletMarkers();
+      ensureMapMutationObserver();
+      setMapStatus('ready');
     }catch(err){
-      console.error("Leaflet init error:", err);
-      if(attempts < 10) setTimeout(tryInit, 200);
+      console.error("Leaflet init error", err);
+      if(attempts < 5){
+        setTimeout(tryInit, attempts*300);
+      } else {
+        setMapStatus('error','init-failed');
+      }
     }
   }
   tryInit();
 }
+
 function markerIconFor(category){
   const color =
     category==='critical' ? 'red' :
@@ -440,48 +519,58 @@ function markerIconFor(category){
     iconAnchor:[7,7]
   });
 }
+
 function refreshLeafletMarkers(){
   if(!state.leafletMap || typeof L === 'undefined') return;
-  for(const mk of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(mk);}catch{} }
-  state.leafletMarkers.clear();
-  const sFilter=state.filters.severity;
-  const stageFilter=state.filters.stage;
-  const term=state.filters.search.toLowerCase();
-  const filtered=state.wrecks.filter(it=>{
-    const cat=severityCategoryForItem(it);
-    if(sFilter!=='all' && cat!==sFilter) return false;
-    const st=stageFromItem(it);
-    if(stageFilter!=='all' && st!==stageFilter) return false;
-    if(term && !vesselName(it).toLowerCase().includes(term)) return false;
-    return resolveCoordinates(it)!=null;
-  });
-  filtered.forEach(it=>{
-    const coord=resolveCoordinates(it);
-    if(!coord) return;
-    const category=severityCategoryForItem(it);
-    const marker=L.marker([coord.lat, coord.lng], { icon: markerIconFor(category) });
-    const thumb=firstUploadThumb(it);
-    const popupHtml=`
-      <div style="min-width:210px">
-        <div style="font-weight:600;font-size:14px">${escapeHtml(vesselName(it))}</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:4px">Stage: ${stageFromItem(it)} • ${category.toUpperCase()}</div>
-        <div style="margin:4px 0 6px">
-          <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'"
-               style="width:100%;max-height:140px;object-fit:cover;border:1px solid #334155;border-radius:6px"/>
-        </div>
-        <a href="#/wreck/${encodeURIComponent(it.id)}"
-           style="display:inline-block;font-size:12px;color:#0ea5e9;text-decoration:underline;">View Assessment</a>
-      </div>`;
-    marker.bindPopup(popupHtml);
-    marker.addTo(state.leafletMap);
-    state.leafletMarkers.set(it.id, marker);
-  });
+  try{
+    for(const mk of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(mk);}catch{} }
+    state.leafletMarkers.clear();
+    const sFilter=state.filters.severity;
+    const stageFilter=state.filters.stage;
+    const term=state.filters.search.toLowerCase();
+    const filtered=state.wrecks.filter(it=>{
+      const cat=severityCategoryForItem(it);
+      if(sFilter!=='all' && cat!==sFilter) return false;
+      const st=stageFromItem(it);
+      if(stageFilter!=='all' && st!==stageFilter) return false;
+      if(term && !vesselName(it).toLowerCase().includes(term)) return false;
+      return resolveCoordinates(it)!=null;
+    });
+    filtered.forEach(it=>{
+      try{
+        const coord=resolveCoordinates(it);
+        if(!coord) return;
+        const category=severityCategoryForItem(it);
+        const marker=L.marker([coord.lat, coord.lng], { icon: markerIconFor(category) });
+        const thumb=firstUploadThumb(it);
+        const popupHtml=`
+          <div style="min-width:210px">
+            <div style="font-weight:600;font-size:14px">${escapeHtml(vesselName(it))}</div>
+            <div style="font-size:11px;color:#64748b;margin-bottom:4px">Stage: ${stageFromItem(it)} • ${category.toUpperCase()}</div>
+            <div style="margin:4px 0 6px">
+              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'"
+                   style="width:100%;max-height:140px;object-fit:cover;border:1px solid #334155;border-radius:6px"/>
+            </div>
+            <a href="#/wreck/${encodeURIComponent(it.id)}"
+               style="display:inline-block;font-size:12px;color:#0ea5e9;text-decoration:underline;">View Assessment</a>
+          </div>`;
+        marker.bindPopup(popupHtml);
+        marker.addTo(state.leafletMap);
+        state.leafletMarkers.set(it.id, marker);
+      }catch(inMarker){
+        console.error("Marker creation failed for wreck", it.id, inMarker);
+      }
+    });
+  }catch(e){
+    console.error("refreshLeafletMarkers error", e);
+    setMapStatus('error','marker-refresh');
+  }
 }
 
-/* ------------------------------ Debounce ------------------------------ */
+/* ====================== DEBOUNCE ====================== */
 function debounce(fn,ms=250){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
 
-/* ------------------------------ Auth UI ------------------------------ */
+/* ====================== AUTH UI ====================== */
 function updateAuthUI(){
   const signedIn=!!state.user;
   $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
@@ -505,7 +594,7 @@ function updateAuthUI(){
   });
 }
 
-/* ------------------------------ UI Builders ------------------------------ */
+/* ====================== UI BUILDERS ====================== */
 function buildAuthPanel(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
@@ -557,8 +646,9 @@ function buildAnalyzePanel(){
   </div>`;
 }
 function buildMapCard(){
+  // We keep the map card stable; if rerender attempted while map exists, we inject markers area only
   return `
-  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6" id="map-card">
     <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
       <div class="flex flex-wrap items-center gap-1 text-sm">
         <span class="mr-2 font-medium text-slate-200">Risk:</span>
@@ -573,7 +663,9 @@ function buildMapCard(){
       </div>
     </div>
     <div class="relative">
-      <div id="leaflet-map" class="w-full h-[550px] bg-slate-800 flex items-center justify-center text-slate-400 text-sm">Loading map...</div>
+      <div id="leaflet-map" class="w-full h-[550px] bg-slate-800">
+        <div id="map-status-badge">init</div>
+      </div>
     </div>
     <div class="p-4 border-t border-white/10">
       <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
@@ -582,7 +674,7 @@ function buildMapCard(){
   </div>`;
 }
 
-/* ------------------------------ Reassess List ------------------------------ */
+/* ====================== REASSESS LIST ====================== */
 function renderReassessList(){
   const wrap=$('#reassess-list'); if(!wrap) return;
   wrap.innerHTML='';
@@ -617,13 +709,23 @@ function renderReassessList(){
   });
 }
 
-/* ------------------------------ Home ------------------------------ */
+/* ====================== HOME RENDER ====================== */
 function renderHome(){
   const app=$('#app');
-  app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
 
-  // Auth events
+  // If map already initialized, avoid full replacement of map container.
+  const hadMap = !!state.leafletMap;
+  if(!hadMap){
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
+  } else {
+    // Only rebuild auth + analyze panels; preserve map card.
+    const existingMapCard = $('#map-card');
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + (existingMapCard ? existingMapCard.outerHTML : buildMapCard());
+  }
+
+  // Re-bind events (map card preserved or recreated)
   $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
+
   $('#btn-signin')?.addEventListener('click', async ()=>{
     const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
     $('#auth-msg').textContent='Signing in...';
@@ -644,7 +746,6 @@ function renderHome(){
   });
   $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOut(auth);}catch{} });
 
-  // Analyze / Reassess
   $('#analyze-form')?.addEventListener('submit', async e=>{
     e.preventDefault();
     if(!['admin','contributor'].includes(state.role)){ showToast("Insufficient role","error"); return; }
@@ -662,6 +763,7 @@ function renderHome(){
       showToast("Analysis failed","error");
     }
   });
+
   $('#btn-reassess')?.addEventListener('click', async ()=>{
     if(!['admin','contributor'].includes(state.role)){ showToast("Insufficient role","error"); return; }
     const name=getText($('#analysis-input').value);
@@ -697,13 +799,14 @@ function renderHome(){
     refreshLeafletMarkers();
   },250));
 
+  // Initialize or reuse map
   initLeaflet();
   refreshLeafletMarkers();
   renderReassessList();
   updateAuthUI();
 }
 
-/* ------------------------------ RPM & Factor Helpers ------------------------------ */
+/* ====================== RPM HELPERS ====================== */
 function readRPMFactors(it){
   const rpm=it?.rpm;
   if(!rpm) return [];
@@ -737,7 +840,7 @@ function rpmFinalMultiplier(it){
   return Number.isFinite(m)?m:1;
 }
 
-/* ------------------------------ Radar (Refactored for Side Panel) ------------------------------ */
+/* ====================== RADAR ====================== */
 function drawRadar(vWCS, vPHS, vESI, vRPM){
   const canvas = document.getElementById('werp-radar');
   if(!canvas || !canvas.getContext) return;
@@ -793,7 +896,6 @@ function drawRadar(vWCS, vPHS, vESI, vRPM){
     }
   });
 
-  // Populate side panel
   const scoreEl = document.getElementById('severity-score-value');
   const badgeEl = document.getElementById('severity-category-badge');
   const actionEl = document.getElementById('severity-action-text');
@@ -808,7 +910,7 @@ function drawRadar(vWCS, vPHS, vESI, vRPM){
   if(actionEl) actionEl.textContent = cat.action;
 }
 
-/* ------------------------------ Phase 2: Entries & Uploads & Admin Deletion ------------------------------ */
+/* ====================== PHASE 2 (Notes & Uploads) ====================== */
 async function savePhase2Entry(){
   if(!state.currentWreck) return;
   const path=state.byIdPath.get(state.currentWreck.id);
@@ -954,7 +1056,7 @@ async function deleteAsset(assetPath){
   }
 }
 
-/* ------------------------------ Exports (Improved PDF Layout) ------------------------------ */
+/* ====================== EXPORTS ====================== */
 function wireExports(it){
   $('#btn-export-pdf')?.addEventListener('click',()=>exportPdf(it));
   $('#btn-export-html')?.addEventListener('click',()=>exportHtml(it));
@@ -1121,7 +1223,7 @@ function downloadBlob(filename, blob){
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-/* ------------------------------ List View ------------------------------ */
+/* ====================== LIST VIEW ====================== */
 function renderList(){
   const app=$('#app');
   const term=state.filters.search.toLowerCase();
@@ -1167,7 +1269,7 @@ function renderList(){
   updateAuthUI();
 }
 
-/* ------------------------------ Report View ------------------------------ */
+/* ====================== REPORT VIEW ====================== */
 function renderReport(route){
   const app=$('#app');
   const it=state.wrecks.find(w=>String(w.id)===String(route.id));
@@ -1274,26 +1376,25 @@ function renderReport(route){
         </div>
 
         <div class="space-y-6 lg:col-span-2">
-          <!-- Updated Radar + Side Severity Panel -->
-            <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
-              <h3 class="font-medium mb-3">Risk Overview</h3>
-              <div class="radar-grid">
-                <div class="radar-wrapper">
-                  <canvas id="werp-radar" class="w-full h-full"></canvas>
+          <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
+            <h3 class="font-medium mb-3">Risk Overview</h3>
+            <div class="radar-grid">
+              <div class="radar-wrapper">
+                <canvas id="werp-radar" class="w-full h-full"></canvas>
+              </div>
+              <div id="severity-side-panel" class="severity-panel">
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Severity Score</div>
+                  <div class="severity-score text-slate-50" id="severity-score-value">--</div>
+                  <div class="mt-2 text-sm" id="severity-category-badge"></div>
                 </div>
-                <div id="severity-side-panel" class="severity-panel">
-                  <div>
-                    <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Severity Score</div>
-                    <div class="severity-score text-slate-50" id="severity-score-value">--</div>
-                    <div class="mt-2 text-sm" id="severity-category-badge"></div>
-                  </div>
-                  <div class="mt-4">
-                    <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Required Action</div>
-                    <div class="text-sm leading-relaxed text-slate-300" id="severity-action-text">--</div>
-                  </div>
+                <div class="mt-4">
+                  <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Required Action</div>
+                  <div class="text-sm leading-relaxed text-slate-300" id="severity-action-text">--</div>
                 </div>
               </div>
             </div>
+          </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
@@ -1321,6 +1422,7 @@ function renderReport(route){
               <p class="text-sm text-slate-300 mt-2">Final Multiplier: <span class="font-semibold">${Number(vRPM||1).toFixed(2)}×</span></p>
             </div>
           </div>
+
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
             <h4 class="font-medium mb-3">PHS (Pollution Hazard)</h4>
             <div class="overflow-x-auto">
@@ -1332,6 +1434,7 @@ function renderReport(route){
               </table>
             </div>
           </div>
+
           <div class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
             <h4 class="font-medium mb-3">ESI (Environmental Sensitivity)</h4>
             <div class="overflow-x-auto">
@@ -1343,6 +1446,7 @@ function renderReport(route){
               </table>
             </div>
           </div>
+
           <div id="phase2-entries-wrapper" class="bg-slate-800/50 border border-white/10 rounded-xl p-4">
             <h4 class="font-medium mb-3">In-situ Note Log</h4>
             <div id="phase2-entries" class="space-y-3 text-sm">
@@ -1390,7 +1494,7 @@ function renderReport(route){
   updateAuthUI();
 }
 
-/* ------------------------------ Router ------------------------------ */
+/* ====================== ROUTER ====================== */
 const routes={ home:/^#\/?$/, report:/^#\/wreck\/([^/]+)$/, list:/^#\/list\/?$/ };
 function parseRoute(){
   const h=location.hash||'#/';
@@ -1421,7 +1525,7 @@ function setActiveNav(route){
   }
 }
 
-/* ------------------------------ Root Render ------------------------------ */
+/* ====================== ROOT RENDER ====================== */
 function renderApp(){
   const route=parseRoute();
   state.currentRoute=route;
@@ -1437,7 +1541,7 @@ function renderApp(){
   }
 }
 
-/* ------------------------------ Auth State ------------------------------ */
+/* ====================== AUTH STATE ====================== */
 onAuthStateChanged(auth, async (user)=>{
   state.user=user;
   if(!user){
@@ -1452,21 +1556,31 @@ onAuthStateChanged(auth, async (user)=>{
   startData();
 });
 
-/* ------------------------------ Initial ------------------------------ */
+/* ====================== INITIAL ====================== */
 renderApp();
 
-/* ------------------------------ Public API ------------------------------ */
+/* ====================== PUBLIC API ====================== */
 window.ProjectGuardian={
   loadData(payload){
     if(!payload || !Array.isArray(payload.wrecks)) return;
     state.wrecks=payload.wrecks.map(w=>({...w,id:w.id||w.name||crypto.randomUUID()}));
-    renderApp(); refreshLeafletMarkers();
+    if(state.currentRoute?.name==='home'){
+      refreshLeafletMarkers();
+      renderReassessList();
+    } else {
+      renderApp();
+    }
   },
   setFilters({ severity, stage, search }={}){
     if(severity) state.filters.severity=severity;
     if(stage) state.filters.stage=stage;
     if(typeof search==='string') state.filters.search=search;
-    renderApp(); refreshLeafletMarkers();
+    if(state.currentRoute?.name==='home'){
+      refreshLeafletMarkers();
+      renderReassessList();
+    } else {
+      renderApp();
+    }
   },
   getState(){
     return {
