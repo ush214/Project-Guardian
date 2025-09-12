@@ -95,7 +95,7 @@
       margin-left:4px;
     }
 
-    /* Map status overlay */
+    /* Map status overlay & controls */
     #map-status-badge {
       position:absolute;
       top:8px;
@@ -110,10 +110,44 @@
       z-index:500;
       pointer-events:none;
     }
+    .map-toggle {
+      position:absolute;
+      top:8px;
+      left:8px;
+      z-index:501;
+      display:flex;
+      gap:6px;
+    }
+    .map-toggle button {
+      background:rgba(15,23,42,0.65);
+      backdrop-filter:blur(4px);
+      border:1px solid rgba(255,255,255,0.18);
+      color:#e2e8f0;
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:6px;
+      cursor:pointer;
+      transition:background .15s;
+    }
+    .map-toggle button.active {
+      background:rgba(14,165,233,0.75);
+      border-color:rgba(125,211,252,0.5);
+      color:#fff;
+    }
+    .map-toggle button:hover {
+      background:rgba(30,41,59,0.8);
+    }
+
     .leaflet-container {
       background:#0f172a;
     }
     .leaflet-marker-icon { cursor: pointer; }
+
+    /* Slightly larger marker for satellite context */
+    .custom-marker div {
+      width:18px!important;
+      height:18px!important;
+    }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -158,6 +192,13 @@ const READ_COLLECTIONS = [
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
 const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
 const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
+
+/* Mapbox Satellite Configuration */
+const MAPBOX_TOKEN = "pk.eyJ1IjoidXNoMjE0IiwiYSI6ImNtZmNnZzV1YjFxMG0ybHM2MnI5aGN6bzIifQ.0FPMf68cgCHTCOsolzB1_w";
+const MAPBOX_STYLE_SAT = "mapbox/satellite-v9";         // pure satellite
+const MAPBOX_STYLE_OSM_FALLBACK = "osm";                // sentinel label for fallback
+const MAPBOX_STYLE_ALT = "mapbox/satellite-streets-v12"; // optional hybrid
+let currentBaseStyle = MAPBOX_STYLE_SAT;
 
 const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
 const ACTION_MATRIX = {
@@ -240,12 +281,18 @@ const state = {
   leafletMap: null,
   leafletMarkers: new Map(),
   mapStatus: 'init',
-  mapMutationObserver: null
+  mapMutationObserver: null,
+  mapBaseLayers: {
+    satellite: null,
+    alt: null,
+    osm: null
+  },
+  tileErrorCount: 0
 };
 
 /* ====================== UTILITIES ====================== */
 const $ = sel => document.querySelector(sel);
-function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c)); }
+function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;","<":"&lt;","\">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c)); }
 const getText = v => v==null ? "" : String(v).trim();
 const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
 function showToast(msg,type='info'){
@@ -439,6 +486,80 @@ function ensureMapMutationObserver(){
   state.mapMutationObserver.observe(target, { childList:true, subtree:false });
 }
 
+function buildMapboxTileLayer(styleId){
+  if(styleId === MAPBOX_STYLE_OSM_FALLBACK){
+    // OSM fallback
+    return L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      attribution:"&copy; OpenStreetMap contributors",
+      maxZoom:19,
+      crossOrigin:true
+    });
+  }
+  const dpr = (window.devicePixelRatio || 1) > 1 ? "@2x" : "";
+  return L.tileLayer(
+    `https://api.mapbox.com/styles/v1/${styleId}/tiles/512/{z}/{x}/{y}${dpr}?access_token=${MAPBOX_TOKEN}`,
+    {
+      tileSize:512,
+      zoomOffset:-1,
+      maxZoom:19,
+      attribution:'Imagery © <a href="https://www.mapbox.com/" target="_blank" rel="noopener">Mapbox</a>, Data © <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a>, © Maxar',
+      crossOrigin:true,
+      updateWhenIdle:true,
+      keepBuffer:6,
+      detectRetina:true
+    }
+  );
+}
+
+function addBaseLayer(styleKey){
+  if(!state.leafletMap) return;
+  // Remove existing visible layers (only base tile layers we manage)
+  Object.values(state.mapBaseLayers).forEach(l=>{
+    if(l && state.leafletMap.hasLayer(l)) state.leafletMap.removeLayer(l);
+  });
+  let layer;
+  if(styleKey === 'satellite'){
+    layer = state.mapBaseLayers.satellite ||= buildMapboxTileLayer(MAPBOX_STYLE_SAT);
+  } else if(styleKey === 'hybrid'){
+    layer = state.mapBaseLayers.alt ||= buildMapboxTileLayer(MAPBOX_STYLE_ALT);
+  } else {
+    layer = state.mapBaseLayers.osm ||= buildMapboxTileLayer(MAPBOX_STYLE_OSM_FALLBACK);
+  }
+  layer.addTo(state.leafletMap);
+  currentBaseStyle = styleKey === 'satellite' ? MAPBOX_STYLE_SAT :
+                     styleKey === 'hybrid' ? MAPBOX_STYLE_ALT :
+                     MAPBOX_STYLE_OSM_FALLBACK;
+  highlightBaseToggle(styleKey);
+  setMapStatus('ready', styleKey);
+}
+
+function highlightBaseToggle(styleKey){
+  document.querySelectorAll('.map-toggle button').forEach(btn=>{
+    const val=btn.getAttribute('data-map-style');
+    btn.classList.toggle('active', val===styleKey);
+  });
+}
+
+function spawnMapToggle(){
+  const container = document.getElementById('leaflet-map');
+  if(!container) return;
+  if(container.querySelector('.map-toggle')) return;
+  const wrap=document.createElement('div');
+  wrap.className='map-toggle';
+  wrap.innerHTML=`
+    <button data-map-style="satellite" class="active">Satellite</button>
+    <button data-map-style="hybrid">Hybrid</button>
+    <button data-map-style="osm">OSM</button>
+  `;
+  container.appendChild(wrap);
+  wrap.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const style=b.getAttribute('data-map-style');
+      addBaseLayer(style);
+    });
+  });
+}
+
 function initLeaflet(){
   if(state.leafletMap){ setMapStatus('ready'); return; }
   let attempts = 0;
@@ -471,26 +592,30 @@ function initLeaflet(){
         zoomControl:true,
         doubleClickZoom:false,
         tap:false,
-        inertia:true,
+        inertia:false,          // Disable inertia for more deterministic click/popup on some devices
         worldCopyJump:true,
-        zoomAnimation:true
+        zoomAnimation:true,
+        preferCanvas:false
       }).setView([10,150],3);
 
-      const tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
-        attribution:"&copy; OpenStreetMap contributors",
-        maxZoom:19,
-        updateWhenIdle:true,
-        keepBuffer:6,
-        crossOrigin:true,
-        detectRetina:true
-      });
+      // Add base layer (satellite)
+      addBaseLayer('satellite');
+      spawnMapToggle();
 
-      tileLayer.on('tileerror', (e)=>{
-        console.warn("Tile load error", e);
-        setMapStatus('ready','tile errors');
+      // Listen for tile errors to fallback if persistent
+      Object.values(state.mapBaseLayers).forEach(l=>{
+        if(!l) return;
+        l.on('tileerror', ()=>{
+          state.tileErrorCount++;
+          if(state.tileErrorCount === 3){
+            showToast("Satellite tile errors detected, monitoring...","error");
+          }
+          if(state.tileErrorCount >= 7 && currentBaseStyle!==MAPBOX_STYLE_OSM_FALLBACK){
+            showToast("Switching to OSM fallback due to repeated satellite tile errors.","error");
+            addBaseLayer('osm');
+          }
+        });
       });
-
-      tileLayer.addTo(state.leafletMap);
 
       state.leafletMap.on('load', ()=> setMapStatus('ready'));
       state.leafletMap.on('popupopen', ()=> state.leafletMap.dragging.disable());
@@ -498,7 +623,7 @@ function initLeaflet(){
 
       refreshLeafletMarkers();
       ensureMapMutationObserver();
-      setMapStatus('ready');
+      setMapStatus('ready','satellite');
     }catch(err){
       console.error("Leaflet init error", err);
       if(attempts < 5){
@@ -513,14 +638,14 @@ function initLeaflet(){
 
 function markerIconFor(category){
   const color =
-    category==='critical' ? 'red' :
-    category==='high' ? 'orange' :
-    category==='medium' ? 'gold' : 'green';
+    category==='critical' ? '#ef4444' :
+    category==='high' ? '#f59e0b' :
+    category==='medium' ? '#facc15' : '#10b981';
   return L.divIcon({
     className:'custom-marker',
-    html:`<div style="width:14px;height:14px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.25);"></div>`,
-    iconSize:[14,14],
-    iconAnchor:[7,7]
+    html:`<div style="width:18px;height:18px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.35);"></div>`,
+    iconSize:[18,18],
+    iconAnchor:[9,9]
   });
 }
 
