@@ -113,6 +113,7 @@
     .leaflet-container {
       background:#0f172a;
     }
+    .leaflet-marker-icon { cursor: pointer; }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -238,7 +239,7 @@ const state = {
   chart: null,
   leafletMap: null,
   leafletMarkers: new Map(),
-  mapStatus: 'init',        // init | loading | ready | error
+  mapStatus: 'init',
   mapMutationObserver: null
 };
 
@@ -381,7 +382,6 @@ async function startData(){
     if(changed){
       state.wrecks = Array.from(accumulator.values());
       if(state.currentRoute?.name === 'home'){
-        // Avoid full re-render that would nuke map container
         refreshLeafletMarkers();
         renderReassessList();
       } else {
@@ -432,7 +432,6 @@ function ensureMapMutationObserver(){
   const target = document.getElementById('leaflet-map');
   if(!target) return;
   state.mapMutationObserver = new MutationObserver(()=>{
-    // If the map container is replaced internally, just refresh markers
     if(state.leafletMap){
       refreshLeafletMarkers();
     }
@@ -465,17 +464,25 @@ function initLeaflet(){
       setMapStatus('error','no-container');
       return;
     }
-    // If container previously had a map (Leaflet stores _leaflet_id) but state lost reference
     if(container._leaflet_id){ try{ delete container._leaflet_id; }catch{} }
 
     try{
-      state.leafletMap = L.map(container,{ zoomControl:true })
-        .setView([10,150],3);
+      state.leafletMap = L.map(container,{
+        zoomControl:true,
+        doubleClickZoom:false,
+        tap:false,
+        inertia:true,
+        worldCopyJump:true,
+        zoomAnimation:true
+      }).setView([10,150],3);
 
-      const tileLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      const tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
         attribution:"&copy; OpenStreetMap contributors",
-        maxZoom:18,
-        errorTileUrl: ""
+        maxZoom:19,
+        updateWhenIdle:true,
+        keepBuffer:6,
+        crossOrigin:true,
+        detectRetina:true
       });
 
       tileLayer.on('tileerror', (e)=>{
@@ -485,12 +492,9 @@ function initLeaflet(){
 
       tileLayer.addTo(state.leafletMap);
 
-      state.leafletMap.on('load', ()=>{
-        setMapStatus('ready');
-      });
-
-      state.leafletMap.on('zoomstart', ()=>setMapStatus('ready'));
-      state.leafletMap.on('move', ()=>{ /* no-op for now */ });
+      state.leafletMap.on('load', ()=> setMapStatus('ready'));
+      state.leafletMap.on('popupopen', ()=> state.leafletMap.dragging.disable());
+      state.leafletMap.on('popupclose', ()=> state.leafletMap.dragging.enable());
 
       refreshLeafletMarkers();
       ensureMapMutationObserver();
@@ -517,6 +521,16 @@ function markerIconFor(category){
     html:`<div style="width:14px;height:14px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.25);"></div>`,
     iconSize:[14,14],
     iconAnchor:[7,7]
+  });
+}
+
+function attachMarkerClick(marker){
+  marker.on('mousedown', (e)=>{
+    if(e.originalEvent) e.originalEvent.stopPropagation();
+  });
+  marker.on('click', (e)=>{
+    if(e.originalEvent) e.originalEvent.stopPropagation();
+    marker.openPopup();
   });
 }
 
@@ -556,6 +570,7 @@ function refreshLeafletMarkers(){
           </div>`;
         marker.bindPopup(popupHtml);
         marker.addTo(state.leafletMap);
+        attachMarkerClick(marker);
         state.leafletMarkers.set(it.id, marker);
       }catch(inMarker){
         console.error("Marker creation failed for wreck", it.id, inMarker);
@@ -646,7 +661,6 @@ function buildAnalyzePanel(){
   </div>`;
 }
 function buildMapCard(){
-  // We keep the map card stable; if rerender attempted while map exists, we inject markers area only
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6" id="map-card">
     <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
@@ -712,20 +726,15 @@ function renderReassessList(){
 /* ====================== HOME RENDER ====================== */
 function renderHome(){
   const app=$('#app');
-
-  // If map already initialized, avoid full replacement of map container.
   const hadMap = !!state.leafletMap;
   if(!hadMap){
     app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
   } else {
-    // Only rebuild auth + analyze panels; preserve map card.
     const existingMapCard = $('#map-card');
     app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + (existingMapCard ? existingMapCard.outerHTML : buildMapCard());
   }
 
-  // Re-bind events (map card preserved or recreated)
   $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
-
   $('#btn-signin')?.addEventListener('click', async ()=>{
     const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
     $('#auth-msg').textContent='Signing in...';
@@ -753,12 +762,13 @@ function renderHome(){
     if(!name){ showToast("Enter vessel name","error"); return; }
     $('#analyze-status').textContent='Requesting analysis...';
     try{
-      if(!callable.analyzeWerps) throw new Error("Function not deployed");
+      if(!callable.analyzeWerps) throw new Error("Function not deployed or callable mismatch");
       await callable.analyzeWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
       $('#analysis-input').value="";
       $('#analyze-status').textContent='Analysis requested.';
       showToast("Analysis requested","success");
     }catch(e){
+      console.error(e);
       $('#analyze-status').textContent='Error: '+(e?.message||'failed');
       showToast("Analysis failed","error");
     }
@@ -770,18 +780,18 @@ function renderHome(){
     if(!name){ showToast("Enter vessel name","error"); return; }
     $('#analyze-status').textContent='Requesting reassessment...';
     try{
-      if(!callable.reassessWerps) throw new Error("Function not deployed");
+      if(!callable.reassessWerps) throw new Error("Function not deployed or callable mismatch");
       await callable.reassessWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
       $('#analysis-input').value="";
       $('#analyze-status').textContent='Reassessment requested.';
       showToast("Reassessment requested","success");
     }catch(e){
+      console.error(e);
       $('#analyze-status').textContent='Error: '+(e?.message||'failed');
       showToast("Reassessment failed","error");
     }
   });
 
-  // Filters
   document.querySelectorAll('[data-filter-sev]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       state.filters.severity = btn.getAttribute('data-filter-sev');
@@ -799,7 +809,6 @@ function renderHome(){
     refreshLeafletMarkers();
   },250));
 
-  // Initialize or reuse map
   initLeaflet();
   refreshLeafletMarkers();
   renderReassessList();
