@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Monitoring</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 1rem; }
+    header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+    h1 { margin: 0 0 .5rem 0; }
+    .badge { display: inline-block; padding: .15rem .4rem; border-radius: .4rem; background: #eee; font-size: .8rem; }
+    .badge.exceeded { background: #ffd8d8; color: #900; }
+    .panel { border: 1px solid #ddd; border-radius: .5rem; padding: .75rem; margin: 1rem 0; }
+    .panel h2 { margin: 0 0 .5rem 0; font-size: 1.1rem; }
+    .event { border-top: 1px dashed #ddd; padding: .5rem 0; }
+    .event:first-child { border-top: none; }
+    .alerts { background: #f8f8f8; border: 1px solid #ddd; padding: .75rem; border-radius: .5rem; }
+    .thumb { max-width: 240px; display: block; margin-top: .35rem; border: 1px solid #ccc; }
+    button { padding: .4rem .7rem; border-radius: .35rem; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+    button:hover { background: #f3f3f3; }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .col { flex: 1 1 360px; min-width: 280px; }
+  </style>
+
+  <!-- Firebase v9 modular CDN -->
+  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
+  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Monitoring</h1>
+    <div id="wreckPath" class="badge"></div>
+    <div id="roleBadge" class="badge"></div>
+  </header>
+
+  <section class="alerts">
+    <h2>Alerts</h2>
+    <div style="margin-bottom:.5rem;">
+      <button id="ackAllBtn">Acknowledge All</button>
+    </div>
+    <div id="alertsList">No alerts.</div>
+  </section>
+
+  <div class="row">
+    <div class="col panel">
+      <h2>Earthquakes</h2>
+      <div id="earthquakes">No events.</div>
+    </div>
+    <div class="col panel">
+      <h2>Tropical Storms</h2>
+      <div id="storms">No events.</div>
+    </div>
+    <div class="col panel">
+      <h2>Oil Spills (Sentinel‑1)</h2>
+      <div id="oil">No events.</div>
+    </div>
+    <div class="col panel">
+      <h2>Currents</h2>
+      <div>Coming soon.</div>
+    </div>
+  </div>
+
+  <script type="module" src="./monitoring.js"></script>
+</body>
+</html>

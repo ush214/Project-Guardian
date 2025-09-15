@@ -1,13 +1,22 @@
 {
   "name": "functions",
-  "type": "module",
+  "private": true,
   "engines": {
-    "node": "20"
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p ./tsconfig.json",
+    "lint": "echo \"No lint configured\"",
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "@google-cloud/storage": "^7.12.1",
     "firebase-admin": "^12.6.0",
-    "firebase-functions": "6.4.0",
-    "uuid": "^10.0.0"
+    "firebase-functions": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "typescript": "^5.5.4"
   }
 }

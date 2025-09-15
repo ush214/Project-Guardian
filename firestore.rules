@@ -2,43 +2,37 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSignedIn() { return request.auth != null; }
-    function isSelf(userId) { return isSignedIn() && request.auth.uid == userId; }
-
-    // Allow each signed-in user to read their own allowlist entry
-    // Path: system/allowlist/users/{uid}
-    match /system/allowlist/users/{userId} {
-      allow read: if isSelf(userId);
-      // Writes should be managed by admins/backends only
-      allow write: if false;
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Artifacts namespace (assessments UI reads from here)
-    match /artifacts/{appId} {
-      // Public data readable by signed-in users
-      match /public/{document=**} {
-        allow read: if isSignedIn();
-        // Writes to public data via trusted backends only
-        allow write: if false;
-      }
-
-      // Legacy per-user private profile/role doc (optional)
-      match /private/users/{userId} {
-        allow read: if isSelf(userId);
-        allow create: if isSelf(userId);
-        // Role updates must be via admin/backends
-        allow update, delete: if false;
-      }
-
-      // Other private docs locked down
-      match /private/{document=**} {
-        allow read, write: if false;
-      }
+    // Placeholder role helpers; wire these to your auth model as needed.
+    function hasRole(r) {
+      // Expect custom claims: request.auth.token.role in ['contributor','admin']
+      return isSignedIn() && (request.auth.token.role == r || (r == 'contributor' && request.auth.token.role == 'admin'));
+    }
+    function isContributor() {
+      return hasRole('contributor') || hasRole('admin');
+    }
+    function isAdmin() {
+      return hasRole('admin');
     }
 
-    // Deny everything else by default
+    // Open read for public pages
     match /{document=**} {
-      allow read, write: if false;
+      allow get, list: if true;
+    }
+
+    // Monitoring events under any wreck doc
+    match /{collectionId}/{docId}/monitoring/{type}/{eventId} {
+      allow create, update: if isContributor();
+      allow read: if true;
+    }
+
+    // Wreck root updates for alerts array and reassessment flags
+    match /{collectionId}/{docId} {
+      allow update: if isContributor();
+      allow read: if true;
     }
   }
 }

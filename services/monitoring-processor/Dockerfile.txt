@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1.6
+FROM node:20-slim
+
+WORKDIR /app
+COPY package.json package-lock.json* tsconfig.json ./
+RUN npm ci || npm install
+
+COPY src ./src
+RUN npm run build
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["npm", "start"]
