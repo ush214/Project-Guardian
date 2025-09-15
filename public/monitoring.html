@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring Dashboard - Project Guardian</title>
+    <link rel="stylesheet" href="theme.css">
+    <link rel="stylesheet" href="monitoring.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        
+        .monitoring-header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .monitoring-header h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+        
+        .monitoring-header p {
+            margin: 0.5rem 0 0 0;
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+        
+        .monitoring-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+        
+        .monitoring-panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background: #f8f9fa;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .panel-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+            margin: 0;
+        }
+        
+        .panel-controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .btn {
+            padding: 0.4rem 0.8rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        
+        .btn:hover {
+            background: #f8f9fa;
+            border-color: #adb5bd;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            border-color: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+            border-color: #0056b3;
+        }
+        
+        .panel-content {
+            padding: 1.5rem;
+            min-height: 400px;
+        }
+        
+        .event-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .event-item {
+            padding: 1rem;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background-color 0.2s;
+        }
+        
+        .event-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .event-item:last-child {
+            border-bottom: none;
+        }
+        
+        .event-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+        
+        .event-type {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+        }
+        
+        .event-icon {
+            font-size: 1.2rem;
+        }
+        
+        .event-severity {
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .severity-low { background: #d4edda; color: #155724; }
+        .severity-medium { background: #fff3cd; color: #856404; }
+        .severity-high { background: #f8d7da; color: #721c24; }
+        
+        .event-details {
+            color: #666;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        
+        .event-meta {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            color: #888;
+        }
+        
+        .alert-item {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .alert-item.acknowledged {
+            background: #d4edda;
+            border-color: #00b894;
+        }
+        
+        .alert-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .alert-message {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .alert-actions {
+            margin-top: 0.5rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #666;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        
+        .status-active { background-color: #28a745; }
+        .status-warning { background-color: #ffc107; }
+        .status-error { background-color: #dc3545; }
+        
+        @media (max-width: 768px) {
+            .monitoring-container {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+            
+            .monitoring-header {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="monitoring-header">
+        <h1>🛡️ Project Guardian Monitoring Dashboard</h1>
+        <p>Real-time monitoring of environmental threats to shipwrecks</p>
+    </div>
+
+    <div class="monitoring-container">
+        <!-- Recent Events Panel -->
+        <div class="monitoring-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">📊 Recent Events</h2>
+                <div class="panel-controls">
+                    <button class="btn" id="refresh-events">🔄 Refresh</button>
+                    <select class="btn" id="event-filter">
+                        <option value="all">All Events</option>
+                        <option value="earthquakes">🌋 Earthquakes</option>
+                        <option value="storms">🌀 Storms</option>
+                        <option value="oil">🛢️ Oil Spills</option>
+                    </select>
+                </div>
+            </div>
+            <div class="panel-content">
+                <div id="events-loading" class="loading">
+                    Loading recent events...
+                </div>
+                <ul id="events-list" class="event-list" style="display: none;"></ul>
+                <div id="events-empty" class="empty-state" style="display: none;">
+                    <p>No recent events found</p>
+                    <p style="font-size: 0.9rem; color: #888;">Events will appear here when monitoring detects environmental threats</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Alerts Panel -->
+        <div class="monitoring-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">🚨 Active Alerts</h2>
+                <div class="panel-controls">
+                    <button class="btn" id="refresh-alerts">🔄 Refresh</button>
+                    <button class="btn btn-primary" id="acknowledge-all">✓ Acknowledge All</button>
+                </div>
+            </div>
+            <div class="panel-content">
+                <div id="alerts-loading" class="loading">
+                    Loading active alerts...
+                </div>
+                <div id="alerts-list" style="display: none;"></div>
+                <div id="alerts-empty" class="empty-state" style="display: none;">
+                    <p>✅ No active alerts</p>
+                    <p style="font-size: 0.9rem; color: #888;">All monitoring thresholds are within normal ranges</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Status Panel -->
+        <div class="monitoring-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">⚙️ System Status</h2>
+                <div class="panel-controls">
+                    <button class="btn" id="refresh-status">🔄 Refresh</button>
+                </div>
+            </div>
+            <div class="panel-content">
+                <div id="status-content">
+                    <div style="margin-bottom: 1rem;">
+                        <span class="status-indicator status-active"></span>
+                        <strong>Monitoring Processor:</strong> <span id="processor-status">Checking...</span>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <span class="status-indicator status-active"></span>
+                        <strong>Oil Spill Detector:</strong> <span id="spill-detector-status">Checking...</span>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <span class="status-indicator status-active"></span>
+                        <strong>Firebase Functions:</strong> <span id="functions-status">Checking...</span>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <span class="status-indicator status-active"></span>
+                        <strong>Last Update:</strong> <span id="last-update">Just now</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions Panel -->
+        <div class="monitoring-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">🔧 Manual Actions</h2>
+            </div>
+            <div class="panel-content">
+                <div style="margin-bottom: 1rem;">
+                    <button class="btn btn-primary" id="trigger-earthquake-scan" style="width: 100%; margin-bottom: 0.5rem;">
+                        🌋 Trigger Earthquake Scan
+                    </button>
+                    <small style="color: #666;">Manually scan for recent earthquakes affecting wrecks</small>
+                </div>
+                
+                <div style="margin-bottom: 1rem;">
+                    <button class="btn btn-primary" id="trigger-storm-scan" style="width: 100%; margin-bottom: 0.5rem;">
+                        🌀 Trigger Storm Scan
+                    </button>
+                    <small style="color: #666;">Manually scan for active storms near shallow wrecks</small>
+                </div>
+                
+                <div style="margin-bottom: 1rem;">
+                    <button class="btn btn-primary" id="trigger-oil-scan" style="width: 100%; margin-bottom: 0.5rem;">
+                        🛢️ Trigger Oil Spill Scan
+                    </button>
+                    <small style="color: #666;">Manually scan satellite imagery for potential oil spills</small>
+                </div>
+                
+                <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #eee;">
+                    <div style="margin-bottom: 1rem;">
+                        <label for="wreck-selector">Select Wreck for Targeted Scan:</label>
+                        <select id="wreck-selector" class="btn" style="width: 100%; margin-top: 0.5rem;">
+                            <option value="">Loading wrecks...</option>
+                        </select>
+                    </div>
+                    <button class="btn" id="scan-selected-wreck" style="width: 100%;">
+                        🎯 Scan Selected Wreck
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Configuration -->
+    <script type="module">
+        // Firebase config - matches existing app.js
+        window.firebaseConfig = {
+            apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+            authDomain: "project-guardian-agent.firebaseapp.com",
+            projectId: "project-guardian-agent",
+            storageBucket: "project-guardian-agent.firebasestorage.app",
+            messagingSenderId: "84395007243",
+            appId: "1:84395007243:web:b07e5f4c4264d27611160e"
+        };
+    </script>
+    
+    <!-- Load monitoring JavaScript -->
+    <script src="monitoring.js" type="module"></script>
+</body>
+</html>

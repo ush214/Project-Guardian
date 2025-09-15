@@ -9,12 +9,12 @@
  *    Creates alerts and sets needsReassessment when thresholds exceeded
  */
 
-import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { logger } from "firebase-functions";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
-import * as admin from "firebase-admin";
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { logger } = require("firebase-functions");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getStorage } = require("firebase-admin/storage");
+const admin = require("firebase-admin");
 
 // Environment variables
 const APP_ID = process.env.APP_ID || "guardian";
@@ -31,7 +31,7 @@ const READ_COLLECTIONS = [
  * Creates a manifest JSON listing all wreck document paths and IDs
  * Writes to GCS raw bucket if available
  */
-export const monitoringMasterHourly = onSchedule(
+const monitoringMasterHourly = onSchedule(
   {
     schedule: "every 60 minutes", 
     timeZone: "Etc/UTC",
@@ -42,7 +42,7 @@ export const monitoringMasterHourly = onSchedule(
     logger.info("Starting monitoring master hourly job");
     
     const db = getFirestore();
-    const manifest: { timestamp: string; collections: any[] } = {
+    const manifest = {
       timestamp: new Date().toISOString(),
       collections: []
     };
@@ -107,7 +107,7 @@ export const monitoringMasterHourly = onSchedule(
  * Listens to writes on {collectionId}/{docId}/monitoring/{type}/{eventId}
  * When exceeded=true, appends to wreck's alerts array and sets needsReassessment=true
  */
-export const onMonitoringEventWrite = onDocumentWritten(
+const onMonitoringEventWrite = onDocumentWritten(
   {
     document: "{collectionId}/{docId}/monitoring/{type}/events/{eventId}",
     region: "us-central1",
@@ -186,7 +186,7 @@ export const onMonitoringEventWrite = onDocumentWritten(
       }
 
       // Update wreck document with new alert and reassessment flag
-      const updates: any = {
+      const updates = {
         alerts: [...currentAlerts, newAlert],
         needsReassessment: true,
         alertsUpdatedAt: FieldValue.serverTimestamp()
@@ -213,3 +213,5 @@ export const onMonitoringEventWrite = onDocumentWritten(
     }
   }
 );
+
+module.exports = { monitoringMasterHourly, onMonitoringEventWrite };

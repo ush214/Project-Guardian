@@ -1,0 +1,8 @@
+flask==2.3.3
+google-cloud-firestore==2.13.1
+google-auth==2.23.4
+earthengine-api==0.1.374
+requests==2.31.0
+numpy==1.24.3
+Pillow==10.0.1
+gunicorn==21.2.0
