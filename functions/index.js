@@ -14,6 +14,9 @@ import { FieldValue } from "firebase-admin/firestore";
 import { v4 as uuidv4 } from "uuid";
 import { db, storage } from "./admin.js";
 
+// Export monitoring functions
+export { monitoringMasterHourly, onMonitoringEventWrite } from "./src/monitoring.js";
+
 // ---------- Helpers: URL and image candidate discovery ----------
 
 const IMG_EXT_RX = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(?:\?|#|$)/i;
