@@ -1,5 +1,5 @@
 /**
- * monitoring.ts - Firebase Functions for Project Guardian monitoring system
+ * monitoring.js - Firebase Functions for Project Guardian monitoring system
  * 
  * Functions:
  * 1. monitoringMasterHourly - Cloud Scheduler trigger (every 60 min) 

@@ -3,7 +3,7 @@
 // Requires Blaze plan for outbound HTTP.
 //
 // Deploy:
-//   firebase deploy --only functions:autoCacheReferenceMedia,functions:cacheCollectionReferenceMedia,functions:cacheReferenceMedia
+//   firebase deploy --only functions:autoCacheReferenceMedia,functions:cacheCollectionReferenceMedia,functions:cacheReferenceMedia,functions:monitoringMasterHourly,functions:onMonitoringEventWrite
 //
 // Note: For onCall to work from the browser, ensure the Cloud Run service for this function allows roles/run.invoker to allUsers.
 // We still enforce Firebase Auth and role checks inside the callable.
@@ -14,7 +14,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { v4 as uuidv4 } from "uuid";
 import { db, storage } from "./admin.js";
 
-// Export monitoring functions
+// Export monitoring functions - these will be compiled from TypeScript
 export { monitoringMasterHourly, onMonitoringEventWrite } from "./src/monitoring.js";
 
 // ---------- Helpers: URL and image candidate discovery ----------
