@@ -50,6 +50,10 @@ build/Release
 # Dependency directories
 node_modules/
 
+# Build artifacts
+functions/lib/
+services/*/lib/
+
 # Optional npm cache directory
 .npm
 
