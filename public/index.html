@@ -190,6 +190,7 @@
       }
     }
   </style>
+  <link rel="stylesheet" href="monitoring.css">
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
 <header class="sticky top-0 z-50 backdrop-blur bg-[#050816]/90 border-b border-white/10 no-print">
@@ -1289,6 +1290,20 @@ function renderReport(route){
                  }).join('') || '<div class="text-xs text-slate-500">No entries yet.</div>'}
             </div>
           </div>
+          <div class="card-inner p-4">
+            <h4 class="font-medium mb-3 text-slate-100">Monitoring Events</h4>
+            <div id="monitoring-panel" data-wreck-id="${it.id}" class="mon-panel">
+              <div class="mon-header">
+                <h5 class="text-sm font-medium text-slate-100">Recent Events</h5>
+                <div class="mon-actions">
+                  <button id="mon-refresh" class="mon-btn mon-secondary text-xs">Refresh</button>
+                  <button id="mon-spill" class="mon-btn mon-secondary text-xs">Check Oil Spills</button>
+                </div>
+              </div>
+              <div id="mon-empty" class="text-xs text-slate-500">Loading events...</div>
+              <ul id="mon-list" class="mon-list" style="display: none;"></ul>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1385,5 +1400,8 @@ window.ProjectGuardian={
   getMap(){ return state.leafletMap; }
 };
 </script>
+
+<!-- Monitoring UI -->
+<script src="monitoring-init.js"></script>
 </body>
 </html>

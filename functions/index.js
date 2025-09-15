@@ -384,3 +384,6 @@ export const autoCacheReferenceMedia = onDocumentWritten(
 // Import and export new functions
 export { analyzeWerps } from "./analyzeWerps.js";
 export { reassessWerps } from "./reassessWerps.js";
+
+// Import and export monitoring functions
+export { monitoringMasterHourly, onMonitoringEventWrite } from "./src/monitoring.js";

@@ -13,7 +13,7 @@ const REGION = "us-central1";
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.5-pro";
 
-async function getRole(uid) {
+async function getRole(uid: any) {
   try {
     const snap = await db.doc(`system/allowlist/users/${uid}`).get();
     if (!snap.exists) return "user";
@@ -31,8 +31,10 @@ function createGeminiClient() {
   return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }
 
-async function generateGeminiJSON(prompt) {
+async function generateGeminiJSON(prompt: any) {
   const model = createGeminiClient();
   const res = await model.generateContent(prompt);
   const text = res.response.text();
-  const cleaned = text.replace(/^
+  const cleaned = text.replace(/^```json\s*|\s*```$/g, "").trim();
+  return JSON.parse(cleaned);
+}
