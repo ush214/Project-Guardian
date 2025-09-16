@@ -47,17 +47,25 @@ function setStatus(s) { statusEl.textContent = s || ""; }
 function log(s) { logEl.textContent += (s + "\n"); }
 function clearLog() { logEl.textContent = ""; }
 
+// Flexible JSON parser: accepts array or single object (wraps to array)
+function parseJsonFlexible(text) {
+  const parsed = JSON.parse(text);
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === "object") return [parsed];
+  throw new Error("JSON must be an object or an array of objects.");
+}
+
 async function readJsonFromInputs() {
   const file = fileInput.files?.[0];
   if (file) {
     try {
       const txt = await file.text();
-      return JSON.parse(txt);
+      return parseJsonFlexible(txt);
     } catch (e) { throw new Error("Invalid JSON file: " + (e?.message || e)); }
   }
   if (jsonInput.value.trim()) {
     try {
-      return JSON.parse(jsonInput.value);
+      return parseJsonFlexible(jsonInput.value);
     } catch (e) { throw new Error("Invalid pasted JSON: " + (e?.message || e)); }
   }
   throw new Error("Provide JSON via file upload or paste area.");
@@ -162,7 +170,7 @@ btnValidate.addEventListener("click", async () => {
   clearLog(); setStatus("Validating…");
   try {
     const arr = await readJsonFromInputs();
-    if (!Array.isArray(arr)) throw new Error("Top-level JSON must be an array of documents.");
+    // readJsonFromInputs() guarantees an array now
     const sample = arr.slice(0, 3).map(normalizeDoc);
     setStatus(`Valid JSON. ${arr.length} record(s).`);
     log(JSON.stringify(sample, null, 2));
