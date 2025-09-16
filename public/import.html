@@ -8,7 +8,14 @@
 </head>
 <body class="bg-slate-50 text-gray-900">
   <main class="max-w-5xl mx-auto p-6 space-y-4">
-    <h1 class="text-xl font-semibold">Import WERP Assessments</h1>
+    <header class="flex items-center justify-between">
+      <h1 class="text-xl font-semibold">Import WERP Assessments</h1>
+      <div class="text-sm text-gray-600">
+        <span id="authUser">Checking sign-in…</span>
+        <span class="mx-2">•</span>
+        Role: <span id="authRole" class="font-medium">—</span>
+      </div>
+    </header>
 
     <section class="bg-white border border-gray-200 rounded-xl shadow p-4 space-y-3">
       <div class="grid md:grid-cols-2 gap-3">
@@ -46,13 +53,17 @@
         <button id="btnDeleteSecondary" class="bg-amber-600 hover:bg-amber-500 text-white text-sm px-3 py-2 rounded">Delete secondary</button>
         <button id="btnReplaceAndDelete" class="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-2 rounded">Replace primary AND delete secondary</button>
 
-        <button id="btnCachePrimary" class="bg-gray-800 hover:bg-gray-700 text-white text-sm px-3 py-2 rounded">Cache media for primary (no hotlinks)</button>
+        <button id="btnCachePrimary" class="bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-2 rounded">Backfill cache for primary</button>
       </div>
 
-      <div class="text-sm">
-        <div id="status" class="mt-2 h-5 text-gray-600"></div>
-        <pre id="log" class="mt-2 p-2 bg-slate-900 text-slate-100 rounded overflow-auto max-h-[260px] text-xs"></pre>
-      </div>
+      <div id="status" class="text-sm text-gray-700"></div>
+      <pre id="log" class="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-[320px]"></pre>
+
+      <p class="text-xs text-gray-500">
+        Notes:
+        <br>• Destructive operations (Replace/Delete) are gated to Contributor/Admin users in the UI and are also enforced by Firestore Rules.
+        <br>• JSON must be an array of documents and each item must include a unique "id" (or ID/name/uuid/slug/title).
+      </p>
     </section>
   </main>
 

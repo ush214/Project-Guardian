@@ -26,6 +26,9 @@ const callCacheCollection = httpsCallable(functions, "cacheCollectionReferenceMe
 
 // DOM helpers
 const el = (id) => document.getElementById(id);
+const authUserEl = el("authUser");
+const authRoleEl = el("authRole");
+
 const primaryPathInput = el("primaryPathInput");
 const secondaryPathInput = el("secondaryPathInput");
 const fileInput = el("fileInput");
@@ -79,6 +82,81 @@ async function listAllDocIds(colPath) {
   return snap.docs.map(d => d.id);
 }
 
+// Very light role resolution for UI (rules still enforce on server)
+async function getUiRole(uid) {
+  try {
+    const snap = await getDoc(doc(db, "system", "allowlist", "users", uid));
+    if (!snap.exists()) return "user";
+    const d = snap.data() || {};
+    let r = d.role ?? d.Role ?? d.ROLE;
+    if (typeof r === "string" && r.trim()) {
+      r = r.trim().toLowerCase();
+      if (r.startsWith("admin")) return "admin";
+      if (r.startsWith("contrib")) return "contributor";
+      if (["user","reader","viewer"].includes(r)) return "user";
+    }
+    if (d.admin === true) return "admin";
+    if (d.contributor === true) return "contributor";
+    if (d.allowed === true) return "user";
+  } catch {}
+  return "user";
+}
+
+function setControlsEnabled(isContribOrAdmin) {
+  // Read-only safe ops: always enabled
+  btnValidate.disabled = false;
+  btnExportPrimary.disabled = false;
+
+  // Destructive/backfill ops: gated in UI
+  for (const b of [btnAppendPrimary, btnReplacePrimary, btnDeleteSecondary, btnReplaceAndDelete, btnCachePrimary]) {
+    b.disabled = !isContribOrAdmin;
+    b.classList.toggle("opacity-50", !isContribOrAdmin);
+    b.classList.toggle("cursor-not-allowed", !isContribOrAdmin);
+  }
+}
+
+function parseAppIdFromCollectionPath(colPath) {
+  // artifacts/{appId}/public/data/werpassessments
+  const parts = String(colPath || "").split("/");
+  if (parts.length >= 2 && parts[0] === "artifacts") return parts[1];
+  return "";
+}
+
+async function saveDocs(colPath, arr, merge = true) {
+  const docs = arr.map(normalizeDoc);
+  const BULK_LIMIT = 450;
+  let wrote = 0, batches = 0;
+
+  for (const part of chunk(docs, BULK_LIMIT)) {
+    const batch = writeBatch(db);
+    for (const d of part) {
+      batch.set(doc(db, colPath, d.id), d, { merge });
+    }
+    await batch.commit();
+    batches++;
+    wrote += part.length;
+    setStatus(`Wrote ${wrote}/${docs.length}…`);
+  }
+  return { wrote, batches };
+}
+
+async function deleteAll(colPath) {
+  const ids = await listAllDocIds(colPath);
+  if (ids.length === 0) return { deleted: 0, batches: 0 };
+  const BULK_LIMIT = 450;
+  let deleted = 0, batches = 0;
+
+  for (const part of chunk(ids, BULK_LIMIT)) {
+    const batch = writeBatch(db);
+    for (const id of part) batch.delete(doc(db, colPath, id));
+    await batch.commit();
+    batches++;
+    deleted += part.length;
+    setStatus(`Deleted ${deleted}/${ids.length}…`);
+  }
+  return { deleted, batches };
+}
+
 // Actions
 btnValidate.addEventListener("click", async () => {
   clearLog(); setStatus("Validating…");
@@ -115,122 +193,97 @@ btnAppendPrimary.addEventListener("click", async () => {
   const col = primaryPathInput.value.trim();
   try {
     const arr = await readJsonFromInputs();
-    const docs = arr.map(normalizeDoc);
-    let done = 0;
-    for (const d of docs) {
-      await setDoc(doc(db, col, d.id), d, { merge: true });
-      done++;
-      if (done % 25 === 0) setStatus(`Appended ${done}/${docs.length}…`);
-    }
-    setStatus(`Append complete: ${done} record(s).`);
+    const { wrote, batches } = await saveDocs(col, arr, true);
+    setStatus(`Append complete: ${wrote} record(s) in ${batches} batch(es).`);
   } catch (e) {
     setStatus("Append failed: " + (e?.message || e));
   }
 });
 
 btnReplacePrimary.addEventListener("click", async () => {
-  clearLog(); setStatus("Replacing primary (delete + import)…");
   const col = primaryPathInput.value.trim();
+  if (!confirm(`Replace primary?\nThis will DELETE all docs in:\n${col}\nThen import from JSON.`)) return;
+
+  clearLog(); setStatus("Replacing primary (delete + import) …");
   try {
+    const del = await deleteAll(col);
+    log(`Deleted ${del.deleted} record(s) in ${del.batches} batch(es).`);
     const arr = await readJsonFromInputs();
-    const docs = arr.map(normalizeDoc);
-
-    // Delete all current docs in batches
-    const ids = await listAllDocIds(col);
-    for (const group of chunk(ids, 400)) {
-      const batch = writeBatch(db);
-      for (const id of group) batch.delete(doc(db, col, id));
-      await batch.commit();
-    }
-    log(`Deleted ${ids.length} existing doc(s).`);
-
-    // Import new docs in batches
-    for (const group of chunk(docs, 400)) {
-      const batch = writeBatch(db);
-      for (const d of group) batch.set(doc(db, col, d.id), d, { merge: false });
-      await batch.commit();
-    }
-    setStatus(`Replace complete: imported ${docs.length} doc(s).`);
-
+    const put = await saveDocs(col, arr, false);
+    setStatus(`Replace complete. Deleted ${del.deleted}, wrote ${put.wrote}.`);
   } catch (e) {
     setStatus("Replace failed: " + (e?.message || e));
   }
 });
 
 btnDeleteSecondary.addEventListener("click", async () => {
-  clearLog(); setStatus("Deleting secondary…");
   const col = secondaryPathInput.value.trim();
+  if (!col) { alert("Secondary collection path is empty."); return; }
+  if (!confirm(`Delete ALL docs from secondary?\n${col}`)) return;
+
+  clearLog(); setStatus("Deleting secondary…");
   try {
-    const ids = await listAllDocIds(col);
-    for (const group of chunk(ids, 400)) {
-      const batch = writeBatch(db);
-      for (const id of group) batch.delete(doc(db, col, id));
-      await batch.commit();
-    }
-    setStatus(`Deleted ${ids.length} from secondary.`);
+    const res = await deleteAll(col);
+    setStatus(`Secondary deleted: ${res.deleted} record(s) in ${res.batches} batch(es).`);
   } catch (e) {
-    setStatus("Delete failed: " + (e?.message || e));
+    setStatus("Delete secondary failed: " + (e?.message || e));
   }
 });
 
 btnReplaceAndDelete.addEventListener("click", async () => {
-  clearLog(); setStatus("Replacing primary AND deleting secondary…");
   const primary = primaryPathInput.value.trim();
   const secondary = secondaryPathInput.value.trim();
+  if (!confirm(`Replace primary and then delete secondary?\nPrimary: ${primary}\nSecondary: ${secondary}`)) return;
+
+  clearLog(); setStatus("Replace primary → delete secondary…");
   try {
-    // Replace primary
+    const del = await deleteAll(primary);
+    log(`Deleted from primary: ${del.deleted} record(s).`);
     const arr = await readJsonFromInputs();
-    const docs = arr.map(normalizeDoc);
+    const put = await saveDocs(primary, arr, false);
+    log(`Imported into primary: ${put.wrote} record(s).`);
 
-    const ids = await listAllDocIds(primary);
-    for (const group of chunk(ids, 400)) {
-      const batch = writeBatch(db);
-      for (const id of group) batch.delete(doc(db, primary, id));
-      await batch.commit();
+    if (secondary) {
+      const del2 = await deleteAll(secondary);
+      log(`Deleted secondary: ${del2.deleted} record(s).`);
     }
-    log(`Deleted ${ids.length} existing doc(s) in primary.`);
-
-    for (const group of chunk(docs, 400)) {
-      const batch = writeBatch(db);
-      for (const d of group) batch.set(doc(db, primary, d.id), d, { merge: false });
-      await batch.commit();
-    }
-    log(`Imported ${docs.length} into primary.`);
-
-    // Delete secondary
-    const sids = await listAllDocIds(secondary);
-    for (const group of chunk(sids, 400)) {
-      const batch = writeBatch(db);
-      for (const id of group) batch.delete(doc(db, secondary, id));
-      await batch.commit();
-    }
-    setStatus(`Done. Primary replaced with ${docs.length}, secondary deleted ${sids.length}.`);
+    setStatus("Replace and delete completed.");
   } catch (e) {
-    setStatus("Replace and delete failed: " + (e?.message || e));
+    setStatus("Replace+Delete failed: " + (e?.message || e));
   }
 });
 
-// NEW: Backfill cache for primary
 btnCachePrimary.addEventListener("click", async () => {
   clearLog();
-  const path = primaryPathInput.value.trim();
-  if (!path) { setStatus("Enter the primary collection path."); return; }
-  setStatus("Caching media for primary collection… requires billing to fetch external images.");
+  const col = primaryPathInput.value.trim();
+  const appId = parseAppIdFromCollectionPath(col) || "guardian";
+  if (!confirm(`Run cache backfill on:\nappId=${appId}\ncollectionPath=${col}\n\nThis enqueues media caching for reference images.`)) return;
+  setStatus("Starting cache backfill…");
   try {
-    const res = await callCacheCollection({ appId: "guardian", collectionPath: path, limit: 1000 });
-    const out = res?.data || {};
-    setStatus(`Cache finished. Processed ${out.processed || 0} doc(s); cached ${out.created || 0} image(s), skipped ${out.skipped || 0}.`);
-    log(JSON.stringify(out, null, 2));
+    const res = await callCacheCollection({ appId, collectionPath: col, limit: 300, dryRun: false });
+    const data = res?.data || {};
+    setStatus(`Backfill started. ${JSON.stringify(data)}`);
+    log(JSON.stringify(data, null, 2));
   } catch (e) {
-    setStatus("Cache failed: " + (e?.message || e));
+    setStatus("Backfill failed: " + (e?.message || e));
   }
 });
 
-// Auth gate: show a note if user isn't logged in
-onAuthStateChanged(auth, (user) => {
+// Auth/UI wiring
+onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    setStatus("Note: You are not signed in. Importing/backfill will fail unless authenticated.");
-  } else {
-    setStatus(`Signed in as ${user.email || user.uid}`);
+    authUserEl.textContent = "Not signed in";
+    authRoleEl.textContent = "—";
+    setControlsEnabled(false);
+    return;
+  }
+  authUserEl.textContent = user.email || user.uid;
+  try {
+    const role = await getUiRole(user.uid);
+    authRoleEl.textContent = role;
+    setControlsEnabled(role === "admin" || role === "contributor");
+  } catch {
+    authRoleEl.textContent = "user";
+    setControlsEnabled(false);
   }
 });
