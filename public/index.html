@@ -201,6 +201,11 @@
       <a id="nav-home" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Home</a>
       <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
       <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
+      <!-- Added: Import Data link, shown only for Contributor/Admin via updateAuthUI -->
+      <a id="nav-import"
+         href="/import.html"
+         class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden"
+         title="Open Import Data tools">Import Data</a>
     </nav>
     <div class="hidden md:flex items-center gap-4">
       <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true"
@@ -581,6 +586,13 @@ function updateAuthUI(){
   document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
   document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
   const isContributor=['admin','contributor'].includes(state.role);
+
+  // Show Import Data link only for Contributor/Admin
+  const importLink = document.getElementById('nav-import');
+  if (importLink) {
+    importLink.classList.toggle('hidden', !isContributor);
+  }
+
   ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
     const el=$('#'+id);
     if(!el) return;
