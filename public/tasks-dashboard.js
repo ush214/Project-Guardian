@@ -1,9 +1,5 @@
 // Admin-only Task Dashboard for Project Guardian
-// - Uses existing Firebase app (getApp())
-// - Gates UI by role from system/allowlist/users/{uid} (Role/role/ROLE or admin:true)
-// - Persists tasks in Firestore at artifacts/${appId}/private/admin/tasks
-// - Inserts or reuses a "Task Dashboard" button in header
-// - Mirrors main page visuals with Tailwind
+// Always-visible button; access is enforced on click (admin only)
 
 import { getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
@@ -58,7 +54,6 @@ let tasks = [];
 function tasksCollectionPath() {
   return `artifacts/${appId}/private/admin/tasks`;
 }
-
 function escapeHtml(s = "") {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -74,7 +69,6 @@ function showToastSafe(msg, type = "info") {
     console.log(`[${type}] ${msg}`);
   }
 }
-
 async function ensureChartJs() {
   if (window.Chart) return;
   await new Promise((resolve, reject) => {
@@ -86,7 +80,6 @@ async function ensureChartJs() {
     document.head.appendChild(s);
   });
 }
-
 function injectLocalStyles() {
   if (document.getElementById("task-dashboard-local-css")) return;
   const style = document.createElement("style");
@@ -104,22 +97,20 @@ function injectLocalStyles() {
   document.head.appendChild(style);
 }
 
-function findOrCreateNavButton() {
-  // Prefer existing placeholder
+function getButton() {
   let btn = document.getElementById("btn-task-dashboard");
-  if (btn) return btn;
-
-  // Otherwise inject one near header nav/user actions
-  const header = document.querySelector("header") || document.body;
-  const nav = header.querySelector("nav") || header;
-  btn = document.createElement("button");
-  btn.id = "btn-task-dashboard";
-  btn.type = "button";
-  btn.textContent = "Task Dashboard";
-  btn.className =
-    "ml-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm";
-  btn.style.display = "none";
-  nav.appendChild(btn);
+  if (!btn) {
+    // Create one if missing
+    const header = document.querySelector("header") || document.body;
+    const nav = header.querySelector("nav") || header;
+    btn = document.createElement("button");
+    btn.id = "btn-task-dashboard";
+    btn.type = "button";
+    btn.textContent = "Task Dashboard";
+    btn.className =
+      "ml-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm";
+    nav.appendChild(btn);
+  }
   return btn;
 }
 
@@ -504,7 +495,6 @@ async function onAddTaskSubmit(e) {
   }
 
   try {
-    // Compute next PG- code from current snapshot
     const maxNum = tasks
       .map((t) => Number(String(t.code || "").split("-")[1]))
       .filter((n) => Number.isFinite(n))
@@ -548,7 +538,7 @@ async function subscribeTasks() {
   );
 }
 
-// Robust role resolution (mirrors main app)
+// Robust role resolution (mirrors app)
 async function resolveRole(uid) {
   try {
     const snap = await getDoc(doc(db, "system", "allowlist", "users", uid));
@@ -585,50 +575,36 @@ async function resolveRole(uid) {
   return "user";
 }
 
-function watchAuthAndRole() {
-  const btn = findOrCreateNavButton();
-
-  onAuthStateChanged(auth, async (user) => {
-    if (!user) {
-      role = "user";
-      if (btn) btn.style.display = "none";
-      togglePanel(false);
-      return;
-    }
-
-    // Prefer role from main app state if available for instant UX
-    const stateRole = typeof window !== "undefined" && window.pgState?.role;
-    if (stateRole) {
-      role = stateRole;
-    } else {
-      role = await resolveRole(user.uid);
-    }
-
-    if (btn) btn.style.display = role === "admin" ? "inline-flex" : "none";
-    if (role !== "admin") togglePanel(false);
-  });
-
-  // Wire click after we create/obtain the button
-  btn.addEventListener("click", openDashboard);
-}
-
 function init() {
   try {
     const app = getApp();
     auth = getAuth(app);
     db = getFirestore(app);
   } catch (e) {
-    console.error(
-      "Task Dashboard: Firebase not initialized before tasks-dashboard.js was loaded. Ensure index.html initializes Firebase first.",
-      e
-    );
+    console.error("Task Dashboard: Firebase not initialized. Ensure index.html initializes Firebase first.", e);
     return;
   }
   if (typeof window !== "undefined" && window.appId) appId = window.appId;
 
-  ensurePanel(); // pre-create hidden panel
-  findOrCreateNavButton();
-  watchAuthAndRole();
+  const btn = getButton();
+  btn.addEventListener("click", openDashboard);
+
+  // Precreate hidden panel
+  ensurePanel();
+
+  // Auth + role watcher (for gate on click and logs)
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      role = "user";
+      console.info("[TaskDashboard] user=none; role=user");
+      togglePanel(false);
+      return;
+    }
+    const fromApp = typeof window !== "undefined" && window.pgState?.role;
+    role = fromApp || (await resolveRole(user.uid));
+    console.info("[TaskDashboard] user=", user.uid, "role=", role);
+    if (role !== "admin") togglePanel(false);
+  });
 }
 
 init();
