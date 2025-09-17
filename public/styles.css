@@ -171,3 +171,12 @@ input:focus {
   color: var(--text-primary);
   box-shadow: 0 3px 14px rgba(0,0,0,0.4);
 }
+/* Kanban board helpers (admin dashboard) */
+.kanban-column.drag-over {
+  outline: 2px dashed rgba(255,255,255,0.25);
+  background-color: rgba(30, 41, 59, 0.35); /* slate-800/35 */
+}
+.task-card.dragging {
+  opacity: 0.6;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.25));
+}
