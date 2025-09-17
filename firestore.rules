@@ -2,37 +2,60 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Auth helper
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Placeholder role helpers; wire these to your auth model as needed.
-    function hasRole(r) {
-      // Expect custom claims: request.auth.token.role in ['contributor','admin']
-      return isSignedIn() && (request.auth.token.role == r || (r == 'contributor' && request.auth.token.role == 'admin'));
+    // Allowlist doc helper
+    function allowlist(uid) {
+      return get(/databases/$(database)/documents/system/allowlist/users/$(uid));
     }
-    function isContributor() {
-      return hasRole('contributor') || hasRole('admin');
+
+    // Case-insensitive "admin" check that works in rules (no inline flags)
+    function allowlistRoleIsAdmin() {
+      return (
+        (allowlist(request.auth.uid).data.role is string &&
+         allowlist(request.auth.uid).data.role.matches('^[Aa][Dd][Mm][Ii][Nn]$')) ||
+        (allowlist(request.auth.uid).data.Role is string &&
+         allowlist(request.auth.uid).data.Role.matches('^[Aa][Dd][Mm][Ii][Nn]$')) ||
+        (allowlist(request.auth.uid).data.ROLE is string &&
+         allowlist(request.auth.uid).data.ROLE.matches('^[Aa][Dd][Mm][Ii][Nn]$'))
+      );
     }
+
+    // Single definitive admin check
     function isAdmin() {
-      return hasRole('admin');
+      return isSignedIn() && (
+        // A) Custom auth claim (recommended in production)
+        request.auth.token.admin == true
+        ||
+        // B) Allowlist-based admin (boolean or string)
+        (allowlist(request.auth.uid).exists() && (
+          allowlist(request.auth.uid).data.admin == true ||
+          allowlistRoleIsAdmin()
+        ))
+      );
     }
 
-    // Open read for public pages
-    match /{document=**} {
-      allow get, list: if true;
+    // Optional: allow a user to read their own allowlist doc
+    match /system/allowlist/users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false; // mutate via server/Admin only
     }
 
-    // Monitoring events under any wreck doc
-    match /{collectionId}/{docId}/monitoring/{type}/{eventId} {
-      allow create, update: if isContributor();
+    // Admin-only area (used by Task Dashboard):
+    // artifacts/{app}/private/admin/** e.g. artifacts/guardian/private/admin/tasks
+    match /artifacts/{app}/private/admin/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Public area (read-only by default). Adjust write as needed.
+    match /artifacts/{app}/public/{document=**} {
       allow read: if true;
+      allow write: if isAdmin(); // tighten or expand if you have contributor roles
     }
 
-    // Wreck root updates for alerts array and reassessment flags
-    match /{collectionId}/{docId} {
-      allow update: if isContributor();
-      allow read: if true;
-    }
+    // NOTE: Avoid any global "allow read: if true" catch-alls; they would bypass the admin gate above.
   }
 }
