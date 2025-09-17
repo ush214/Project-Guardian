@@ -1,24 +1,60 @@
-// Admin-only Task Dashboard for Project Guardian
-// Always-visible button; access is enforced on click (admin only)
+// Task Dashboard (admin-only) for Project Guardian
+// - Works with your existing Firebase app (uses getApp())
+// - Always wires the "Task Dashboard" button (#btn-task-dashboard)
+// - Shows clear feedback if not signed in or not admin
+// - Persists tasks at artifacts/${appId}/private/admin/tasks
+// - Lazy-loads Chart.js if needed
 
 import { getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
-  getAuth,
-  onAuthStateChanged,
+  getAuth, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
-  getFirestore,
-  doc,
-  getDoc,
-  collection,
-  addDoc,
-  updateDoc,
-  serverTimestamp,
-  onSnapshot,
-  query,
-  orderBy,
+  getFirestore, doc, getDoc, collection, addDoc, updateDoc,
+  serverTimestamp, onSnapshot, query, orderBy
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+/* ====== Small, self-contained toast so user always sees feedback ====== */
+function ensureToastStack() {
+  let stack = document.getElementById("td-toast-stack");
+  if (!stack) {
+    stack = document.createElement("div");
+    stack.id = "td-toast-stack";
+    stack.style.position = "fixed";
+    stack.style.top = "12px";
+    stack.style.right = "12px";
+    stack.style.zIndex = "99999";
+    stack.style.display = "grid";
+    stack.style.gap = "8px";
+    document.body.appendChild(stack);
+  }
+  return stack;
+}
+function notify(msg, type = "info") {
+  // Prefer app toast if exported
+  if (typeof window !== "undefined" && typeof window.showToast === "function") {
+    window.showToast(msg, type);
+    return;
+  }
+  const stack = ensureToastStack();
+  const div = document.createElement("div");
+  const bg = type === "success" ? "#059669" : type === "error" ? "#DC2626" : "#334155";
+  div.textContent = msg;
+  div.style.cssText = `
+    color: #fff; background:${bg}; border-radius:10px;
+    padding:10px 12px; min-width: 220px; font-size: 13px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35); border:1px solid rgba(255,255,255,0.10);
+  `;
+  stack.appendChild(div);
+  setTimeout(() => {
+    div.style.transition = "opacity .25s, transform .25s";
+    div.style.opacity = "0";
+    div.style.transform = "translateY(-4px)";
+    setTimeout(() => div.remove(), 250);
+  }, 2500);
+}
+
+/* ====== Minor utilities ====== */
 const STATUS = ["Not Started", "In Progress", "Done"];
 const PRIORITIES = ["Critical", "High", "Medium", "Low"];
 const AREAS = [
@@ -28,7 +64,6 @@ const AREAS = [
   "Frontend / Data",
   "Backend / Data",
 ];
-
 const priorityRing = {
   Critical: "border-red-500",
   High: "border-orange-500",
@@ -41,19 +76,6 @@ const priorityText = {
   Medium: "text-yellow-600",
   Low: "text-green-600",
 };
-
-let appId = (typeof window !== "undefined" && window.appId) || "guardian-agent-default";
-let role = "user";
-let db = null;
-let auth = null;
-
-let charts = { status: null, priority: null };
-let unsubTasks = null;
-let tasks = [];
-
-function tasksCollectionPath() {
-  return `artifacts/${appId}/private/admin/tasks`;
-}
 function escapeHtml(s = "") {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -61,13 +83,6 @@ function escapeHtml(s = "") {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
-}
-function showToastSafe(msg, type = "info") {
-  if (typeof window !== "undefined" && typeof window.showToast === "function") {
-    window.showToast(msg, type);
-  } else {
-    console.log(`[${type}] ${msg}`);
-  }
 }
 async function ensureChartJs() {
   if (window.Chart) return;
@@ -80,19 +95,24 @@ async function ensureChartJs() {
     document.head.appendChild(s);
   });
 }
+
+/* ====== Firebase wiring ====== */
+let appId = (typeof window !== "undefined" && window.appId) || "guardian-agent-default";
+let db = null;
+let auth = null;
+let role = "user";
+let tasks = [];
+let unsubTasks = null;
+let charts = { status: null, priority: null };
+
+/* ====== DOM builders ====== */
 function injectLocalStyles() {
-  if (document.getElementById("task-dashboard-local-css")) return;
+  if (document.getElementById("td-local-css")) return;
   const style = document.createElement("style");
-  style.id = "task-dashboard-local-css";
+  style.id = "td-local-css";
   style.textContent = `
-    .kanban-column.drag-over {
-      outline: 2px dashed rgba(255,255,255,0.25);
-      background-color: rgba(30, 41, 59, 0.35);
-    }
-    .task-card.dragging {
-      opacity: 0.6;
-      filter: drop-shadow(0 8px 16px rgba(0,0,0,0.25));
-    }
+    .kanban-column.drag-over { outline: 2px dashed rgba(255,255,255,0.25); background-color: rgba(30,41,59,0.35); }
+    .task-card.dragging { opacity: 0.6; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.25)); }
   `;
   document.head.appendChild(style);
 }
@@ -100,7 +120,7 @@ function injectLocalStyles() {
 function getButton() {
   let btn = document.getElementById("btn-task-dashboard");
   if (!btn) {
-    // Create one if missing
+    // Create one if missing, add to header nav
     const header = document.querySelector("header") || document.body;
     const nav = header.querySelector("nav") || header;
     btn = document.createElement("button");
@@ -233,7 +253,7 @@ function ensurePanel() {
   (document.getElementById("app") || document.body).appendChild(panel);
 
   // Wire controls
-  panel.querySelector("#btn-close-dashboard").addEventListener("click", closeDashboard);
+  panel.querySelector("#btn-close-dashboard").addEventListener("click", () => togglePanel(false));
   panel.querySelector("#modal-close").addEventListener("click", closeModal);
   panel.querySelector("#task-modal").addEventListener("click", (e) => {
     if (e.target.id === "task-modal") closeModal();
@@ -261,36 +281,13 @@ function togglePanel(show) {
   }
 }
 
-function openDashboard() {
-  if (role !== "admin") {
-    showToastSafe("Admin only", "error");
-    return;
-  }
-  injectLocalStyles();
-  ensureChartJs()
-    .then(async () => {
-      ensurePanel();
-      await subscribeTasks();
-      togglePanel(true);
-    })
-    .catch((e) => {
-      console.error(e);
-      showToastSafe("Failed to open dashboard", "error");
-    });
-}
-
-function closeDashboard() {
-  togglePanel(false);
-}
-
 function openAddModal() {
   if (role !== "admin") {
-    showToastSafe("Admin only", "error");
+    notify("Admin only", "error");
     return;
   }
   ensurePanel().querySelector("#task-add-modal").classList.remove("hidden");
 }
-
 function closeAddModal() {
   ensurePanel().querySelector("#task-add-modal").classList.add("hidden");
 }
@@ -305,9 +302,63 @@ function openModal(task) {
   panel.querySelector("#modal-status").textContent = task.status || "-";
   panel.querySelector("#task-modal").classList.remove("hidden");
 }
-
 function closeModal() {
   ensurePanel().querySelector("#task-modal").classList.add("hidden");
+}
+
+/* ====== Rendering ====== */
+function makeCard(t) {
+  const card = document.createElement("div");
+  card.className = `task-card bg-white p-4 mb-3 rounded-lg shadow-sm border-l-4 ${priorityRing[t.priority] || "border-gray-300"}`;
+  card.draggable = true;
+  card.dataset.docId = t._docId;
+  card.dataset.status = t.status || STATUS[0];
+  card.innerHTML = `
+    <p class="font-semibold text-gray-900">${escapeHtml(t.name || "(Untitled)")}</p>
+    <div class="flex justify-between items-center mt-3 text-sm">
+      <span class="text-gray-500">${escapeHtml(t.code || t._docId)}</span>
+      <span class="px-2 py-1 rounded-full ${priorityText[t.priority] || ""} bg-stone-100">${t.priority || "-"}</span>
+    </div>
+  `;
+  card.addEventListener("click", (e) => { e.stopPropagation(); openModal(t); });
+  card.addEventListener("dragstart", (e) => {
+    card.classList.add("dragging");
+    e.dataTransfer.setData("text/plain", t._docId);
+  });
+  card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  return card;
+}
+
+async function onDropColumn(e) {
+  e.preventDefault();
+  const col = e.currentTarget;
+  col.classList.remove("drag-over");
+  const newStatus = col.dataset.status;
+  const docId = e.dataTransfer?.getData("text/plain");
+  if (!docId || !newStatus) return;
+
+  if (role !== "admin") {
+    notify("Admin only", "error");
+    return;
+  }
+  try {
+    await updateDoc(doc(db, tasksCollectionPath(), docId), { status: newStatus, updatedAt: serverTimestamp() });
+    notify(`Task moved to "${newStatus}"`, "success");
+  } catch (err) {
+    console.error(err);
+    notify("Failed to update task", "error");
+  }
+}
+
+function makeColumn(title) {
+  const col = document.createElement("div");
+  col.className = "kanban-column p-4 rounded-lg min-h-[260px] transition-colors bg-slate-800/30 border border-white/10";
+  col.dataset.status = title;
+  col.innerHTML = `<h4 class="font-semibold text-slate-100 mb-3 text-center">${title}</h4>`;
+  col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("drag-over"); });
+  col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
+  col.addEventListener("drop", onDropColumn);
+  return col;
 }
 
 function getFilters() {
@@ -316,28 +367,39 @@ function getFilters() {
   const a = panel.querySelector("#task-filter-area")?.value || "all";
   return { p, a };
 }
-
 function filteredTasks() {
   const { p, a } = getFilters();
-  return tasks.filter((t) => {
-    const pOk = p === "all" || t.priority === p;
-    const aOk = a === "all" || t.area === a;
+  return tasks.filter(t => {
+    const pOk = (p === "all") || (t.priority === p);
+    const aOk = (a === "all") || (t.area === a);
     return pOk && aOk;
   });
 }
 
+function renderBoard() {
+  const board = ensurePanel().querySelector("#kanban-board");
+  if (!board) return;
+  board.innerHTML = "";
+  const ft = filteredTasks();
+  for (const st of STATUS) {
+    const col = makeColumn(st);
+    const inCol = ft.filter(t => (t.status || "Not Started") === st);
+    for (const t of inCol) col.appendChild(makeCard(t));
+    board.appendChild(col);
+  }
+  renderCharts();
+}
+
 function statusCounts() {
-  const counts = { "Not Started": 0, "In Progress": 0, Done: 0 };
-  for (const t of tasks) counts[t.status] = (counts[t.status] || 0) + 1;
+  const counts = { "Not Started": 0, "In Progress": 0, "Done": 0 };
+  for (const t of tasks) counts[t.status || "Not Started"] = (counts[t.status || "Not Started"] || 0) + 1;
   return counts;
 }
-
 function priorityCounts() {
-  const counts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
-  for (const t of tasks) counts[t.priority] = (counts[t.priority] || 0) + 1;
+  const counts = { "Critical": 0, "High": 0, "Medium": 0, "Low": 0 };
+  for (const t of tasks) counts[t.priority || "Low"] = (counts[t.priority || "Low"] || 0) + 1;
   return counts;
 }
-
 function renderCharts() {
   const panel = ensurePanel();
   const sCanvas = panel.querySelector("#chart-status");
@@ -352,20 +414,10 @@ function renderCharts() {
     type: "doughnut",
     data: {
       labels: Object.keys(sc),
-      datasets: [
-        {
-          label: "Tasks by Status",
-          data: Object.values(sc),
-          backgroundColor: ["#d6d3d1", "#a8a29e", "#78716c"],
-          borderColor: "#f5f5f4",
-          borderWidth: 3,
-        },
-      ],
+      datasets: [{ label: "Tasks by Status", data: Object.values(sc),
+        backgroundColor: ["#d6d3d1", "#a8a29e", "#78716c"], borderColor: "#f5f5f4", borderWidth: 3 }]
     },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: "top" }, title: { display: true, text: "Tasks by Status" } },
-    },
+    options: { responsive: true, plugins: { legend: { position: "top" }, title: { display: true, text: "Tasks by Status" } } }
   });
 
   if (charts.priority) charts.priority.destroy();
@@ -373,172 +425,34 @@ function renderCharts() {
     type: "bar",
     data: {
       labels: Object.keys(pc),
-      datasets: [
-        {
-          label: "Tasks by Priority",
-          data: Object.values(pc),
-          backgroundColor: ["#ef4444", "#f97316", "#eab308", "#22c55e"],
-          borderColor: "#f5f5f4",
-          borderWidth: 2,
-        },
-      ],
+      datasets: [{ label: "Tasks by Priority", data: Object.values(pc),
+        backgroundColor: ["#ef4444", "#f97316", "#eab308", "#22c55e"], borderColor: "#f5f5f4", borderWidth: 2 }]
     },
     options: {
       responsive: true,
-      plugins: {
-        legend: { display: false },
-        title: { display: true, text: "Tasks by Priority" },
-      },
-      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
-    },
-  });
-}
-
-function makeCard(t) {
-  const card = document.createElement("div");
-  card.className = `task-card bg-white p-4 mb-3 rounded-lg shadow-sm border-l-4 ${
-    priorityRing[t.priority] || "border-gray-300"
-  }`;
-  card.draggable = true;
-  card.dataset.docId = t._docId;
-  card.dataset.status = t.status || STATUS[0];
-  card.innerHTML = `
-    <p class="font-semibold text-gray-900">${escapeHtml(t.name || "(Untitled)")}</p>
-    <div class="flex justify-between items-center mt-3 text-sm">
-      <span class="text-gray-500">${escapeHtml(t.code || t._docId)}</span>
-      <span class="px-2 py-1 rounded-full ${priorityText[t.priority] || ""} bg-stone-100">${t.priority || "-"}</span>
-    </div>
-  `;
-  card.addEventListener("click", (e) => {
-    e.stopPropagation();
-    openModal(t);
-  });
-  card.addEventListener("dragstart", (e) => {
-    card.classList.add("dragging");
-    e.dataTransfer.setData("text/plain", t._docId);
-  });
-  card.addEventListener("dragend", () => card.classList.remove("dragging"));
-  return card;
-}
-
-function makeColumn(title) {
-  const col = document.createElement("div");
-  col.className =
-    "kanban-column p-4 rounded-lg min-h-[260px] transition-colors bg-slate-800/30 border border-white/10";
-  col.dataset.status = title;
-  col.innerHTML = `<h4 class="font-semibold text-slate-100 mb-3 text-center">${title}</h4>`;
-  col.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    col.classList.add("drag-over");
-  });
-  col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
-  col.addEventListener("drop", onDropColumn);
-  return col;
-}
-
-async function onDropColumn(e) {
-  e.preventDefault();
-  const col = e.currentTarget;
-  col.classList.remove("drag-over");
-  const newStatus = col.dataset.status;
-  const docId = e.dataTransfer?.getData("text/plain");
-  if (!docId || !newStatus) return;
-
-  if (role !== "admin") {
-    showToastSafe("Admin only", "error");
-    return;
-  }
-  try {
-    await updateDoc(doc(db, tasksCollectionPath(), docId), {
-      status: newStatus,
-      updatedAt: serverTimestamp(),
-    });
-    showToastSafe(`Task moved to "${newStatus}"`, "success");
-  } catch (err) {
-    console.error(err);
-    showToastSafe("Failed to update task", "error");
-  }
-}
-
-function renderBoard() {
-  const panel = ensurePanel();
-  const board = panel.querySelector("#kanban-board");
-  if (!board) return;
-
-  board.innerHTML = "";
-  const ft = filteredTasks();
-
-  for (const st of STATUS) {
-    const col = makeColumn(st);
-    const inCol = ft.filter((t) => (t.status || "Not Started") === st);
-    for (const t of inCol) col.appendChild(makeCard(t));
-    board.appendChild(col);
-  }
-  renderCharts();
-}
-
-async function onAddTaskSubmit(e) {
-  e.preventDefault();
-  if (role !== "admin") {
-    showToastSafe("Admin only", "error");
-    return;
-  }
-  const panel = ensurePanel();
-  const name = panel.querySelector("#new-name").value.trim();
-  const description = panel.querySelector("#new-desc").value.trim();
-  const priority = panel.querySelector("#new-priority").value;
-  const area = panel.querySelector("#new-area").value;
-  const status = "Not Started";
-  if (!name || !description) {
-    showToastSafe("Please fill all fields", "error");
-    return;
-  }
-
-  try {
-    const maxNum = tasks
-      .map((t) => Number(String(t.code || "").split("-")[1]))
-      .filter((n) => Number.isFinite(n))
-      .reduce((m, n) => Math.max(m, n), 0);
-    const nextCode = `PG-${String(maxNum + 1).padStart(3, "0")}`;
-
-    await addDoc(collection(db, tasksCollectionPath()), {
-      code: nextCode,
-      name,
-      description,
-      area,
-      priority,
-      status,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    showToastSafe("Task created", "success");
-    closeAddModal();
-    e.target.reset();
-  } catch (err) {
-    console.error(err);
-    showToastSafe("Failed to create task", "error");
-  }
-}
-
-async function subscribeTasks() {
-  if (unsubTasks) {
-    unsubTasks();
-    unsubTasks = null;
-  }
-  const q = query(collection(db, tasksCollectionPath()), orderBy("createdAt", "desc"));
-  unsubTasks = onSnapshot(
-    q,
-    (snap) => {
-      tasks = snap.docs.map((d) => ({ _docId: d.id, ...(d.data() || {}) }));
-      renderBoard();
-    },
-    (err) => {
-      console.error("tasks subscription error", err);
+      plugins: { legend: { display: false }, title: { display: true, text: "Tasks by Priority" } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
     }
-  );
+  });
 }
 
-// Robust role resolution (mirrors app)
+/* ====== Data wiring ====== */
+function tasksCollectionPath() {
+  return `artifacts/${appId}/private/admin/tasks`;
+}
+async function subscribeTasks() {
+  if (unsubTasks) { unsubTasks(); unsubTasks = null; }
+  const q = query(collection(db, tasksCollectionPath()), orderBy("createdAt", "desc"));
+  unsubTasks = onSnapshot(q, (snap) => {
+    tasks = snap.docs.map(d => ({ _docId: d.id, ...(d.data() || {}) }));
+    renderBoard();
+  }, (err) => {
+    console.error("tasks subscription error", err);
+    notify("Failed to load tasks", "error");
+  });
+}
+
+/* ====== Role resolution (mirrors app) ====== */
 async function resolveRole(uid) {
   try {
     const snap = await getDoc(doc(db, "system", "allowlist", "users", uid));
@@ -549,7 +463,7 @@ async function resolveRole(uid) {
         r = r.trim().toLowerCase();
         if (r.startsWith("admin")) return "admin";
         if (r.startsWith("contrib")) return "contributor";
-        if (["user", "reader", "viewer"].includes(r)) return "user";
+        if (["user","reader","viewer"].includes(r)) return "user";
       }
       if (d.admin) return "admin";
       if (d.contributor) return "contributor";
@@ -558,21 +472,45 @@ async function resolveRole(uid) {
   } catch {}
   // Legacy location
   try {
-    const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
-    if (legacy.exists()) {
-      const d = legacy.data() || {};
+    const snap = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
+    if (snap.exists()) {
+      const d = snap.data() || {};
       let r = d.role ?? d.Role ?? d.ROLE;
       if (typeof r === "string" && r.trim()) {
         r = r.trim().toLowerCase();
         if (r.startsWith("admin")) return "admin";
         if (r.startsWith("contrib")) return "contributor";
-        if (["user", "reader", "viewer"].includes(r)) return "user";
+        if (["user","reader","viewer"].includes(r)) return "user";
       }
       if (d.admin) return "admin";
       if (d.contributor) return "contributor";
     }
   } catch {}
   return "user";
+}
+
+/* ====== Main control ====== */
+async function handleOpenClick() {
+  if (!auth?.currentUser) {
+    notify("Please sign in to access the Task Dashboard", "error");
+    return;
+  }
+  // Prefer role from main app state for immediate feedback
+  role = (window.pgState?.role) || (await resolveRole(auth.currentUser.uid));
+  if (role !== "admin") {
+    notify(`Admin only (your role: ${role})`, "error");
+    return;
+  }
+
+  injectLocalStyles();
+  try {
+    await ensureChartJs();
+  } catch {
+    // let dashboard open anyway without charts
+  }
+  ensurePanel();
+  await subscribeTasks();
+  togglePanel(true);
 }
 
 function init() {
@@ -582,29 +520,28 @@ function init() {
     db = getFirestore(app);
   } catch (e) {
     console.error("Task Dashboard: Firebase not initialized. Ensure index.html initializes Firebase first.", e);
+    notify("Task Dashboard failed to load (Firebase not initialized).", "error");
     return;
   }
   if (typeof window !== "undefined" && window.appId) appId = window.appId;
 
   const btn = getButton();
-  btn.addEventListener("click", openDashboard);
+  btn.addEventListener("click", handleOpenClick);
 
-  // Precreate hidden panel
+  // Prepare hidden panel so it's ready instantly
   ensurePanel();
 
-  // Auth + role watcher (for gate on click and logs)
+  // Keep a live role snapshot for better UX
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
       role = "user";
-      console.info("[TaskDashboard] user=none; role=user");
       togglePanel(false);
       return;
     }
-    const fromApp = typeof window !== "undefined" && window.pgState?.role;
-    role = fromApp || (await resolveRole(user.uid));
-    console.info("[TaskDashboard] user=", user.uid, "role=", role);
-    if (role !== "admin") togglePanel(false);
+    role = (window.pgState?.role) || (await resolveRole(user.uid));
   });
+
+  console.info("[TaskDashboard] module loaded; button wired; appId =", appId);
 }
 
 init();
