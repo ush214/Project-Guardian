@@ -1,9 +1,5 @@
 // Task Dashboard (admin-only) for Project Guardian
-// - Works with your existing Firebase app (uses getApp())
-// - Always wires the "Task Dashboard" button (#btn-task-dashboard)
-// - Shows clear feedback if not signed in or not admin
-// - Persists tasks at artifacts/${appId}/private/admin/tasks
-// - Lazy-loads Chart.js if needed
+// Fix: ensure onAddTaskSubmit is defined before it's used, and wire the button reliably.
 
 import { getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
@@ -31,7 +27,6 @@ function ensureToastStack() {
   return stack;
 }
 function notify(msg, type = "info") {
-  // Prefer app toast if exported
   if (typeof window !== "undefined" && typeof window.showToast === "function") {
     window.showToast(msg, type);
     return;
@@ -105,7 +100,106 @@ let tasks = [];
 let unsubTasks = null;
 let charts = { status: null, priority: null };
 
-/* ====== DOM builders ====== */
+/* ====== Data wiring ====== */
+function tasksCollectionPath() {
+  return `artifacts/${appId}/private/admin/tasks`;
+}
+async function subscribeTasks() {
+  if (unsubTasks) { unsubTasks(); unsubTasks = null; }
+  const q = query(collection(db, tasksCollectionPath()), orderBy("createdAt", "desc"));
+  unsubTasks = onSnapshot(q, (snap) => {
+    tasks = snap.docs.map(d => ({ _docId: d.id, ...(d.data() || {}) }));
+    renderBoard();
+  }, (err) => {
+    console.error("tasks subscription error", err);
+    notify("Failed to load tasks", "error");
+  });
+}
+
+/* ====== Role resolution (mirrors app) ====== */
+async function resolveRole(uid) {
+  try {
+    const snap = await getDoc(doc(db, "system", "allowlist", "users", uid));
+    if (snap.exists()) {
+      const d = snap.data() || {};
+      let r = d.role ?? d.Role ?? d.ROLE;
+      if (typeof r === "string" && r.trim()) {
+        r = r.trim().toLowerCase();
+        if (r.startsWith("admin")) return "admin";
+        if (r.startsWith("contrib")) return "contributor";
+        if (["user","reader","viewer"].includes(r)) return "user";
+      }
+      if (d.admin) return "admin";
+      if (d.contributor) return "contributor";
+      if (d.allowed) return "user";
+    }
+  } catch {}
+  // Legacy location
+  try {
+    const snap = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
+    if (snap.exists()) {
+      const d = snap.data() || {};
+      let r = d.role ?? d.Role ?? d.ROLE;
+      if (typeof r === "string" && r.trim()) {
+        r = r.trim().toLowerCase();
+        if (r.startsWith("admin")) return "admin";
+        if (r.startsWith("contrib")) return "contributor";
+        if (["user","reader","viewer"].includes(r)) return "user";
+      }
+      if (d.admin) return "admin";
+      if (d.contributor) return "contributor";
+    }
+  } catch {}
+  return "user";
+}
+
+/* ====== Add Task handler (define BEFORE ensurePanel to avoid any hoisting surprises) ====== */
+async function onAddTaskSubmit(e) {
+  e.preventDefault();
+  if (role !== "admin") {
+    notify("Admin only", "error");
+    return;
+  }
+  const panel = document.getElementById("task-dashboard-panel");
+  if (!panel) return;
+
+  const name = panel.querySelector("#new-name")?.value.trim() || "";
+  const description = panel.querySelector("#new-desc")?.value.trim() || "";
+  const priority = panel.querySelector("#new-priority")?.value || "Medium";
+  const area = panel.querySelector("#new-area")?.value || "Frontend";
+
+  if (!name || !description) {
+    notify("Please fill all fields", "error");
+    return;
+  }
+
+  try {
+    // Compute next PG-XXX from current snapshot
+    const maxNum = tasks
+      .map(t => Number(String(t.code || "").split("-")[1]))
+      .filter(n => Number.isFinite(n))
+      .reduce((m, n) => Math.max(m, n), 0);
+    const nextCode = `PG-${String(maxNum + 1).padStart(3, "0")}`;
+
+    await addDoc(collection(db, tasksCollectionPath()), {
+      code: nextCode,
+      name, description, area, priority,
+      status: "Not Started",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    notify("Task created", "success");
+    closeAddModal();
+    const form = panel.querySelector("#task-add-form");
+    if (form) form.reset();
+  } catch (err) {
+    console.error(err);
+    notify("Failed to create task", "error");
+  }
+}
+
+/* ====== DOM builders and UI ====== */
 function injectLocalStyles() {
   if (document.getElementById("td-local-css")) return;
   const style = document.createElement("style");
@@ -252,22 +346,24 @@ function ensurePanel() {
 
   (document.getElementById("app") || document.body).appendChild(panel);
 
-  // Wire controls
-  panel.querySelector("#btn-close-dashboard").addEventListener("click", () => togglePanel(false));
-  panel.querySelector("#modal-close").addEventListener("click", closeModal);
-  panel.querySelector("#task-modal").addEventListener("click", (e) => {
+  // Wire controls (safe: handlers are defined above)
+  panel.querySelector("#btn-close-dashboard")?.addEventListener("click", () => togglePanel(false));
+  panel.querySelector("#modal-close")?.addEventListener("click", closeModal);
+  panel.querySelector("#task-modal")?.addEventListener("click", (e) => {
     if (e.target.id === "task-modal") closeModal();
   });
 
-  panel.querySelector("#btn-new-task").addEventListener("click", openAddModal);
-  panel.querySelector("#task-add-close").addEventListener("click", closeAddModal);
-  panel.querySelector("#task-add-modal").addEventListener("click", (e) => {
+  panel.querySelector("#btn-new-task")?.addEventListener("click", openAddModal);
+  panel.querySelector("#task-add-close")?.addEventListener("click", closeAddModal);
+  panel.querySelector("#task-add-modal")?.addEventListener("click", (e) => {
     if (e.target.id === "task-add-modal") closeAddModal();
   });
-  panel.querySelector("#task-add-form").addEventListener("submit", onAddTaskSubmit);
 
-  panel.querySelector("#task-filter-priority").addEventListener("change", renderBoard);
-  panel.querySelector("#task-filter-area").addEventListener("change", renderBoard);
+  const form = panel.querySelector("#task-add-form");
+  if (form) form.addEventListener("submit", onAddTaskSubmit);
+
+  panel.querySelector("#task-filter-priority")?.addEventListener("change", renderBoard);
+  panel.querySelector("#task-filter-area")?.addEventListener("change", renderBoard);
 
   return panel;
 }
@@ -286,10 +382,10 @@ function openAddModal() {
     notify("Admin only", "error");
     return;
   }
-  ensurePanel().querySelector("#task-add-modal").classList.remove("hidden");
+  ensurePanel().querySelector("#task-add-modal")?.classList.remove("hidden");
 }
 function closeAddModal() {
-  ensurePanel().querySelector("#task-add-modal").classList.add("hidden");
+  ensurePanel().querySelector("#task-add-modal")?.classList.add("hidden");
 }
 
 function openModal(task) {
@@ -303,7 +399,7 @@ function openModal(task) {
   panel.querySelector("#task-modal").classList.remove("hidden");
 }
 function closeModal() {
-  ensurePanel().querySelector("#task-modal").classList.add("hidden");
+  ensurePanel().querySelector("#task-modal")?.classList.add("hidden");
 }
 
 /* ====== Rendering ====== */
@@ -436,66 +532,12 @@ function renderCharts() {
   });
 }
 
-/* ====== Data wiring ====== */
-function tasksCollectionPath() {
-  return `artifacts/${appId}/private/admin/tasks`;
-}
-async function subscribeTasks() {
-  if (unsubTasks) { unsubTasks(); unsubTasks = null; }
-  const q = query(collection(db, tasksCollectionPath()), orderBy("createdAt", "desc"));
-  unsubTasks = onSnapshot(q, (snap) => {
-    tasks = snap.docs.map(d => ({ _docId: d.id, ...(d.data() || {}) }));
-    renderBoard();
-  }, (err) => {
-    console.error("tasks subscription error", err);
-    notify("Failed to load tasks", "error");
-  });
-}
-
-/* ====== Role resolution (mirrors app) ====== */
-async function resolveRole(uid) {
-  try {
-    const snap = await getDoc(doc(db, "system", "allowlist", "users", uid));
-    if (snap.exists()) {
-      const d = snap.data() || {};
-      let r = d.role ?? d.Role ?? d.ROLE;
-      if (typeof r === "string" && r.trim()) {
-        r = r.trim().toLowerCase();
-        if (r.startsWith("admin")) return "admin";
-        if (r.startsWith("contrib")) return "contributor";
-        if (["user","reader","viewer"].includes(r)) return "user";
-      }
-      if (d.admin) return "admin";
-      if (d.contributor) return "contributor";
-      if (d.allowed) return "user";
-    }
-  } catch {}
-  // Legacy location
-  try {
-    const snap = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
-    if (snap.exists()) {
-      const d = snap.data() || {};
-      let r = d.role ?? d.Role ?? d.ROLE;
-      if (typeof r === "string" && r.trim()) {
-        r = r.trim().toLowerCase();
-        if (r.startsWith("admin")) return "admin";
-        if (r.startsWith("contrib")) return "contributor";
-        if (["user","reader","viewer"].includes(r)) return "user";
-      }
-      if (d.admin) return "admin";
-      if (d.contributor) return "contributor";
-    }
-  } catch {}
-  return "user";
-}
-
 /* ====== Main control ====== */
 async function handleOpenClick() {
   if (!auth?.currentUser) {
     notify("Please sign in to access the Task Dashboard", "error");
     return;
   }
-  // Prefer role from main app state for immediate feedback
   role = (window.pgState?.role) || (await resolveRole(auth.currentUser.uid));
   if (role !== "admin") {
     notify(`Admin only (your role: ${role})`, "error");
@@ -506,7 +548,7 @@ async function handleOpenClick() {
   try {
     await ensureChartJs();
   } catch {
-    // let dashboard open anyway without charts
+    // allow opening without charts
   }
   ensurePanel();
   await subscribeTasks();
@@ -528,7 +570,7 @@ function init() {
   const btn = getButton();
   btn.addEventListener("click", handleOpenClick);
 
-  // Prepare hidden panel so it's ready instantly
+  // Prepare hidden panel so it's ready instantly (handlers are already defined)
   ensurePanel();
 
   // Keep a live role snapshot for better UX
