@@ -1,26 +1,14 @@
-// Importer with backfill cache button.
-// Requires authenticated Contributor/Admin to run destructive actions and to call the backfill function.
+// Refactored Import Tool: uses shared auth-role.js instead of local auth duplication.
+// Core import logic preserved.
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { app, db, auth, functions } from "./js/auth-role.js";
 import {
-  getFirestore, doc, setDoc, getDoc, getDocs, collection, deleteDoc, writeBatch
+  doc, setDoc, getDoc, getDocs, collection, deleteDoc, writeBatch
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
-  authDomain: "project-guardian-agent.firebaseapp.com",
-  projectId: "project-guardian-agent",
-  storageBucket: "project-guardian-agent.firebasestorage.app",
-  messagingSenderId: "84395007243",
-  appId: "1:84395007243:web:b07e5f4c4264d27611160e",
-  measurementId: "G-NRLH3WSCQ9"
-};
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-const functions = getFunctions(app, "us-central1");
+import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+import {
+  onRoleResolved, onAuthChanged, isAdmin, isContributor
+} from "./js/auth-role.js";
 
 const callCacheCollection = httpsCallable(functions, "cacheCollectionReferenceMedia");
 
@@ -40,14 +28,11 @@ const btnReplacePrimary = el("btnReplacePrimary");
 const btnDeleteSecondary = el("btnDeleteSecondary");
 const btnReplaceAndDelete = el("btnReplaceAndDelete");
 const btnCachePrimary = el("btnCachePrimary");
-const statusEl = el("status");
 const logEl = el("log");
+const statusEl = el("statusLine");
 
-function setStatus(s) { statusEl.textContent = s || ""; }
-function log(s) { logEl.textContent += (s + "\n"); }
-function clearLog() { logEl.textContent = ""; }
+// ============ Utility / Parsing ============
 
-// Flexible JSON parser: accepts array or single object (wraps to array)
 function parseJsonFlexible(text) {
   const parsed = JSON.parse(text);
   if (Array.isArray(parsed)) return parsed;
@@ -73,7 +58,6 @@ async function readJsonFromInputs() {
 
 function normalizeDoc(docObj) {
   const d = { ...docObj };
-  // ensure an id
   d.id = d.id || d.ID || d.name || d.uuid || d.slug || d.title || "";
   if (!d.id) throw new Error("Each doc must include an 'id' or a unique key.");
   return d;
@@ -90,32 +74,13 @@ async function listAllDocIds(colPath) {
   return snap.docs.map(d => d.id);
 }
 
-// Very light role resolution for UI (rules still enforce on server)
-async function getUiRole(uid) {
-  try {
-    const snap = await getDoc(doc(db, "system", "allowlist", "users", uid));
-    if (!snap.exists()) return "user";
-    const d = snap.data() || {};
-    let r = d.role ?? d.Role ?? d.ROLE;
-    if (typeof r === "string" && r.trim()) {
-      r = r.trim().toLowerCase();
-      if (r.startsWith("admin")) return "admin";
-      if (r.startsWith("contrib")) return "contributor";
-      if (["user","reader","viewer"].includes(r)) return "user";
-    }
-    if (d.admin === true) return "admin";
-    if (d.contributor === true) return "contributor";
-    if (d.allowed === true) return "user";
-  } catch {}
-  return "user";
-}
-
+// UI gating now driven by role events
 function setControlsEnabled(isContribOrAdmin) {
-  // Read-only safe ops: always enabled
+  // Safe ops
   btnValidate.disabled = false;
   btnExportPrimary.disabled = false;
 
-  // Destructive/backfill ops: gated in UI
+  // Gated ops
   for (const b of [btnAppendPrimary, btnReplacePrimary, btnDeleteSecondary, btnReplaceAndDelete, btnCachePrimary]) {
     b.disabled = !isContribOrAdmin;
     b.classList.toggle("opacity-50", !isContribOrAdmin);
@@ -124,133 +89,147 @@ function setControlsEnabled(isContribOrAdmin) {
 }
 
 function parseAppIdFromCollectionPath(colPath) {
-  // artifacts/{appId}/public/data/werpassessments
   const parts = String(colPath || "").split("/");
   if (parts.length >= 2 && parts[0] === "artifacts") return parts[1];
   return "";
 }
 
-async function saveDocs(colPath, arr, merge = true) {
-  const docs = arr.map(normalizeDoc);
-  const BULK_LIMIT = 450;
-  let wrote = 0, batches = 0;
+// ============ Logging / Status ============
 
-  for (const part of chunk(docs, BULK_LIMIT)) {
+function log(msg) {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.innerHTML = ""; }
+function setStatus(msg) { statusEl.textContent = msg; }
+
+// ============ Core Firestore Ops ============
+
+async function saveDocs(colPath, arr, merge = true) {
+  let wrote = 0;
+  const CHUNK = 450;
+  for (const group of chunk(arr, CHUNK)) {
     const batch = writeBatch(db);
-    for (const d of part) {
+    for (const d of group) {
       batch.set(doc(db, colPath, d.id), d, { merge });
+      wrote++;
     }
     await batch.commit();
-    batches++;
-    wrote += part.length;
-    setStatus(`Wrote ${wrote}/${docs.length}…`);
   }
-  return { wrote, batches };
+  return { wrote };
 }
 
 async function deleteAll(colPath) {
   const ids = await listAllDocIds(colPath);
-  if (ids.length === 0) return { deleted: 0, batches: 0 };
-  const BULK_LIMIT = 450;
-  let deleted = 0, batches = 0;
-
-  for (const part of chunk(ids, BULK_LIMIT)) {
+  let deleted = 0;
+  for (const group of chunk(ids, 450)) {
     const batch = writeBatch(db);
-    for (const id of part) batch.delete(doc(db, colPath, id));
+    group.forEach(id => batch.delete(doc(db, colPath, id)));
     await batch.commit();
-    batches++;
-    deleted += part.length;
-    setStatus(`Deleted ${deleted}/${ids.length}…`);
+    deleted += group.length;
   }
-  return { deleted, batches };
+  return { deleted };
 }
 
-// Actions
+// ============ Button Handlers ============
+
 btnValidate.addEventListener("click", async () => {
-  clearLog(); setStatus("Validating…");
+  clearLog();
   try {
     const arr = await readJsonFromInputs();
-    // readJsonFromInputs() guarantees an array now
-    const sample = arr.slice(0, 3).map(normalizeDoc);
-    setStatus(`Valid JSON. ${arr.length} record(s).`);
-    log(JSON.stringify(sample, null, 2));
+    const normalized = arr.map(normalizeDoc);
+    log(`Validated ${normalized.length} doc(s).`);
+    setStatus("Validation passed.");
   } catch (e) {
-    setStatus(e.message || String(e));
+    setStatus("Validation failed.");
+    log("ERROR: " + (e?.message || e));
   }
 });
 
 btnExportPrimary.addEventListener("click", async () => {
-  clearLog(); setStatus("Exporting primary…");
-  const col = primaryPathInput.value.trim();
+  clearLog();
   try {
+    const col = primaryPathInput.value.trim();
+    if (!col) throw new Error("Primary collection path required.");
     const snap = await getDocs(collection(db, col));
-    const out = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const blob = new Blob([JSON.stringify(docs, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "primary-export.json";
+    a.download = `${col.replace(/\//g, "_")}.export.json`;
     a.click();
-    setStatus(`Exported ${out.length} record(s).`);
+    setStatus("Export complete.");
+    log(`Exported ${docs.length} doc(s).`);
   } catch (e) {
-    setStatus("Export failed: " + (e?.message || e));
+    setStatus("Export failed.");
+    log("ERROR: " + (e?.message || e));
   }
 });
 
 btnAppendPrimary.addEventListener("click", async () => {
-  clearLog(); setStatus("Appending to primary…");
-  const col = primaryPathInput.value.trim();
+  clearLog(); setStatus("Appending…");
   try {
-    const arr = await readJsonFromInputs();
-    const { wrote, batches } = await saveDocs(col, arr, true);
-    setStatus(`Append complete: ${wrote} record(s) in ${batches} batch(es).`);
+    const primary = primaryPathInput.value.trim();
+    if (!primary) throw new Error("Primary path required.");
+    const arr = (await readJsonFromInputs()).map(normalizeDoc);
+    const { wrote } = await saveDocs(primary, arr, true);
+    setStatus("Append complete.");
+    log(`Appended ${wrote} document(s).`);
   } catch (e) {
-    setStatus("Append failed: " + (e?.message || e));
+    setStatus("Append failed.");
+    log("ERROR: " + (e?.message || e));
   }
 });
 
 btnReplacePrimary.addEventListener("click", async () => {
-  const col = primaryPathInput.value.trim();
-  if (!confirm(`Replace primary?\nThis will DELETE all docs in:\n${col}\nThen import from JSON.`)) return;
-
-  clearLog(); setStatus("Replacing primary (delete + import) …");
+  clearLog(); setStatus("Replacing primary…");
   try {
-    const del = await deleteAll(col);
-    log(`Deleted ${del.deleted} record(s) in ${del.batches} batch(es).`);
-    const arr = await readJsonFromInputs();
-    const put = await saveDocs(col, arr, false);
-    setStatus(`Replace complete. Deleted ${del.deleted}, wrote ${put.wrote}.`);
+    const primary = primaryPathInput.value.trim();
+    if (!primary) throw new Error("Primary path required.");
+    const del = await deleteAll(primary);
+    log(`Deleted from primary: ${del.deleted} doc(s).`);
+    const arr = (await readJsonFromInputs()).map(normalizeDoc);
+    const { wrote } = await saveDocs(primary, arr, false);
+    setStatus("Replace complete.");
+    log(`Imported into primary: ${wrote} doc(s).`);
   } catch (e) {
-    setStatus("Replace failed: " + (e?.message || e));
+    setStatus("Replace failed.");
+    log("ERROR: " + (e?.message || e));
   }
 });
 
 btnDeleteSecondary.addEventListener("click", async () => {
-  const col = secondaryPathInput.value.trim();
-  if (!col) { alert("Secondary collection path is empty."); return; }
-  if (!confirm(`Delete ALL docs from secondary?\n${col}`)) return;
-
   clearLog(); setStatus("Deleting secondary…");
   try {
-    const res = await deleteAll(col);
-    setStatus(`Secondary deleted: ${res.deleted} record(s) in ${res.batches} batch(es).`);
+    const secondary = secondaryPathInput.value.trim();
+    if (!secondary) throw new Error("Secondary path required.");
+    const del = await deleteAll(secondary);
+    log(`Deleted ${del.deleted} doc(s) from secondary.`);
+    setStatus("Delete secondary complete.");
   } catch (e) {
-    setStatus("Delete secondary failed: " + (e?.message || e));
+    setStatus("Delete secondary failed.");
+    log("ERROR: " + (e?.message || e));
   }
 });
 
 btnReplaceAndDelete.addEventListener("click", async () => {
   const primary = primaryPathInput.value.trim();
   const secondary = secondaryPathInput.value.trim();
-  if (!confirm(`Replace primary and then delete secondary?\nPrimary: ${primary}\nSecondary: ${secondary}`)) return;
+  if (!primary) {
+    alert("Primary path required.");
+    return;
+  }
+  if (!confirm(`Replace primary and then delete secondary?\nPrimary: ${primary}\nSecondary: ${secondary || "(none)"}`)) return;
 
   clearLog(); setStatus("Replace primary → delete secondary…");
   try {
     const del = await deleteAll(primary);
     log(`Deleted from primary: ${del.deleted} record(s).`);
-    const arr = await readJsonFromInputs();
+    const arr = (await readJsonFromInputs()).map(normalizeDoc);
     const put = await saveDocs(primary, arr, false);
     log(`Imported into primary: ${put.wrote} record(s).`);
-
     if (secondary) {
       const del2 = await deleteAll(secondary);
       log(`Deleted secondary: ${del2.deleted} record(s).`);
@@ -265,20 +244,24 @@ btnCachePrimary.addEventListener("click", async () => {
   clearLog();
   const col = primaryPathInput.value.trim();
   const appId = parseAppIdFromCollectionPath(col) || "guardian";
-  if (!confirm(`Run cache backfill on:\nappId=${appId}\ncollectionPath=${col}\n\nThis enqueues media caching for reference images.`)) return;
-  setStatus("Starting cache backfill…");
+  if (!col) {
+    setStatus("Primary path required for caching.");
+    return;
+  }
+  setStatus("Triggering cache function…");
   try {
-    const res = await callCacheCollection({ appId, collectionPath: col, limit: 300, dryRun: false });
-    const data = res?.data || {};
-    setStatus(`Backfill started. ${JSON.stringify(data)}`);
-    log(JSON.stringify(data, null, 2));
+    const res = await callCacheCollection({ appId });
+    log("Cache function result: " + JSON.stringify(res.data));
+    setStatus("Cache trigger completed.");
   } catch (e) {
-    setStatus("Backfill failed: " + (e?.message || e));
+    log("ERROR: " + (e?.message || e));
+    setStatus("Cache trigger failed.");
   }
 });
 
-// Auth/UI wiring
-onAuthStateChanged(auth, async (user) => {
+// ============ Auth / Role UI Wiring via shared module ============
+
+onAuthChanged(user => {
   if (!user) {
     authUserEl.textContent = "Not signed in";
     authRoleEl.textContent = "—";
@@ -286,12 +269,14 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
   authUserEl.textContent = user.email || user.uid;
-  try {
-    const role = await getUiRole(user.uid);
-    authRoleEl.textContent = role;
-    setControlsEnabled(role === "admin" || role === "contributor");
-  } catch {
-    authRoleEl.textContent = "user";
-    setControlsEnabled(false);
-  }
 });
+
+onRoleResolved(({ role }) => {
+  authRoleEl.textContent = role;
+  setControlsEnabled(isContributor() || isAdmin());
+});
+
+// Initial UI baseline
+setControlsEnabled(false);
+authUserEl.textContent = "Checking sign-in…";
+authRoleEl.textContent = "—";

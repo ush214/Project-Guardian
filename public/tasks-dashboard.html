@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Task Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-gray-900">
+  <main class="max-w-4xl mx-auto p-6 space-y-6">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-semibold">Task Dashboard</h1>
+      <div class="text-sm text-gray-600 flex gap-2 items-center">
+        <span id="hdr-email" class="font-medium">—</span>
+        <span class="text-gray-400">|</span>
+        Role: <span id="hdr-role" class="font-medium">—</span>
+        <button id="btn-signout" class="text-indigo-600 hover:underline text-xs">Sign out</button>
+      </div>
+    </header>
+
+    <section class="bg-white border rounded-xl p-4 shadow-sm">
+      <div id="tasks-status" class="text-sm text-gray-600 mb-3">Initializing…</div>
+      <ul id="tasks-list" class="space-y-2"></ul>
+    </section>
+
+    <div class="text-xs text-gray-500">
+      Protected path: <code>artifacts/&lt;appId&gt;/private/admin/tasks</code>.
+      Access requires admin role (allowlist or custom claim).
+    </div>
+  </main>
+
+  <script type="module">
+    import { onAuthChanged, onRoleResolved, signOutUser } from "./js/auth-role.js";
+    import "./js/tasks-dashboard.js";
+
+    const emailEl = document.getElementById("hdr-email");
+    const roleEl = document.getElementById("hdr-role");
+    const signOutBtn = document.getElementById("btn-signout");
+
+    onAuthChanged(user => {
+      emailEl.textContent = user ? (user.email || user.uid) : "Not signed in";
+    });
+    onRoleResolved(({ role }) => {
+      roleEl.textContent = role;
+    });
+    signOutBtn.addEventListener("click", async () => {
+      await signOutUser();
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>

@@ -20,53 +20,55 @@
     <section class="bg-white border border-gray-200 rounded-xl shadow p-4 space-y-3">
       <div class="grid md:grid-cols-2 gap-3">
         <label class="block">
-          <span class="text-sm text-gray-700">Primary collection path</span>
-          <input id="primaryPathInput" type="text" class="mt-1 w-full p-2 border border-gray-300 rounded"
-                 value="artifacts/guardian/public/data/werpassessments">
+          <span class="text-xs font-medium text-gray-600">Primary Collection Path</span>
+          <input id="primaryPathInput" class="mt-1 block w-full border rounded px-2 py-1 text-sm"
+                 placeholder="artifacts/guardian/public/data/werpassessments">
         </label>
         <label class="block">
-          <span class="text-sm text-gray-700">Secondary collection path (optional)</span>
-          <input id="secondaryPathInput" type="text" class="mt-1 w-full p-2 border border-gray-300 rounded"
-                 value="artifacts/guardian-agent-default/public/data/werpassessments">
+          <span class="text-xs font-medium text-gray-600">Secondary Collection Path (optional)</span>
+          <input id="secondaryPathInput" class="mt-1 block w-full border rounded px-2 py-1 text-sm"
+                 placeholder="artifacts/guardian-agent-default/public/data/werpassessments">
         </label>
       </div>
 
       <div class="grid md:grid-cols-2 gap-3">
         <label class="block">
-          <span class="text-sm text-gray-700">Upload JSON file</span>
-          <input id="fileInput" type="file" accept=".json" class="mt-1 w-full p-2 border border-gray-300 rounded bg-white">
+          <span class="text-xs font-medium text-gray-600">JSON File (array or single object)</span>
+          <input id="fileInput" type="file" accept=".json" class="mt-1 block w-full text-sm">
         </label>
         <label class="block">
-          <span class="text-sm text-gray-700">Or paste JSON below</span>
+          <span class="text-xs font-medium text-gray-600">Paste JSON</span>
+          <textarea id="jsonInput" rows="5" class="mt-1 block w-full border rounded px-2 py-1 text-sm font-mono"></textarea>
         </label>
       </div>
 
-      <textarea id="jsonInput" class="w-full min-h-[220px] p-2 border border-gray-300 rounded" placeholder='[ { "id": "vessel-1", ... }, ... ]'></textarea>
-
-      <div class="flex flex-wrap gap-2">
-        <button id="btnValidate" class="bg-gray-100 hover:bg-gray-200 text-gray-900 text-sm px-3 py-2 rounded border border-gray-300">Validate JSON</button>
-        <button id="btnExportPrimary" class="bg-white hover:bg-gray-50 text-gray-900 text-sm px-3 py-2 rounded border border-gray-300">Export primary (backup)</button>
-
-        <button id="btnAppendPrimary" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-2 rounded">Append to primary (no delete)</button>
-
-        <button id="btnReplacePrimary" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-2 rounded">Replace primary (delete + import)</button>
-        <button id="btnDeleteSecondary" class="bg-amber-600 hover:bg-amber-500 text-white text-sm px-3 py-2 rounded">Delete secondary</button>
-        <button id="btnReplaceAndDelete" class="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-2 rounded">Replace primary AND delete secondary</button>
-
-        <button id="btnCachePrimary" class="bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-2 rounded">Backfill cache for primary</button>
+      <div class="flex flex-wrap gap-2 text-sm">
+        <button id="btnValidate" class="px-3 py-1.5 bg-slate-800 text-white rounded">Validate JSON</button>
+        <button id="btnExportPrimary" class="px-3 py-1.5 bg-indigo-600 text-white rounded">Export Primary</button>
+        <button id="btnAppendPrimary" class="px-3 py-1.5 bg-emerald-600 text-white rounded disabled:opacity-50">Append Primary</button>
+        <button id="btnReplacePrimary" class="px-3 py-1.5 bg-amber-600 text-white rounded disabled:opacity-50">Replace Primary</button>
+        <button id="btnDeleteSecondary" class="px-3 py-1.5 bg-rose-600 text-white rounded disabled:opacity-50">Delete Secondary</button>
+        <button id="btnReplaceAndDelete" class="px-3 py-1.5 bg-fuchsia-600 text-white rounded disabled:opacity-50">Replace + Delete Secondary</button>
+        <button id="btnCachePrimary" class="px-3 py-1.5 bg-sky-600 text-white rounded disabled:opacity-50">Backfill Cache</button>
       </div>
 
-      <div id="status" class="text-sm text-gray-700"></div>
-      <pre id="log" class="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-[320px]"></pre>
-
-      <p class="text-xs text-gray-500">
-        Notes:
-        <br>• Destructive operations (Replace/Delete) are gated to Contributor/Admin users in the UI and are also enforced by Firestore Rules.
-        <br>• JSON must be an array of documents and each item must include a unique "id" (or ID/name/uuid/slug/title).
+      <p class="text-xs text-gray-600 leading-relaxed">
+        • Destructive operations (Replace/Delete) are gated to Contributor/Admin users in the UI and enforced by Firestore Rules.
+        <br>• JSON must be an array of documents or single object (automatically wrapped) with each item providing a unique id/name/uuid/slug/title.
       </p>
+
+      <div class="border rounded bg-white">
+        <div class="px-3 py-2 text-xs font-medium border-b bg-slate-100 flex justify-between">
+          <span>Log</span>
+          <span id="statusLine" class="text-slate-500 font-normal">Idle</span>
+        </div>
+        <div id="log" class="p-3 text-xs font-mono h-64 overflow-auto space-y-1 bg-slate-50"></div>
+      </div>
     </section>
   </main>
 
+  <!-- Shared auth/role must load before import.js -->
+  <script type="module" src="/js/auth-role.js"></script>
   <script type="module" src="/import.js"></script>
 </body>
 </html>
