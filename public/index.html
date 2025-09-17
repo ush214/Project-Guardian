@@ -206,6 +206,13 @@
          href="/import.html"
          class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden"
          title="Open Import Data tools">Import Data</a>
+      <!-- Visible button to open the Task Dashboard (admin role required to access) -->
+      <button id="btn-task-dashboard"
+              type="button"
+              title="Open Task Dashboard"
+              class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10">
+        Task Dashboard
+      </button>
     </nav>
     <div class="hidden md:flex items-center gap-4">
       <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true"
@@ -303,7 +310,7 @@ const state = {
   mapStatus: 'init'
 };
 window.pgState = state;
-/* Make appId available to other modules (tasks dashboard reads window.appId) */
+/* Expose appId for other modules (task dashboard reads window.appId) */
 window.appId = appId;
 
 /* =============== UTILITIES =============== */
@@ -584,8 +591,9 @@ window.addEventListener('resize', debounce(ensureMapSize,200));
 /* =============== AUTH UI =============== */
 function updateAuthUI(){
   const signedIn=!!state.user;
-  $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
-  $('#auth-role') && ($('#auth-role').textContent = state.role);
+  // if you have user info elements, keep them synced:
+  // $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
+  // $('#auth-role') && ($('#auth-role').textContent = state.role);
   document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
   document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
   const isContributor=['admin','contributor'].includes(state.role);
@@ -596,6 +604,7 @@ function updateAuthUI(){
     importLink.classList.toggle('hidden', !isContributor);
   }
 
+  // Gate action buttons
   ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
     const el=$('#'+id);
     if(!el) return;
@@ -1262,7 +1271,7 @@ function renderReport(route){
                   <tbody>${rpmTableRows()}</tbody>
                 </table>
               </div>
-              <p class="text-xs text-slate-300 mt-2">Final Multiplier: <span class="font-semibold">${Number(vRPM||1).toFixed(2)}×</span></p>
+              <p class="text-xs text-slate-300 mt-2">Final Multiplier: <span class="font-semibold">${Number(rpmFinalMultiplier(it)||1).toFixed(2)}×</span></p>
             </div>
           </div>
           <div class="card-inner p-4">
@@ -1401,7 +1410,7 @@ window.ProjectGuardian={
 };
 </script>
 
-<!-- Admin-only Tasks Dashboard module (standalone module; keep outside other <script type="module"> blocks) -->
+<!-- Admin-only Tasks Dashboard module (standalone; keep outside other <script type="module"> blocks) -->
 <script type="module" src="./tasks-dashboard.js"></script>
 </body>
 </html>

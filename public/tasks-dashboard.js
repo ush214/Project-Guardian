@@ -1,10 +1,27 @@
-// Admin-only Task Dashboard (Kanban + Charts) for Project Guardian
-// Requires: Tailwind (already in app), Firestore modular v9+ (db from index.html), admin role.
-// Firestore path: artifacts/${appId}/private/admin/tasks
+// Admin-only Task Dashboard for Project Guardian
+// - Uses existing Firebase app (getApp())
+// - Gates UI by role from system/allowlist/users/{uid} (Role/role/ROLE or admin:true)
+// - Persists tasks in Firestore at artifacts/${appId}/private/admin/tasks
+// - Inserts or reuses a "Task Dashboard" button in header
+// - Mirrors main page visuals with Tailwind
 
-// Usage from index.html:
-// import { initTasksDashboard } from "./tasks-dashboard.js";
-// initTasksDashboard({ db, appId, getRole: () => state.role });
+import { getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  collection,
+  addDoc,
+  updateDoc,
+  serverTimestamp,
+  onSnapshot,
+  query,
+  orderBy,
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 const STATUS = ["Not Started", "In Progress", "Done"];
 const PRIORITIES = ["Critical", "High", "Medium", "Low"];
@@ -29,16 +46,34 @@ const priorityText = {
   Low: "text-green-600",
 };
 
-let firestore;
+let appId = (typeof window !== "undefined" && window.appId) || "guardian-agent-default";
+let role = "user";
+let db = null;
+let auth = null;
+
 let charts = { status: null, priority: null };
 let unsubTasks = null;
 let tasks = [];
-let roleGetter = () => "user";
-let appIdGlobal = "guardian-agent-default";
-let dbGlobal = null;
 
-function qs(sel, root = document) { return root.querySelector(sel); }
-function qsa(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
+function tasksCollectionPath() {
+  return `artifacts/${appId}/private/admin/tasks`;
+}
+
+function escapeHtml(s = "") {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+function showToastSafe(msg, type = "info") {
+  if (typeof window !== "undefined" && typeof window.showToast === "function") {
+    window.showToast(msg, type);
+  } else {
+    console.log(`[${type}] ${msg}`);
+  }
+}
 
 async function ensureChartJs() {
   if (window.Chart) return;
@@ -52,15 +87,46 @@ async function ensureChartJs() {
   });
 }
 
-function tasksCollectionPath() {
-  return `artifacts/${appIdGlobal}/private/admin/tasks`;
+function injectLocalStyles() {
+  if (document.getElementById("task-dashboard-local-css")) return;
+  const style = document.createElement("style");
+  style.id = "task-dashboard-local-css";
+  style.textContent = `
+    .kanban-column.drag-over {
+      outline: 2px dashed rgba(255,255,255,0.25);
+      background-color: rgba(30, 41, 59, 0.35);
+    }
+    .task-card.dragging {
+      opacity: 0.6;
+      filter: drop-shadow(0 8px 16px rgba(0,0,0,0.25));
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function findOrCreateNavButton() {
+  // Prefer existing placeholder
+  let btn = document.getElementById("btn-task-dashboard");
+  if (btn) return btn;
+
+  // Otherwise inject one near header nav/user actions
+  const header = document.querySelector("header") || document.body;
+  const nav = header.querySelector("nav") || header;
+  btn = document.createElement("button");
+  btn.id = "btn-task-dashboard";
+  btn.type = "button";
+  btn.textContent = "Task Dashboard";
+  btn.className =
+    "ml-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm";
+  btn.style.display = "none";
+  nav.appendChild(btn);
+  return btn;
 }
 
 function ensurePanel() {
-  let panel = qs("#task-dashboard-panel");
+  let panel = document.getElementById("task-dashboard-panel");
   if (panel) return panel;
 
-  // Create a hidden panel appended under #app; mirrors existing card visuals
   panel = document.createElement("section");
   panel.id = "task-dashboard-panel";
   panel.className = "hidden p-6 bg-white rounded-lg shadow-md mt-6";
@@ -107,7 +173,7 @@ function ensurePanel() {
 
     <div id="kanban-board" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
 
-    <!-- Modals -->
+    <!-- View Modal -->
     <div id="task-modal" class="fixed inset-0 z-50 hidden">
       <div class="absolute inset-0 bg-black/50"></div>
       <div class="relative z-10 mx-auto mt-16 w-full max-w-2xl bg-white rounded-lg shadow-xl">
@@ -132,6 +198,7 @@ function ensurePanel() {
       </div>
     </div>
 
+    <!-- Add Modal -->
     <div id="task-add-modal" class="fixed inset-0 z-50 hidden">
       <div class="absolute inset-0 bg-black/50"></div>
       <div class="relative z-10 mx-auto mt-16 w-full max-w-2xl bg-white rounded-lg shadow-xl">
@@ -171,95 +238,105 @@ function ensurePanel() {
       </div>
     </div>
   `;
-  const appRoot = qs("#app") || document.body;
-  appRoot.appendChild(panel);
 
-  // Close/open wiring
-  qs("#btn-close-dashboard", panel).addEventListener("click", () => togglePanel(false));
-  qs("#modal-close", panel).addEventListener("click", closeModal);
-  qs("#task-modal", panel).addEventListener("click", (e) => { if (e.target.id === "task-modal") closeModal(); });
+  (document.getElementById("app") || document.body).appendChild(panel);
 
-  // Add modal
-  qs("#btn-new-task", panel).addEventListener("click", openAddModal);
-  qs("#task-add-close", panel).addEventListener("click", closeAddModal);
-  qs("#task-add-modal", panel).addEventListener("click", (e) => { if (e.target.id === "task-add-modal") closeAddModal(); });
-  qs("#task-add-form", panel).addEventListener("submit", onAddTaskSubmit);
+  // Wire controls
+  panel.querySelector("#btn-close-dashboard").addEventListener("click", closeDashboard);
+  panel.querySelector("#modal-close").addEventListener("click", closeModal);
+  panel.querySelector("#task-modal").addEventListener("click", (e) => {
+    if (e.target.id === "task-modal") closeModal();
+  });
 
-  // Filters
-  qs("#task-filter-priority", panel).addEventListener("change", renderBoard);
-  qs("#task-filter-area", panel).addEventListener("change", renderBoard);
+  panel.querySelector("#btn-new-task").addEventListener("click", openAddModal);
+  panel.querySelector("#task-add-close").addEventListener("click", closeAddModal);
+  panel.querySelector("#task-add-modal").addEventListener("click", (e) => {
+    if (e.target.id === "task-add-modal") closeAddModal();
+  });
+  panel.querySelector("#task-add-form").addEventListener("submit", onAddTaskSubmit);
+
+  panel.querySelector("#task-filter-priority").addEventListener("change", renderBoard);
+  panel.querySelector("#task-filter-area").addEventListener("change", renderBoard);
 
   return panel;
 }
 
 function togglePanel(show) {
   const panel = ensurePanel();
+  panel.classList.toggle("hidden", !show);
   if (show) {
-    panel.classList.remove("hidden");
     renderBoard();
     renderCharts();
-  } else {
-    panel.classList.add("hidden");
   }
 }
 
-function showToastSafe(msg, type = "info") {
-  if (typeof window.showToast === "function") {
-    window.showToast(msg, type);
-  } else {
-    console.log(`[${type}] ${msg}`);
+function openDashboard() {
+  if (role !== "admin") {
+    showToastSafe("Admin only", "error");
+    return;
   }
+  injectLocalStyles();
+  ensureChartJs()
+    .then(async () => {
+      ensurePanel();
+      await subscribeTasks();
+      togglePanel(true);
+    })
+    .catch((e) => {
+      console.error(e);
+      showToastSafe("Failed to open dashboard", "error");
+    });
+}
+
+function closeDashboard() {
+  togglePanel(false);
+}
+
+function openAddModal() {
+  if (role !== "admin") {
+    showToastSafe("Admin only", "error");
+    return;
+  }
+  ensurePanel().querySelector("#task-add-modal").classList.remove("hidden");
+}
+
+function closeAddModal() {
+  ensurePanel().querySelector("#task-add-modal").classList.add("hidden");
 }
 
 function openModal(task) {
   const panel = ensurePanel();
-  qs("#modal-title", panel).textContent = task.name || "(Untitled)";
-  qs("#modal-code", panel).textContent = task.code || task.id || "";
-  qs("#modal-desc", panel).textContent = task.description || "";
-  qs("#modal-priority", panel).innerHTML = `<span class="${priorityText[task.priority] || ""}">${task.priority || "-"}</span>`;
-  qs("#modal-area", panel).textContent = task.area || "-";
-  qs("#modal-status", panel).textContent = task.status || "-";
-  const modal = qs("#task-modal", panel);
-  modal.classList.remove("hidden");
+  panel.querySelector("#modal-title").textContent = task.name || "(Untitled)";
+  panel.querySelector("#modal-code").textContent = task.code || task._docId || "";
+  panel.querySelector("#modal-desc").textContent = task.description || "";
+  panel.querySelector("#modal-priority").innerHTML = `<span class="${priorityText[task.priority] || ""}">${task.priority || "-"}</span>`;
+  panel.querySelector("#modal-area").textContent = task.area || "-";
+  panel.querySelector("#modal-status").textContent = task.status || "-";
+  panel.querySelector("#task-modal").classList.remove("hidden");
 }
 
 function closeModal() {
-  const panel = ensurePanel();
-  qs("#task-modal", panel).classList.add("hidden");
-}
-
-function openAddModal() {
-  if (roleGetter() !== "admin") {
-    showToastSafe("Admin only", "error");
-    return;
-  }
-  const panel = ensurePanel();
-  qs("#task-add-modal", panel).classList.remove("hidden");
-}
-
-function closeAddModal() {
-  const panel = ensurePanel();
-  qs("#task-add-modal", panel).classList.add("hidden");
+  ensurePanel().querySelector("#task-modal").classList.add("hidden");
 }
 
 function getFilters() {
   const panel = ensurePanel();
-  const p = qs("#task-filter-priority", panel)?.value || "all";
-  const a = qs("#task-filter-area", panel)?.value || "all";
-  return { priority: p, area: a };
+  const p = panel.querySelector("#task-filter-priority")?.value || "all";
+  const a = panel.querySelector("#task-filter-area")?.value || "all";
+  return { p, a };
 }
 
 function filteredTasks() {
-  const { priority, area } = getFilters();
-  return tasks.filter(t => {
-    const pOk = (priority === "all") || (t.priority === priority);
-    const aOk = (area === "all") || (t.area === area);
+  const { p, a } = getFilters();
+  return tasks.filter((t) => {
+    const pOk = p === "all" || t.priority === p;
+    const aOk = a === "all" || t.area === a;
     return pOk && aOk;
   });
 }
 
 function statusCounts() {
-  const counts = { "Not Started": 0, "In Progress": 0, "Done": 0 };
+  const counts = { "Not Started": 0, "In Progress": 0, Done: 0 };
   for (const t of tasks) counts[t.status] = (counts[t.status] || 0) + 1;
   return counts;
 }
@@ -272,8 +349,8 @@ function priorityCounts() {
 
 function renderCharts() {
   const panel = ensurePanel();
-  const sCanvas = qs("#chart-status", panel);
-  const pCanvas = qs("#chart-priority", panel);
+  const sCanvas = panel.querySelector("#chart-status");
+  const pCanvas = panel.querySelector("#chart-priority");
   if (!sCanvas || !pCanvas || !window.Chart) return;
 
   const sc = statusCounts();
@@ -284,18 +361,20 @@ function renderCharts() {
     type: "doughnut",
     data: {
       labels: Object.keys(sc),
-      datasets: [{
-        label: "Tasks by Status",
-        data: Object.values(sc),
-        backgroundColor: ["#d6d3d1", "#a8a29e", "#78716c"],
-        borderColor: "#f5f5f4",
-        borderWidth: 3
-      }]
+      datasets: [
+        {
+          label: "Tasks by Status",
+          data: Object.values(sc),
+          backgroundColor: ["#d6d3d1", "#a8a29e", "#78716c"],
+          borderColor: "#f5f5f4",
+          borderWidth: 3,
+        },
+      ],
     },
     options: {
       responsive: true,
-      plugins: { legend: { position: "top" }, title: { display: true, text: "Tasks by Status" } }
-    }
+      plugins: { legend: { position: "top" }, title: { display: true, text: "Tasks by Status" } },
+    },
   });
 
   if (charts.priority) charts.priority.destroy();
@@ -303,25 +382,32 @@ function renderCharts() {
     type: "bar",
     data: {
       labels: Object.keys(pc),
-      datasets: [{
-        label: "Tasks by Priority",
-        data: Object.values(pc),
-        backgroundColor: ["#ef4444", "#f97316", "#eab308", "#22c55e"],
-        borderColor: "#f5f5f4",
-        borderWidth: 2
-      }]
+      datasets: [
+        {
+          label: "Tasks by Priority",
+          data: Object.values(pc),
+          backgroundColor: ["#ef4444", "#f97316", "#eab308", "#22c55e"],
+          borderColor: "#f5f5f4",
+          borderWidth: 2,
+        },
+      ],
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false }, title: { display: true, text: "Tasks by Priority" } },
-      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
-    }
+      plugins: {
+        legend: { display: false },
+        title: { display: true, text: "Tasks by Priority" },
+      },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+    },
   });
 }
 
 function makeCard(t) {
   const card = document.createElement("div");
-  card.className = `task-card bg-white p-4 mb-3 rounded-lg shadow-sm border-l-4 ${priorityRing[t.priority] || "border-gray-300"}`;
+  card.className = `task-card bg-white p-4 mb-3 rounded-lg shadow-sm border-l-4 ${
+    priorityRing[t.priority] || "border-gray-300"
+  }`;
   card.draggable = true;
   card.dataset.docId = t._docId;
   card.dataset.status = t.status || STATUS[0];
@@ -332,18 +418,28 @@ function makeCard(t) {
       <span class="px-2 py-1 rounded-full ${priorityText[t.priority] || ""} bg-stone-100">${t.priority || "-"}</span>
     </div>
   `;
-  card.addEventListener("click", (e) => { e.stopPropagation(); openModal(t); });
-  card.addEventListener("dragstart", (e) => { card.classList.add("dragging"); e.dataTransfer.setData("text/plain", t._docId); });
+  card.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openModal(t);
+  });
+  card.addEventListener("dragstart", (e) => {
+    card.classList.add("dragging");
+    e.dataTransfer.setData("text/plain", t._docId);
+  });
   card.addEventListener("dragend", () => card.classList.remove("dragging"));
   return card;
 }
 
 function makeColumn(title) {
   const col = document.createElement("div");
-  col.className = "kanban-column p-4 rounded-lg min-h-[260px] transition-colors bg-slate-800/30 border border-white/10";
+  col.className =
+    "kanban-column p-4 rounded-lg min-h-[260px] transition-colors bg-slate-800/30 border border-white/10";
   col.dataset.status = title;
   col.innerHTML = `<h4 class="font-semibold text-slate-100 mb-3 text-center">${title}</h4>`;
-  col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("drag-over"); });
+  col.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    col.classList.add("drag-over");
+  });
   col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
   col.addEventListener("drop", onDropColumn);
   return col;
@@ -357,15 +453,15 @@ async function onDropColumn(e) {
   const docId = e.dataTransfer?.getData("text/plain");
   if (!docId || !newStatus) return;
 
-  if (roleGetter() !== "admin") {
+  if (role !== "admin") {
     showToastSafe("Admin only", "error");
     return;
   }
-
   try {
-    const { doc, updateDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-    const ref = doc(dbGlobal, tasksCollectionPath(), docId);
-    await updateDoc(ref, { status: newStatus, updatedAt: serverTimestamp() });
+    await updateDoc(doc(db, tasksCollectionPath(), docId), {
+      status: newStatus,
+      updatedAt: serverTimestamp(),
+    });
     showToastSafe(`Task moved to "${newStatus}"`, "success");
   } catch (err) {
     console.error(err);
@@ -373,15 +469,9 @@ async function onDropColumn(e) {
   }
 }
 
-function escapeHtml(s = "") {
-  return String(s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-}
-
 function renderBoard() {
   const panel = ensurePanel();
-  const board = qs("#kanban-board", panel);
+  const board = panel.querySelector("#kanban-board");
   if (!board) return;
 
   board.innerHTML = "";
@@ -389,122 +479,156 @@ function renderBoard() {
 
   for (const st of STATUS) {
     const col = makeColumn(st);
-    const inCol = ft.filter(t => (t.status || "Not Started") === st);
+    const inCol = ft.filter((t) => (t.status || "Not Started") === st);
     for (const t of inCol) col.appendChild(makeCard(t));
     board.appendChild(col);
   }
-
-  // Update charts after board render for coherence
   renderCharts();
 }
 
 async function onAddTaskSubmit(e) {
   e.preventDefault();
-  if (roleGetter() !== "admin") {
+  if (role !== "admin") {
     showToastSafe("Admin only", "error");
     return;
   }
   const panel = ensurePanel();
-  const name = qs("#new-name", panel).value.trim();
-  const description = qs("#new-desc", panel).value.trim();
-  const priority = qs("#new-priority", panel).value;
-  const area = qs("#new-area", panel).value;
+  const name = panel.querySelector("#new-name").value.trim();
+  const description = panel.querySelector("#new-desc").value.trim();
+  const priority = panel.querySelector("#new-priority").value;
+  const area = panel.querySelector("#new-area").value;
   const status = "Not Started";
-
   if (!name || !description) {
     showToastSafe("Please fill all fields", "error");
     return;
   }
 
   try {
-    const { collection, addDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-
-    // Compute next PG- code
+    // Compute next PG- code from current snapshot
     const maxNum = tasks
-      .map(t => Number(String(t.code || "").split("-")[1]))
-      .filter(n => Number.isFinite(n))
+      .map((t) => Number(String(t.code || "").split("-")[1]))
+      .filter((n) => Number.isFinite(n))
       .reduce((m, n) => Math.max(m, n), 0);
     const nextCode = `PG-${String(maxNum + 1).padStart(3, "0")}`;
 
-    await addDoc(collection(dbGlobal, tasksCollectionPath()), {
+    await addDoc(collection(db, tasksCollectionPath()), {
       code: nextCode,
-      name, description, area, priority, status,
+      name,
+      description,
+      area,
+      priority,
+      status,
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
     showToastSafe("Task created", "success");
     closeAddModal();
-    qs("#task-add-form", panel).reset();
+    e.target.reset();
   } catch (err) {
     console.error(err);
     showToastSafe("Failed to create task", "error");
   }
 }
 
-function subscribeTasks() {
-  if (unsubTasks) { unsubTasks(); unsubTasks = null; }
-  return (async () => {
-    const { collection, query, orderBy, onSnapshot } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-    const q = query(collection(dbGlobal, tasksCollectionPath()), orderBy("createdAt", "desc"));
-    unsubTasks = onSnapshot(q, snap => {
-      tasks = snap.docs.map(d => ({ _docId: d.id, ...(d.data() || {}) }));
+async function subscribeTasks() {
+  if (unsubTasks) {
+    unsubTasks();
+    unsubTasks = null;
+  }
+  const q = query(collection(db, tasksCollectionPath()), orderBy("createdAt", "desc"));
+  unsubTasks = onSnapshot(
+    q,
+    (snap) => {
+      tasks = snap.docs.map((d) => ({ _docId: d.id, ...(d.data() || {}) }));
       renderBoard();
-    }, err => {
+    },
+    (err) => {
       console.error("tasks subscription error", err);
-    });
-  })();
+    }
+  );
 }
 
-function insertAdminButton() {
-  // Try to place inside header; fall back to top-right floating button
-  const header = document.querySelector("header") || document.querySelector("header.bg-white") || document.body;
+// Robust role resolution (mirrors main app)
+async function resolveRole(uid) {
+  try {
+    const snap = await getDoc(doc(db, "system", "allowlist", "users", uid));
+    if (snap.exists()) {
+      const d = snap.data() || {};
+      let r = d.role ?? d.Role ?? d.ROLE;
+      if (typeof r === "string" && r.trim()) {
+        r = r.trim().toLowerCase();
+        if (r.startsWith("admin")) return "admin";
+        if (r.startsWith("contrib")) return "contributor";
+        if (["user", "reader", "viewer"].includes(r)) return "user";
+      }
+      if (d.admin) return "admin";
+      if (d.contributor) return "contributor";
+      if (d.allowed) return "user";
+    }
+  } catch {}
+  // Legacy location
+  try {
+    const legacy = await getDoc(doc(db, `artifacts/${appId}/private/users/${uid}`));
+    if (legacy.exists()) {
+      const d = legacy.data() || {};
+      let r = d.role ?? d.Role ?? d.ROLE;
+      if (typeof r === "string" && r.trim()) {
+        r = r.trim().toLowerCase();
+        if (r.startsWith("admin")) return "admin";
+        if (r.startsWith("contrib")) return "contributor";
+        if (["user", "reader", "viewer"].includes(r)) return "user";
+      }
+      if (d.admin) return "admin";
+      if (d.contributor) return "contributor";
+    }
+  } catch {}
+  return "user";
+}
 
-  let btn = document.getElementById("btn-task-dashboard");
-  if (btn) return btn;
+function watchAuthAndRole() {
+  const btn = findOrCreateNavButton();
 
-  btn = document.createElement("button");
-  btn.id = "btn-task-dashboard";
-  btn.type = "button";
-  btn.textContent = "Task Dashboard";
-  btn.className = "ml-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm";
-  btn.addEventListener("click", async () => {
-    if (roleGetter() !== "admin") {
-      showToastSafe("Admin only", "error");
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      role = "user";
+      if (btn) btn.style.display = "none";
+      togglePanel(false);
       return;
     }
-    await ensureChartJs();
-    ensurePanel();
-    await subscribeTasks();
-    togglePanel(true);
+
+    // Prefer role from main app state if available for instant UX
+    const stateRole = typeof window !== "undefined" && window.pgState?.role;
+    if (stateRole) {
+      role = stateRole;
+    } else {
+      role = await resolveRole(user.uid);
+    }
+
+    if (btn) btn.style.display = role === "admin" ? "inline-flex" : "none";
+    if (role !== "admin") togglePanel(false);
   });
 
-  // Try appending inside header actions if exists
-  const userInfo = document.getElementById("userInfo") || header;
-  userInfo.appendChild(btn);
-  return btn;
+  // Wire click after we create/obtain the button
+  btn.addEventListener("click", openDashboard);
 }
 
-// Public API
-export function initTasksDashboard({ db, appId, getRole }) {
-  dbGlobal = db;
-  appIdGlobal = appId || appIdGlobal;
-  roleGetter = typeof getRole === "function" ? getRole : roleGetter;
+function init() {
+  try {
+    const app = getApp();
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (e) {
+    console.error(
+      "Task Dashboard: Firebase not initialized before tasks-dashboard.js was loaded. Ensure index.html initializes Firebase first.",
+      e
+    );
+    return;
+  }
+  if (typeof window !== "undefined" && window.appId) appId = window.appId;
 
-  // Manage visibility of the admin button based on role
-  const btn = insertAdminButton();
-
-  const syncRoleVisibility = () => {
-    const isAdmin = roleGetter() === "admin";
-    if (btn) btn.style.display = isAdmin ? "inline-flex" : "none";
-    if (!isAdmin) togglePanel(false);
-  };
-
-  // Poll role state lightly; existing app sets state.role asynchronously
-  syncRoleVisibility();
-  const interval = setInterval(syncRoleVisibility, 1000);
-
-  // Stop polling when page is hidden to save cycles
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearInterval(interval);
-  });
+  ensurePanel(); // pre-create hidden panel
+  findOrCreateNavButton();
+  watchAuthAndRole();
 }
+
+init();
