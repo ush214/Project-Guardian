@@ -2,17 +2,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Auth helper
+    // --- Helpers ---
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Allowlist doc helper
     function allowlist(uid) {
       return get(/databases/$(database)/documents/system/allowlist/users/$(uid));
     }
 
-    // Case-insensitive "admin" check that works in rules (no inline flags)
+    // Case-insensitive "admin"
     function allowlistRoleIsAdmin() {
       return (
         (allowlist(request.auth.uid).data.role is string &&
@@ -24,13 +23,9 @@ service cloud.firestore {
       );
     }
 
-    // Single definitive admin check
     function isAdmin() {
       return isSignedIn() && (
-        // A) Custom auth claim (recommended in production)
-        request.auth.token.admin == true
-        ||
-        // B) Allowlist-based admin (boolean or string)
+        request.auth.token.admin == true ||
         (allowlist(request.auth.uid).exists() && (
           allowlist(request.auth.uid).data.admin == true ||
           allowlistRoleIsAdmin()
@@ -38,24 +33,21 @@ service cloud.firestore {
       );
     }
 
-    // Optional: allow a user to read their own allowlist doc
+    // --- Allowlist doc (read own only) ---
     match /system/allowlist/users/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
-      allow write: if false; // mutate via server/Admin only
+      allow write: if false;
     }
 
-    // Admin-only area (used by Task Dashboard):
-    // artifacts/{app}/private/admin/** e.g. artifacts/guardian/private/admin/tasks
+    // --- Public data (read-only) ---
+    match /artifacts/{app}/public/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // --- Admin-only (Task Dashboard etc.) ---
     match /artifacts/{app}/private/admin/{document=**} {
       allow read, write: if isAdmin();
     }
-
-    // Public area (read-only by default). Adjust write as needed.
-    match /artifacts/{app}/public/{document=**} {
-      allow read: if true;
-      allow write: if isAdmin(); // tighten or expand if you have contributor roles
-    }
-
-    // NOTE: Avoid any global "allow read: if true" catch-alls; they would bypass the admin gate above.
   }
 }
