@@ -1,11 +1,39 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // TEMP: Let any signed-in user fully access tasks path
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isContributor() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.Role in ['contributor', 'admin'];
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
+        && (
+          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.Role == 'admin' ||
+          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true
+        );
+    }
+
+    match /system/allowlist/users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /artifacts/{appId}/public/data/werpassessments/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isContributor() || isAdmin();
+    }
+
     match /artifacts/{appId}/private/admin/tasks/{taskId} {
-      allow read, write: if request.auth != null;
+      allow get, list: if isContributor() || isAdmin();
+      allow create, update, delete: if isAdmin();
     }
   }
 }
