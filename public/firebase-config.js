@@ -1,4 +1,5 @@
-// Shared Firebase web config (public values only)
+// firebase-config.js
+// Public (client) Firebase configuration only (safe to expose).
 export const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",

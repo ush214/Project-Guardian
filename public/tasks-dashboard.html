@@ -24,14 +24,14 @@
     </section>
 
     <div class="text-xs text-gray-500">
-      Protected path: <code>artifacts/&lt;appId&gt;/private/admin/tasks</code>.
-      Access requires admin role (allowlist or custom claim).
+      Protected path: <code>artifacts/&lt;appId&gt;/private/admin/tasks</code>. Requires admin role.
     </div>
   </main>
 
+  <script type="module" src="./auth-role.js"></script>
   <script type="module">
-    import { onAuthChanged, onRoleResolved, signOutUser } from "./js/auth-role.js";
-    import "./js/tasks-dashboard.js";
+    import { onAuthChanged, onRoleResolved, signOutUser } from "./auth-role.js";
+    import "./tasks-dashboard.js";
 
     const emailEl = document.getElementById("hdr-email");
     const roleEl = document.getElementById("hdr-role");
@@ -40,9 +40,7 @@
     onAuthChanged(user => {
       emailEl.textContent = user ? (user.email || user.uid) : "Not signed in";
     });
-    onRoleResolved(({ role }) => {
-      roleEl.textContent = role;
-    });
+    onRoleResolved(({ role }) => { roleEl.textContent = role; });
     signOutBtn.addEventListener("click", async () => {
       await signOutUser();
       window.location.reload();

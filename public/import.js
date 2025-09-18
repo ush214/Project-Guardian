@@ -1,6 +1,4 @@
-// Import Tool using root-level shared auth-role.js (no /js/ folder)
-// If you move auth-role.js back into a subfolder, update the import paths accordingly.
-
+// import.js (root-level) using shared auth-role.js (separate firebase-config.js)
 import { app, db, auth, functions } from "./auth-role.js";
 import {
   doc, setDoc, getDoc, getDocs, collection, deleteDoc, writeBatch
@@ -31,7 +29,7 @@ const btnCachePrimary = el("btnCachePrimary");
 const logEl = el("log");
 const statusEl = el("statusLine");
 
-// ============ Utility / Parsing ============
+// Utility / Parsing
 function parseJsonFlexible(text) {
   const parsed = JSON.parse(text);
   if (Array.isArray(parsed)) return parsed;
@@ -58,7 +56,7 @@ async function readJsonFromInputs() {
 function normalizeDoc(docObj) {
   const d = { ...docObj };
   d.id = d.id || d.ID || d.name || d.uuid || d.slug || d.title || "";
-  if (!d.id) throw new Error("Each doc must include an 'id' or a unique key.");
+  if (!d.id) throw new Error("Each doc must include an 'id' or unique key.");
   return d;
 }
 
@@ -91,7 +89,7 @@ function parseAppIdFromCollectionPath(colPath) {
   return "";
 }
 
-// ============ Logging / Status ============
+// Logging
 function log(msg) {
   const line = document.createElement("div");
   line.textContent = msg;
@@ -101,7 +99,7 @@ function log(msg) {
 function clearLog() { logEl.innerHTML = ""; }
 function setStatus(msg) { statusEl.textContent = msg; }
 
-// ============ Core Firestore Ops ============
+// Firestore ops
 async function saveDocs(colPath, arr, merge = true) {
   let wrote = 0;
   const CHUNK = 450;
@@ -128,7 +126,7 @@ async function deleteAll(colPath) {
   return { deleted };
 }
 
-// ============ Button Handlers ============
+// Button handlers
 btnValidate.addEventListener("click", async () => {
   clearLog();
   try {
@@ -211,10 +209,7 @@ btnDeleteSecondary.addEventListener("click", async () => {
 btnReplaceAndDelete.addEventListener("click", async () => {
   const primary = primaryPathInput.value.trim();
   const secondary = secondaryPathInput.value.trim();
-  if (!primary) {
-    alert("Primary path required.");
-    return;
-  }
+  if (!primary) { alert("Primary path required."); return; }
   if (!confirm(`Replace primary and then delete secondary?\nPrimary: ${primary}\nSecondary: ${secondary || "(none)"}`)) return;
 
   clearLog(); setStatus("Replace primary → delete secondary…");
@@ -253,7 +248,7 @@ btnCachePrimary.addEventListener("click", async () => {
   }
 });
 
-// ============ Auth / Role Wiring ============
+// Auth / Role UI
 onAuthChanged(user => {
   if (!user) {
     authUserEl.textContent = "Not signed in";
@@ -263,13 +258,12 @@ onAuthChanged(user => {
   }
   authUserEl.textContent = user.email || user.uid;
 });
-
 onRoleResolved(({ role }) => {
   authRoleEl.textContent = role;
   setControlsEnabled(isContributor() || isAdmin());
 });
 
-// Initial UI baseline
+// Initial UI
 setControlsEnabled(false);
 authUserEl.textContent = "Checking sign-in…";
 authRoleEl.textContent = "—";

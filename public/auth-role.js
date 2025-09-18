@@ -1,6 +1,7 @@
 /**
- * auth-role.js (root-level version)
- * Centralizes Firebase init, auth state, role resolution, and simple subscription API.
+ * auth-role.js (root-level, separate firebase-config.js variant)
+ * Centralizes Firebase initialization, auth state, role resolution, and observer helpers.
+ * Assumes firebase-config.js is in the same directory.
  */
 import { firebaseConfig } from "./firebase-config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -27,6 +28,7 @@ let currentRole = "guest";
 let roleResolved = false;
 let rolePromise = null;
 
+// Listener arrays
 const authListeners = [];
 const roleListeners = [];
 const authorizedListeners = [];
@@ -47,6 +49,7 @@ function emitRole() {
 // Public subscription API
 export function onAuthChanged(cb){
   authListeners.push(cb);
+  // Fire immediately if we already have state (not null).
   if (currentUser !== null) cb(currentUser);
 }
 export function onRoleResolved(cb){
@@ -151,4 +154,4 @@ onAuthStateChanged(auth, async (user)=>{
   await resolveRole(user);
 });
 
-console.info("[auth-role] Initialized (root-level).");
+console.info("[auth-role] Initialized (separate firebase-config.js).");

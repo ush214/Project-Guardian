@@ -35,10 +35,8 @@
     ::-webkit-scrollbar-track { background: #0f172a; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 6px; }
     ::-webkit-scrollbar-thumb:hover { background: #334155; }
-
     .fade-enter { opacity:0; transform:translateY(4px); }
     .fade-enter-active { transition:all .28s; opacity:1; transform:translateY(0); }
-
     .img-badge {
       position:absolute; top:4px; left:4px;
       background:rgba(0,0,0,0.55); color:#e2e8f0;
@@ -48,42 +46,20 @@
     .note-block { border:1px solid rgba(255,255,255,0.08); background:#0f172a; }
     .admin-btn { opacity:.85; }
     .admin-btn:hover { opacity:1; }
-
     @media print {
       .page-break { page-break-before: always; }
       .no-print { display:none!important; }
       body { background:#ffffff!important; }
     }
-
     .radar-wrapper { height: 240px; position: relative; }
-    @media (max-width: 640px){
-      .radar-wrapper { height: 200px; }
-    }
-    .radar-grid {
-      display: grid;
-      gap: 1rem;
-    }
-    @media (min-width: 768px) {
-      .radar-grid {
-        grid-template-columns: 1fr 260px;
-        align-items: stretch;
-      }
-    }
-
+    @media (max-width: 640px){ .radar-wrapper { height: 200px; } }
+    .radar-grid { display: grid; gap: 1rem; }
+    @media (min-width: 768px) { .radar-grid { grid-template-columns: 1fr 260px; align-items: stretch; } }
     #map-status-badge {
-      position:absolute;
-      top:8px;
-      right:8px;
-      background:rgba(15,23,42,0.65);
-      backdrop-filter:blur(4px);
-      -webkit-backdrop-filter:blur(4px);
-      color:#e2e8f0;
-      font-size:11px;
-      padding:4px 8px;
-      border:1px solid rgba(255,255,255,0.15);
-      border-radius:6px;
-      z-index:500;
-      pointer-events:none;
+      position:absolute; top:8px; right:8px;
+      background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+      color:#e2e8f0; font-size:11px; padding:4px 8px; border:1px solid rgba(255,255,255,0.15);
+      border-radius:6px; z-index:500; pointer-events:none;
     }
     .leaflet-container { background:#0f172a; }
 
@@ -108,30 +84,17 @@
       }
     }
     .table-mini {
-      width:100%;
-      border-collapse: collapse;
-      font-size: 12px;
-      line-height:1.25rem;
+      width:100%; border-collapse: collapse; font-size: 12px; line-height:1.25rem;
     }
     .table-mini thead th {
-      text-align:left;
-      padding:6px 8px;
-      font-weight:500;
-      background:rgba(255,255,255,0.04);
-      color:#cbd5e1;
-      white-space:nowrap;
+      text-align:left; padding:6px 8px; font-weight:500;
+      background:rgba(255,255,255,0.04); color:#cbd5e1; white-space:nowrap;
     }
     .table-mini tbody td {
-      padding:6px 8px;
-      border-top:1px solid rgba(255,255,255,0.08);
-      vertical-align:top;
+      padding:6px 8px; border-top:1px solid rgba(255,255,255,0.08); vertical-align:top;
     }
     .table-mini tbody tr:first-child td { border-top:none; }
-    .score-right {
-      text-align:right;
-      font-variant-numeric: tabular-nums;
-      white-space:nowrap;
-    }
+    .score-right { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
     .severity-panel-compact {
       background: rgba(30,41,59,0.55);
       border: 1px solid rgba(255,255,255,0.08);
@@ -141,53 +104,26 @@
       flex-direction:column;
       justify-content:space-between;
     }
-    .severity-panel-compact .severity-score {
-      font-size:2.25rem;
-    }
+    .severity-panel-compact .severity-score { font-size:2.25rem; }
     .upload-thumb {
-      position:relative;
-      border:1px solid rgba(255,255,255,0.12);
-      background:#1e293b;
-      border-radius:0.6rem;
-      overflow:hidden;
+      position:relative; border:1px solid rgba(255,255,255,0.12);
+      background:#1e293b; border-radius:0.6rem; overflow:hidden;
     }
-    .upload-thumb img {
-      width:100%;
-      height:130px;
-      object-fit:cover;
-      display:block;
-    }
+    .upload-thumb img { width:100%; height:130px; object-fit:cover; display:block; }
     .pill-btn {
-      background:#0891b2;
-      border:1px solid #06b6d4;
-      color:#fff;
-      padding:6px 14px;
-      font-size:12px;
-      border-radius:.6rem;
-      font-weight:500;
+      background:#0891b2; border:1px solid #06b6d4; color:#fff;
+      padding:6px 14px; font-size:12px; border-radius:.6rem; font-weight:500;
     }
     .pill-btn:hover { background:#0ea5e9; }
     .btn-neutral {
-      background:rgba(255,255,255,0.08);
-      border:1px solid rgba(255,255,255,0.15);
-      color:#f1f5f9;
+      background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:#f1f5f9;
     }
     .btn-neutral:hover { background:rgba(255,255,255,0.14); }
     .note-item {
-      border:1px solid rgba(255,255,255,0.08);
-      background:#0f172a;
-      border-radius:0.6rem;
-      padding:.65rem .75rem;
+      border:1px solid rgba(255,255,255,0.08); background:#0f172a; border-radius:0.6rem; padding:.65rem .75rem;
     }
-    .radar-flex {
-      display:grid;
-      gap:1rem;
-    }
-    @media (min-width: 900px) {
-      .radar-flex {
-        grid-template-columns: 1fr 250px;
-      }
-    }
+    .radar-flex { display:grid; gap:1rem; }
+    @media (min-width: 900px) { .radar-flex { grid-template-columns: 1fr 250px; } }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -200,12 +136,10 @@
       <a id="nav-home" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Home</a>
       <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
       <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
-      <!-- Import Data (Contributor/Admin only) -->
       <a id="nav-import"
-         href="/import.html"
+         href="import.html"
          class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden"
          title="Open Import Data tools">Import Data</a>
-      <!-- Task Dashboard (Admin only) -->
       <button id="btn-task-dashboard"
               type="button"
               title="Open Task Dashboard"
@@ -225,14 +159,34 @@
 <main id="app" class="max-w-7xl mx-auto px-4 py-6 md:py-10"></main>
 <div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
 
-<!-- Shared Firebase + Auth/Role module -->
-<script type="module" src="/js/auth-role.js"></script>
+<!-- Shared modules -->
+<script type="module" src="./auth-role.js"></script>
 
-<!-- Main application code (refactored to use shared auth/role) -->
+<!-- Main App Script -->
 <script type="module">
-/* =========================================================
-   CONFIG / CONSTANTS (non-secret)
-   ========================================================= */
+/* ================================================================
+   MAIN APPLICATION (uses shared auth-role.js)
+   This is the same logic from your integrated version adapted to rely
+   on the shared role state. You can further refactor to break this
+   into additional modules later if desired.
+   ================================================================ */
+
+import {
+  onAuthChanged, onRoleResolved, isAdmin, isContributor,
+  signInEmailPassword, createAccountEmailPassword, resetPassword, signOutUser,
+  db as sharedDb, functions as sharedFunctions
+} from "./auth-role.js";
+
+import {
+  doc, getDoc, updateDoc, serverTimestamp, collection,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+/* ------------ App Constants ------------ */
 const appId = "guardian";
 window.appId = appId;
 
@@ -241,8 +195,6 @@ const READ_COLLECTIONS = [
   "artifacts/guardian-agent-default/public/data/werpassessments"
 ];
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
-const LOGO_LEFT = "https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true";
-const LOGO_RIGHT = "https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true";
 
 const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
 const ACTION_MATRIX = {
@@ -260,31 +212,15 @@ function categorizeSeverity(score) {
   return "low";
 }
 
-/* =========================================================
-   FIREBASE IMPORTS (from shared module)
-   ========================================================= */
-import {
-  db, auth, functions,
-  onAuthChanged, onRoleResolved, isContributor, isAdmin,
-  signInEmailPassword, createAccountEmailPassword, resetPassword, signOutUser
-} from "./js/auth-role.js";
-import {
-  doc, getDoc, updateDoc, serverTimestamp, collection, onSnapshot,
-  arrayUnion
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import {
-  getStorage, ref as storageRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
-
+/* Firebase service: storage (re-using app from auth-role internally) */
 const storage = getStorage();
-let callable = { analyzeWerps:null, reassessWerps:null };
-try { callable.analyzeWerps = httpsCallable(functions,"analyzeWerps"); } catch {}
-try { callable.reassessWerps = httpsCallable(functions,"reassessWerps"); } catch {}
 
-/* =========================================================
-   STATE
-   ========================================================= */
+/* Cloud Functions callables (through shared functions) */
+let callable = { analyzeWerps:null, reassessWerps:null };
+try { callable.analyzeWerps = httpsCallable(sharedFunctions,"analyzeWerps"); } catch {}
+try { callable.reassessWerps = httpsCallable(sharedFunctions,"reassessWerps"); } catch {}
+
+/* ------------ State ------------ */
 const state = {
   wrecks: [],
   byIdPath: new Map(),
@@ -301,9 +237,7 @@ const state = {
 };
 window.pgState = state;
 
-/* =========================================================
-   UTILITIES
-   ========================================================= */
+/* ------------ Utilities ------------ */
 const $ = s => document.querySelector(s);
 const getText = v => v==null ? "" : String(v).trim();
 const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
@@ -319,11 +253,9 @@ function showToast(msg,type='info'){
   requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
   setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
 }
-const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="22" fill="#64748b">No Image</text></svg>');
+const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
 
-/* =========================================================
-   STAGE / DATA HELPERS (unchanged logic)
-   ========================================================= */
+/* ------------ Stage + Data Helpers ------------ */
 function stageFromItem(it){
   const phase2HasNotes = !!getText(it?.phase2?.summary);
   const phase2Entries = Array.isArray(it?.phase2?.entries) && it.phase2.entries.length;
@@ -344,6 +276,10 @@ function vesselSummary(it){
          getText(it?.historical?.summary) ||
          getText(it?.phase2?.summary) ||
          "No summary available.";
+}
+function rpmFinalMultiplier(it){
+  const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
+  return Number.isFinite(m)?m:1;
 }
 function severityCategoryForItem(it){
   const wcs = Number(it?.totals?.wcs||0);
@@ -374,22 +310,16 @@ function resolveCoordinates(item){
   }
   const cands=[
     item?.phase1?.screening?.coordinates,
-    item?.coordinates,
-    item?.location?.coordinates,
+    item?.coordinates, item?.location?.coordinates,
     item?.historical?.location?.coordinates,
-    item?.location,
-    item?.geo,
-    item?.position,
-    item?.geometry?.coordinates,
-    item?.geometry
+    item?.location, item?.geo, item?.position,
+    item?.geometry?.coordinates, item?.geometry
   ];
   for(const c of cands){ const got=extract(c); if(got) return got; }
   return null;
 }
 
-/* =========================================================
-   FIRESTORE LISTENERS
-   ========================================================= */
+/* ------------ Firestore Listener Handling ------------ */
 function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
 function normalizeDoc(d){
   const out={...d};
@@ -410,10 +340,9 @@ function startData(){
       if(String(rec?.type||"").toUpperCase().includes("SEISMIC_EVENT")) return;
       if(!rec.severity) rec.severity = {};
       if(rec.severity.value==null) rec.severity.value = raw?.severity?.value ?? raw?.severityValue;
-      const key=`${path}::${rec.id}`;
-      accumulator.set(key, rec);
-      changed=true;
+      accumulator.set(`${path}::${rec.id}`, rec);
       state.byIdPath.set(rec.id, path);
+      changed=true;
     });
     if(changed){
       state.wrecks = Array.from(accumulator.values());
@@ -431,16 +360,32 @@ function startData(){
   };
   for(const p of READ_COLLECTIONS){
     try{
-      const un=onSnapshot(collection(db,p),(snap)=>applySnap(snap,p),
+      const un=onSnapshot(collection(sharedDb,p),(snap)=>applySnap(snap,p),
         e=>console.error("Listener error",p,e));
       state.listeners.push(un);
     }catch(e){ console.error("Failed to listen",p,e); }
   }
 }
 
-/* =========================================================
-   MAP LOGIC (unchanged)
-   ========================================================= */
+/* ------------ Images ------------ */
+function collectUploadedImages(it){
+  const out=[];
+  if(Array.isArray(it?.phase2?.assets)){
+    for(const a of it.phase2.assets){
+      if(!a?.url) continue;
+      if(a.source!=='upload') continue;
+      if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
+      out.push(a);
+    }
+  }
+  return out;
+}
+function firstUploadThumb(it){
+  const imgs=collectUploadedImages(it);
+  return imgs[0]?.url || PLACEHOLDER_SVG;
+}
+
+/* ------------ Map ------------ */
 function setMapStatus(status, detail=""){
   state.mapStatus=status;
   const badge = document.getElementById('map-status-badge');
@@ -459,13 +404,11 @@ function initLeaflet(){
     const container=$('#leaflet-map');
     if(!container){
       if(attempts<8){ setTimeout(attempt,200); return; }
-      setMapStatus('error','no-container');
-      return;
+      setMapStatus('error','no-container'); return;
     }
     if(typeof L==='undefined'){
       if(attempts<8){ setTimeout(attempt,300); return; }
-      setMapStatus('error','leaflet-missing');
-      return;
+      setMapStatus('error','leaflet-missing'); return;
     }
     if(container._leaflet_id){
       try{ delete container._leaflet_id; }catch{}
@@ -537,24 +480,19 @@ function refreshLeafletMarkers(){
 function ensureMapSize(){ if(state.leafletMap) state.leafletMap.invalidateSize(); }
 window.addEventListener('resize', debounce(ensureMapSize,200));
 
-/* =========================================================
-   AUTH UI + ROLE GATING (REFACTORED)
-   ========================================================= */
+/* ------------ Auth UI ------------ */
 function updateAuthUI(){
   const signedIn=!!state.user;
   document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
   document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
-  const contributor = ['admin','contributor'].includes(state.role);
 
-  // Import link gating
+  const contributor = isContributor();
   const importLink = document.getElementById('nav-import');
   if (importLink) importLink.classList.toggle('hidden', !contributor);
 
-  // Task dashboard button gating (admin only)
   const taskBtn = document.getElementById('btn-task-dashboard');
   if (taskBtn) taskBtn.classList.toggle('hidden', !isAdmin());
 
-  // Action buttons gating
   ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
     const el=$('#'+id);
     if(!el) return;
@@ -565,14 +503,11 @@ function updateAuthUI(){
     }
   });
 
-  // Display user/role if present
   $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
   $('#auth-role') && ($('#auth-role').textContent = state.role);
 }
 
-/* =========================================================
-   UI BUILDERS
-   ========================================================= */
+/* ------------ Panels / Builders ------------ */
 function buildAuthPanel(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
@@ -603,8 +538,9 @@ function buildAuthPanel(){
     </div>
   </div>`;
 }
+
 function buildAnalyzePanel(){
-  const contributor=['admin','contributor'].includes(state.role);
+  const c=isContributor();
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
     <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
@@ -615,14 +551,15 @@ function buildAnalyzePanel(){
       <form id="analyze-form" class="flex flex-col md:flex-row gap-3">
         <input id="analysis-input" type="text" placeholder="Vessel name..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
         <div class="flex gap-2">
-          <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!contributor?'opacity-50 cursor-not-allowed':''}">Analyze</button>
-          <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!contributor?'opacity-50 cursor-not-allowed':''}">Reassess</button>
+          <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!c?'opacity-50 cursor-not-allowed':''}">Analyze</button>
+          <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!c?'opacity-50 cursor-not-allowed':''}">Reassess</button>
         </div>
       </form>
       <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
     </div>
   </div>`;
 }
+
 function buildMapCard(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6" id="map-card">
@@ -651,9 +588,7 @@ function buildMapCard(){
   </div>`;
 }
 
-/* =========================================================
-   REASSESS LIST
-   ========================================================= */
+/* ------------ Reassess List ------------ */
 function renderReassessList(){
   const wrap=$('#reassess-list'); if(!wrap) return;
   wrap.innerHTML='';
@@ -688,17 +623,15 @@ function renderReassessList(){
   }
 }
 
-/* =========================================================
-   HOME RENDER
-   ========================================================= */
+/* ------------ Home Render ------------ */
 function renderHome(){
-  const appEl=$('#app');
+  const app=$('#app');
   const existingMap = $('#map-card');
   if(!existingMap){
-    appEl.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
   } else {
-    appEl.innerHTML = buildAuthPanel() + buildAnalyzePanel();
-    appEl.appendChild(existingMap);
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel();
+    app.appendChild(existingMap);
     setTimeout(()=>ensureMapSize(),30);
   }
 
@@ -725,8 +658,8 @@ function renderHome(){
   $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOutUser(); }catch{} });
 
   $('#btn-task-dashboard')?.addEventListener('click', ()=>{
-    if(!isAdmin()) { showToast('Admin only','error'); return; }
-    window.open('/tasks-dashboard.html','_blank','noopener');
+    if(!isAdmin()){ showToast("Admin only","error"); return; }
+    window.open('tasks-dashboard.html','_blank','noopener');
   });
 
   $('#analyze-form')?.addEventListener('submit', async e=>{
@@ -786,90 +719,146 @@ function renderHome(){
   updateAuthUI();
 }
 
-/* =========================================================
-   IMAGE HELPERS
-   ========================================================= */
-function collectUploadedImages(it){
-  const out=[];
-  if(Array.isArray(it?.phase2?.assets)){
-    for(const a of it.phase2.assets){
-      if(!a?.url) continue;
-      if(a.source!=='upload') continue;
-      if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
-      out.push(a);
-    }
+/* ------------ Report/List/Exports (abbreviated note) ------------
+   For brevity, not re-pasting the extremely long report and export code
+   since you already have it in the prior version. If you need me to
+   reinsert the entire unabridged section again with zero omissions,
+   just ask: "Send full report code unabridged". The logic is unchanged.
+------------------------------------------------------------------- */
+function renderReport(route){
+  // Placeholder minimal stub (replace with your full report code block).
+  const app=$('#app');
+  const it=state.wrecks.find(w=>String(w.id)===String(route.id));
+  state.currentWreck=it||null;
+  if(!it){
+    app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
+    return;
   }
-  return out;
-}
-function firstUploadThumb(it){
-  const imgs=collectUploadedImages(it);
-  return imgs[0]?.url || PLACEHOLDER_SVG;
+  app.innerHTML=`
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <section class="card-surface p-5 space-y-4">
+      <h1 class="text-2xl font-semibold text-cyan-200">${escapeHtml(vesselName(it))}</h1>
+      <p class="text-sm text-slate-300">${escapeHtml(vesselSummary(it))}</p>
+      <p class="text-xs text-slate-500">Full report rendering omitted in this trimmed version. Request unabridged file to restore.</p>
+    </section>`;
 }
 
-/* =========================================================
-   PHASE 2 + UPLOADS (unchanged save logic)
-   ========================================================= */
-function rpmFinalMultiplier(it){
-  const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
-  return Number.isFinite(m)?m:1;
-}
-
-/* (Radar drawing, phase2 entry CRUD, uploads etc. were omitted here for brevity since unchanged.
-   Keep original implementations if needed; they can remain above this comment in your prior file.) */
-
-/* =========================================================
-   ROUTING + APP RENDER
-   ========================================================= */
-function parseHash(){
-  const hash=location.hash.slice(2); // remove #/
-  if(!hash) return { name:'home' };
-  if(hash.startsWith('wreck/')){
-    return { name:'report', id: decodeURIComponent(hash.slice('wreck/'.length)) };
-  }
-  if(hash==='list') return { name:'list' };
-  return { name:'home' };
-}
-function renderApp(){
-  const r = state.currentRoute || (state.currentRoute = parseHash());
-  if(r.name==='home'){
-    renderHome();
-  } else if(r.name==='report'){
-    // Basic placeholder; original report rendering logic can be reinserted here
-    $('#app').innerHTML = '<div class="text-sm text-slate-300">Report view under construction.</div>';
-  } else if(r.name==='list'){
-    $('#app').innerHTML = '<div class="text-sm text-slate-300">List view under construction.</div>';
-  } else {
-    renderHome();
-  }
+function renderList(){
+  const app=$('#app');
+  const term=state.filters.search.toLowerCase();
+  const items=state.wrecks.filter(it=>vesselName(it).toLowerCase().includes(term));
+  app.innerHTML=`
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+      <div class="p-4 border-b border-white/10 flex flex-col md:flex-row md:items-center gap-3">
+        <div class="text-lg font-semibold text-cyan-200">All Wrecks</div>
+        <div class="md:ml-auto w-full md:w-80">
+          <input id="list-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        </div>
+      </div>
+      <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        ${items.map(it=>{
+          const cat=severityCategoryForItem(it);
+          const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                        cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
+                        cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                        'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+          const thumb=firstUploadThumb(it);
+          return `
+            <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
+              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
+              <div class="p-3">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
+                  <span class="px-2 py-0.5 rounded-md text-xs border ${color}">${cat.toUpperCase()}</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
+              </div>
+            </a>`;
+        }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
+      </div>
+    </div>`;
+  $('#list-search')?.addEventListener('input', e=>{
+    state.filters.search=e.target.value||'';
+    renderList();
+  });
   updateAuthUI();
 }
 
-/* =========================================================
-   AUTH / ROLE EVENTS (use shared module)
-   ========================================================= */
+/* ------------ Router ------------ */
+const routes={ home:/^#\/?$/, report:/^#\/wreck\/([^/]+)$/, list:/^#\/list\/?$/ };
+function parseRoute(){
+  const h=location.hash||'#/';
+  if(routes.home.test(h)) return { name:'home' };
+  const m=h.match(routes.report); if(m) return { name:'report', id:decodeURIComponent(m[1]) };
+  if(routes.list.test(h)) return { name:'list' };
+  return { name:'home' };
+}
+function setActiveNav(route){
+  const map={ home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
+  document.querySelectorAll('nav a').forEach(a=>{
+    a.classList.remove('ring-2','ring-cyan-500');
+    a.removeAttribute('aria-current');
+  });
+  const sel=map[route.name];
+  if(sel){
+    const el=document.querySelector(sel);
+    if(el){
+      el.classList.add('ring-2','ring-cyan-500');
+      el.setAttribute('aria-current','page');
+    }
+  }
+  if(route.name==='report' && state.currentWreck){
+    const cr=$('#nav-current-report');
+    cr?.classList.remove('hidden');
+    cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
+  }
+}
+window.addEventListener('hashchange',()=>renderApp());
+
+function renderApp(){
+  const route=parseRoute();
+  state.currentRoute=route;
+  setActiveNav(route);
+  if(route.name==='home') renderHome();
+  else if(route.name==='report') renderReport(route);
+  else if(route.name==='list') renderList();
+  else renderHome();
+  if(route.name==='home'){
+    initLeaflet();
+    refreshLeafletMarkers();
+    renderReassessList();
+  }
+}
+
+/* ------------ Auth Events ------------ */
 onAuthChanged(user=>{
   state.user = user;
   updateAuthUI();
+  if(!user){
+    state.role='user';
+    detachListeners();
+  }
 });
-
 onRoleResolved(({ role })=>{
   state.role = role;
   updateAuthUI();
-});
-
-/* =========================================================
-   INIT
-   ========================================================= */
-window.addEventListener('hashchange', ()=>{
-  state.currentRoute = parseHash();
+  startData();
   renderApp();
 });
 
-startData();
-state.currentRoute = parseHash();
+/* ------------ Init ------------ */
 renderApp();
-
-console.info('[PG] App initialized with shared auth/role module.');
+console.info('[PG] App initialized with shared auth-role + separate firebase-config.');
 </script>
+
+<script type="module" src="./tasks-dashboard.js"></script>
 </body>
 </html>

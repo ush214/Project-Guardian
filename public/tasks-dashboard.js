@@ -1,6 +1,6 @@
 /**
- * tasks-dashboard.js (root-level version)
- * Requires: auth-role.js already loaded (root as well).
+ * tasks-dashboard.js
+ * Requires auth-role.js to be loaded first on the page.
  * Listens to admin-only tasks: artifacts/{appId}/private/admin/tasks
  */
 import { db, onAuthorized, isAdmin, getCurrentUser } from "./auth-role.js";
