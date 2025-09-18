@@ -1,39 +1,79 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    /* ---------- Auth / Allowlist Helpers ---------- */
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isContributor() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.Role in ['contributor', 'admin'];
+    // Single fetch of the allowlist doc (only if signed in)
+    function allowlistDoc() {
+      return get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid));
+    }
+    function hasAllowlist() {
+      return isSignedIn() && allowlistDoc().exists();
+    }
+    function roleString() {
+      return hasAllowlist()
+        ? (allowlistDoc().data.role ??
+           allowlistDoc().data.Role ??
+           allowlistDoc().data.ROLE)
+        : null;
+    }
+    function lowerRole() {
+      return roleString() == null ? null : lower(roleString());
+    }
+    function flagTrue(flag) {
+      return hasAllowlist() && allowlistDoc().data[flag] == true;
     }
 
     function isAdmin() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
-        && (
-          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.Role == 'admin' ||
-          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true
-        );
+      return isSignedIn() && (
+        lowerRole() == 'admin' ||
+        flagTrue('admin') ||
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'admin'
+      );
     }
 
+    function isContributor() {
+      return isSignedIn() && (
+        lowerRole() == 'contributor' ||
+        lowerRole() == 'admin' ||       // admins count
+        flagTrue('contributor') ||
+        flagTrue('admin') ||
+        request.auth.token.contributor == true ||
+        request.auth.token.role == 'contributor'
+      );
+    }
+
+    /* ---------- Allowlist (self-read only) ---------- */
     match /system/allowlist/users/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
       allow write: if false;
     }
 
+    /* ---------- WERP assessment data (existing) ---------- */
     match /artifacts/{appId}/public/data/werpassessments/{docId} {
       allow read: if isSignedIn();
       allow create, update, delete: if isContributor() || isAdmin();
     }
 
+    /* ---------- Tasks (NEW) ---------- */
+    // Path: artifacts/{appId}/private/admin/tasks/{taskId}
     match /artifacts/{appId}/private/admin/tasks/{taskId} {
-      allow get, list: if isContributor() || isAdmin();
+      // Allow listing + gets for admins & contributors
+      allow get, list: if isAdmin() || isContributor();
+      // Only admins create/modify/delete
       allow create, update, delete: if isAdmin();
+
+      // OPTIONAL: later add field validation
+      // allow create: if isAdmin()
+      //   && request.resource.data.status in ['pending','in_progress','done'];
+      // allow update: if isAdmin()
+      //   && request.resource.data.status in ['pending','in_progress','done'];
     }
   }
 }
