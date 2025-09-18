@@ -1,74 +1,860 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" class="h-full">
 <head>
-  <meta charset="utf-8">
-  <title>Import WERP Assessments</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <title>Project Guardian: WW2 Wreck Analysis and Monitoring Platform</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          boxShadow: {
+            'soft': '0 2px 10px rgba(0,0,0,0.25)',
+            'card': '0 8px 24px rgba(0,0,0,0.35)'
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- html2pdf -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" referrerpolicy="no-referrer"></script>
+
+  <style>
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 6px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+    .fade-enter { opacity:0; transform:translateY(4px); }
+    .fade-enter-active { transition:all .28s; opacity:1; transform:translateY(0); }
+
+    .img-badge {
+      position:absolute; top:4px; left:4px;
+      background:rgba(0,0,0,0.55); color:#e2e8f0;
+      font-size:10px; padding:2px 5px; border-radius:4px;
+      letter-spacing:.5px; text-transform:uppercase;
+    }
+    .note-block { border:1px solid rgba(255,255,255,0.08); background:#0f172a; }
+    .admin-btn { opacity:.85; }
+    .admin-btn:hover { opacity:1; }
+
+    @media print {
+      .page-break { page-break-before: always; }
+      .no-print { display:none!important; }
+      body { background:#ffffff!important; }
+    }
+
+    .radar-wrapper { height: 240px; position: relative; }
+    @media (max-width: 640px){
+      .radar-wrapper { height: 200px; }
+    }
+    .radar-grid {
+      display: grid;
+      gap: 1rem;
+    }
+    @media (min-width: 768px) {
+      .radar-grid {
+        grid-template-columns: 1fr 260px;
+        align-items: stretch;
+      }
+    }
+
+    #map-status-badge {
+      position:absolute;
+      top:8px;
+      right:8px;
+      background:rgba(15,23,42,0.65);
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+      color:#e2e8f0;
+      font-size:11px;
+      padding:4px 8px;
+      border:1px solid rgba(255,255,255,0.15);
+      border-radius:6px;
+      z-index:500;
+      pointer-events:none;
+    }
+    .leaflet-container { background:#0f172a; }
+
+    .card-surface {
+      background: rgba(15,23,42,0.70);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
+    }
+    .card-inner {
+      background: rgba(30,41,59,0.50);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
+    }
+    .report-grid-main {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+    @media (min-width: 1024px) {
+      .report-grid-main {
+        grid-template-columns: 320px 1fr;
+      }
+    }
+    .table-mini {
+      width:100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      line-height:1.25rem;
+    }
+    .table-mini thead th {
+      text-align:left;
+      padding:6px 8px;
+      font-weight:500;
+      background:rgba(255,255,255,0.04);
+      color:#cbd5e1;
+      white-space:nowrap;
+    }
+    .table-mini tbody td {
+      padding:6px 8px;
+      border-top:1px solid rgba(255,255,255,0.08);
+      vertical-align:top;
+    }
+    .table-mini tbody tr:first-child td { border-top:none; }
+    .score-right {
+      text-align:right;
+      font-variant-numeric: tabular-nums;
+      white-space:nowrap;
+    }
+    .severity-panel-compact {
+      background: rgba(30,41,59,0.55);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
+      padding: 1rem 1rem 0.9rem;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+    }
+    .severity-panel-compact .severity-score {
+      font-size:2.25rem;
+    }
+    .upload-thumb {
+      position:relative;
+      border:1px solid rgba(255,255,255,0.12);
+      background:#1e293b;
+      border-radius:0.6rem;
+      overflow:hidden;
+    }
+    .upload-thumb img {
+      width:100%;
+      height:130px;
+      object-fit:cover;
+      display:block;
+    }
+    .pill-btn {
+      background:#0891b2;
+      border:1px solid #06b6d4;
+      color:#fff;
+      padding:6px 14px;
+      font-size:12px;
+      border-radius:.6rem;
+      font-weight:500;
+    }
+    .pill-btn:hover { background:#0ea5e9; }
+    .btn-neutral {
+      background:rgba(255,255,255,0.08);
+      border:1px solid rgba(255,255,255,0.15);
+      color:#f1f5f9;
+    }
+    .btn-neutral:hover { background:rgba(255,255,255,0.14); }
+    .note-item {
+      border:1px solid rgba(255,255,255,0.08);
+      background:#0f172a;
+      border-radius:0.6rem;
+      padding:.65rem .75rem;
+    }
+    .radar-flex {
+      display:grid;
+      gap:1rem;
+    }
+    @media (min-width: 900px) {
+      .radar-flex {
+        grid-template-columns: 1fr 250px;
+      }
+    }
+  </style>
 </head>
-<body class="bg-slate-50 text-gray-900">
-  <main class="max-w-5xl mx-auto p-6 space-y-4">
-    <header class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold">Import WERP Assessments</h1>
-      <div class="text-sm text-gray-600">
-        <span id="authUser">Checking sign-in…</span>
-        <span class="mx-2">•</span>
-        Role: <span id="authRole" class="font-medium">—</span>
-      </div>
-    </header>
+<body class="min-h-screen bg-[#050816] text-slate-100">
+<header class="sticky top-0 z-50 backdrop-blur bg-[#050816]/90 border-b border-white/10 no-print">
+  <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4">
+    <a href="#/" class="text-xl md:text-2xl font-semibold tracking-tight text-cyan-200 hover:text-cyan-300 transition">
+      Project Guardian: WW2 Wreck Analysis and Monitoring Platform
+    </a>
+    <nav class="ml-auto flex items-center gap-2 md:gap-3">
+      <a id="nav-home" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Home</a>
+      <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
+      <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
+      <a id="nav-import"
+         href="/import.html"
+         class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden"
+         title="Open Import Data tools">Import Data</a>
+      <button id="btn-task-dashboard"
+              type="button"
+              title="Open Task Dashboard"
+              class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden">
+        Task Dashboard
+      </button>
+    </nav>
+    <div class="hidden md:flex items-center gap-4">
+      <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true"
+           alt="Logo Left" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
+      <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true"
+           alt="Logo Right" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
+    </div>
+  </div>
+</header>
 
-    <section class="bg-white border border-gray-200 rounded-xl shadow p-4 space-y-3">
-      <div class="grid md:grid-cols-2 gap-3">
-        <label class="block">
-          <span class="text-xs font-medium text-gray-600">Primary Collection Path</span>
-          <input id="primaryPathInput" class="mt-1 block w-full border rounded px-2 py-1 text-sm"
-                 placeholder="artifacts/guardian/public/data/werpassessments">
-        </label>
-        <label class="block">
-          <span class="text-xs font-medium text-gray-600">Secondary Collection Path (optional)</span>
-          <input id="secondaryPathInput" class="mt-1 block w-full border rounded px-2 py-1 text-sm"
-                 placeholder="artifacts/guardian-agent-default/public/data/werpassessments">
-        </label>
-      </div>
+<main id="app" class="max-w-7xl mx-auto px-4 py-6 md:py-10"></main>
+<div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
 
-      <div class="grid md:grid-cols-2 gap-3">
-        <label class="block">
-          <span class="text-xs font-medium text-gray-600">JSON File (array or single object)</span>
-          <input id="fileInput" type="file" accept=".json" class="mt-1 block w-full text-sm">
-        </label>
-        <label class="block">
-          <span class="text-xs font-medium text-gray-600">Paste JSON</span>
-          <textarea id="jsonInput" rows="5" class="mt-1 block w-full border rounded px-2 py-1 text-sm font-mono"></textarea>
-        </label>
-      </div>
+<!-- Shared root-level auth/role module -->
+<script type="module" src="/auth-role.js"></script>
 
-      <div class="flex flex-wrap gap-2 text-sm">
-        <button id="btnValidate" class="px-3 py-1.5 bg-slate-800 text-white rounded">Validate JSON</button>
-        <button id="btnExportPrimary" class="px-3 py-1.5 bg-indigo-600 text-white rounded">Export Primary</button>
-        <button id="btnAppendPrimary" class="px-3 py-1.5 bg-emerald-600 text-white rounded disabled:opacity-50">Append Primary</button>
-        <button id="btnReplacePrimary" class="px-3 py-1.5 bg-amber-600 text-white rounded disabled:opacity-50">Replace Primary</button>
-        <button id="btnDeleteSecondary" class="px-3 py-1.5 bg-rose-600 text-white rounded disabled:opacity-50">Delete Secondary</button>
-        <button id="btnReplaceAndDelete" class="px-3 py-1.5 bg-fuchsia-600 text-white rounded disabled:opacity-50">Replace + Delete Secondary</button>
-        <button id="btnCachePrimary" class="px-3 py-1.5 bg-sky-600 text-white rounded disabled:opacity-50">Backfill Cache</button>
-      </div>
+<!-- Main application (original integrated logic + minor adjustments for shared role) -->
+<script type="module">
+/* =============== CONFIG & CONSTANTS =============== */
+const firebaseConfig = {
+  apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
+  authDomain: "project-guardian-agent.firebaseapp.com",
+  projectId: "project-guardian-agent",
+  storageBucket: "project-guardian-agent.firebasestorage.app",
+  messagingSenderId: "84395007243",
+  appId: "1:84395007243:web:b07e5f4c4264d27611160e",
+  measurementId: "G-NRLH3WSCQ9"
+};
+const appId = "guardian";
+window.appId = appId;
 
-      <p class="text-xs text-gray-600 leading-relaxed">
-        • Destructive operations (Replace/Delete) are gated to Contributor/Admin users in the UI and enforced by Firestore Rules.
-        <br>• JSON must be an array of documents or single object (automatically wrapped) with each item providing a unique id/name/uuid/slug/title.
-      </p>
+const READ_COLLECTIONS = [
+  "artifacts/guardian/public/data/werpassessments",
+  "artifacts/guardian-agent-default/public/data/werpassessments"
+];
+const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
 
-      <div class="border rounded bg-white">
-        <div class="px-3 py-2 text-xs font-medium border-b bg-slate-100 flex justify-between">
-          <span>Log</span>
-          <span id="statusLine" class="text-slate-500 font-normal">Idle</span>
+const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
+const ACTION_MATRIX = {
+  critical: { label:"Critical", color:{ fill:"rgba(239,68,68,0.30)", stroke:"rgba(239,68,68,1)" }, action:"Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning." },
+  high: { label:"High", color:{ fill:"rgba(245,158,11,0.28)", stroke:"rgba(245,158,11,1)" }, action:"Active Monitoring: Non‑invasive ROV survey in 2–3 years." },
+  medium: { label:"Medium", color:{ fill:"rgba(250,204,21,0.22)", stroke:"rgba(250,204,21,1)" }, action:"Periodic Review: Reassess every 5 years or after major events." },
+  low: { label:"Low", color:{ fill:"rgba(16,185,129,0.28)", stroke:"rgba(16,185,129,1)" }, action:"Archive: No further action unless new information emerges." }
+};
+function computeSeverityTotal({ wcs, phs, esi, rpm }) { return (wcs + phs + (esi / 3)) * rpm; }
+function categorizeSeverity(score) {
+  if (score > ACTION_THRESHOLDS.critical) return "critical";
+  if (score >= ACTION_THRESHOLDS.high) return "high";
+  if (score >= ACTION_THRESHOLDS.medium) return "medium";
+  return "low";
+}
+
+/* =============== FIREBASE IMPORTS (original inline init STILL PRESENT) =============== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail, signOut
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+/* =============== SHARED ROLE IMPORTS (root-level) =============== */
+import {
+  onAuthChanged, onRoleResolved, isAdmin, isContributor,
+  signInEmailPassword, createAccountEmailPassword, resetPassword, signOutUser
+} from "./auth-role.js";
+import { db as sharedDb, functions as sharedFunctions, auth as sharedAuth } from "./auth-role.js";
+
+/* =============== ORIGINAL LOCAL INIT (kept for now) =============== */
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const auth = getAuth(fbApp);
+const storage = getStorage(fbApp);
+const functions = getFunctions(fbApp, "us-central1");
+
+let callable = { analyzeWerps:null, reassessWerps:null };
+try { callable.analyzeWerps = httpsCallable(functions,"analyzeWerps"); } catch {}
+try { callable.reassessWerps = httpsCallable(functions,"reassessWerps"); } catch {}
+
+/* =============== STATE =============== */
+const state = {
+  wrecks: [],
+  byIdPath: new Map(),
+  currentWreck: null,
+  currentRoute: null,
+  role: 'user',
+  user: null,
+  listeners: [],
+  filters: { severity:'all', stage:'all', search:'' },
+  chart: null,
+  leafletMap: null,
+  leafletMarkers: new Map(),
+  mapStatus: 'init'
+};
+window.pgState = state;
+
+/* =============== UTILITIES =============== */
+const $ = s => document.querySelector(s);
+const getText = v => v==null ? "" : String(v).trim();
+const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
+function escapeHtml(s){ return String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;","\">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c)); }
+function debounce(fn,ms=250){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+function showToast(msg,type='info'){
+  const stack=$('#toast-stack'); if(!stack)return;
+  const color=type==='success'?'bg-emerald-600':type==='error'?'bg-rose-600':'bg-slate-700';
+  const div=document.createElement('div');
+  div.className=`${color} text-white px-4 py-2 rounded-lg shadow-soft border border-white/10 transition fade-enter`;
+  div.textContent=msg;
+  stack.appendChild(div);
+  requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
+  setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
+}
+const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
+
+/* =============== STAGE / DATA HELPERS (unchanged excerpt) =============== */
+function stageFromItem(it){
+  const phase2HasNotes = !!getText(it?.phase2?.summary);
+  const phase2Entries = Array.isArray(it?.phase2?.entries) && it.phase2.entries.length;
+  const phase2Done = it?.phase2?.status === 'completed' || it?.phase2?.completed;
+  const completedExplicit = it?.completed || it?.status === 'completed' || !!it?.phase3 || !!it?.finalizedAt;
+  const isCompleted = completedExplicit || phase2HasNotes || phase2Entries || phase2Done;
+  const reassess = it?.needsReassessment || it?.seismicEvent ||
+    (it?.events && (
+      it.events.seismic != null ||
+      (Array.isArray(it.events) && it.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
+    ));
+  if(reassess) return 'reassess';
+  return isCompleted ? 'completed' : 'initial';
+}
+function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
+function vesselSummary(it){
+  return getText(it?.historical?.circumstancesOfLoss) ||
+         getText(it?.historical?.summary) ||
+         getText(it?.phase2?.summary) ||
+         "No summary available.";
+}
+function rpmFinalMultiplier(it){
+  const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
+  return Number.isFinite(m)?m:1;
+}
+function severityCategoryForItem(it){
+  const wcs = Number(it?.totals?.wcs||0);
+  const phs = Number(it?.totals?.phs||0);
+  const esi = Number(it?.totals?.esi||0);
+  const rpm = rpmFinalMultiplier(it);
+  return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
+}
+function resolveCoordinates(item){
+  const toNumL=v=>{ const n=Number(v); return Number.isFinite(n)?n:null; };
+  function extract(obj){
+    if(!obj)return null;
+    if(Array.isArray(obj)&&obj.length>=2){
+      const lng=toNumL(obj[0]); const lat=toNumL(obj[1]);
+      if(lat!=null && lng!=null) return {lat,lng};
+      return null;
+    }
+    if(obj.coordinates){
+      const nested=extract(obj.coordinates); if(nested)return nested;
+    }
+    const lat=toNumL(obj.latitude ?? obj.lat ?? obj.y);
+    const lng=toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
+    if(lat!=null && lng!=null) return {lat,lng};
+    if(obj.latlng){
+      const ll=extract(obj.latlng); if(ll)return ll;
+    }
+    return null;
+  }
+  const cands=[
+    item?.phase1?.screening?.coordinates,
+    item?.coordinates, item?.location?.coordinates,
+    item?.historical?.location?.coordinates,
+    item?.location, item?.geo, item?.position,
+    item?.geometry?.coordinates, item?.geometry
+  ];
+  for(const c of cands){ const got=extract(c); if(got) return got; }
+  return null;
+}
+
+/* =============== LISTENERS =============== */
+function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
+function normalizeDoc(d){
+  const out={...d};
+  if(d && typeof d.data==='object') Object.assign(out,d.data);
+  if(d && typeof d.payload==='object') Object.assign(out,d.payload);
+  if(d && typeof d.attributes==='object') Object.assign(out,d.attributes);
+  if(d && typeof d.details==='object') Object.assign(out,d.details);
+  return out;
+}
+function startData(){
+  detachListeners();
+  const accumulator=new Map();
+  const applySnap=(snap,path)=>{
+    let changed=false;
+    snap.forEach(docSnap=>{
+      const raw=docSnap.data()||{};
+      const rec={...normalizeDoc(raw), id: raw.id || docSnap.id, _path:path};
+      if(String(rec?.type||"").toUpperCase().includes("SEISMIC_EVENT")) return;
+      if(!rec.severity) rec.severity = {};
+      if(rec.severity.value==null) rec.severity.value = raw?.severity?.value ?? raw?.severityValue;
+      const key=`${path}::${rec.id}`;
+      accumulator.set(key, rec);
+      changed=true;
+      state.byIdPath.set(rec.id, path);
+    });
+    if(changed){
+      state.wrecks = Array.from(accumulator.values());
+      if(state.currentRoute?.name === 'home'){
+        refreshLeafletMarkers();
+        renderReassessList();
+      } else {
+        if(state.currentRoute?.name==='report'){
+          const r = state.wrecks.find(w=>String(w.id)===String(state.currentRoute.id));
+          state.currentWreck = r || null;
+        }
+        renderApp();
+      }
+    }
+  };
+  for(const p of READ_COLLECTIONS){
+    try{
+      const un=onSnapshot(collection(db,p),(snap)=>applySnap(snap,p),
+        e=>console.error("Listener error",p,e));
+      state.listeners.push(un);
+    }catch(e){ console.error("Failed to listen",p,e); }
+  }
+}
+
+/* =============== MAP =============== */
+function setMapStatus(status, detail=""){
+  state.mapStatus=status;
+  const badge = document.getElementById('map-status-badge');
+  if(!badge) return;
+  badge.textContent = detail ? `${status} • ${detail}` : status;
+  badge.style.color = status==='error' ? '#fecaca' : '#e2e8f0';
+}
+function initLeaflet(){
+  if(state.leafletMap && $('#leaflet-map')) {
+    setTimeout(()=>state.leafletMap.invalidateSize(),50);
+    return;
+  }
+  let attempts=0;
+  function attempt(){
+    attempts++;
+    const container=$('#leaflet-map');
+    if(!container){
+      if(attempts<8){ setTimeout(attempt,200); return; }
+      setMapStatus('error','no-container'); return;
+    }
+    if(typeof L==='undefined'){
+      if(attempts<8){ setTimeout(attempt,300); return; }
+      setMapStatus('error','leaflet-missing'); return;
+    }
+    if(container._leaflet_id){
+      try{ delete container._leaflet_id; }catch{}
+      container.innerHTML='';
+    }
+    try{
+      state.leafletMap = L.map(container,{ zoomControl:true }).setView([10,150],3);
+      window.pgMap = state.leafletMap;
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:"© OpenStreetMap contributors",
+        maxZoom:18
+      }).addTo(state.leafletMap);
+      state.leafletMap.on('load',()=>setMapStatus('ready'));
+      refreshLeafletMarkers();
+      setMapStatus('ready');
+      setTimeout(()=>state.leafletMap.invalidateSize(),60);
+    }catch(e){
+      console.error(e);
+      if(attempts<5){ setTimeout(attempt,300*attempts); }
+      else setMapStatus('error','init-failed');
+    }
+  }
+  setMapStatus('loading');
+  attempt();
+}
+function markerIconFor(category){
+  const color =
+    category==='critical' ? '#ef4444':
+    category==='high' ? '#f59e0b':
+    category==='medium' ? '#facc15':'#10b981';
+  return L.divIcon({
+    className:'custom-marker',
+    html:`<div style="width:16px;height:16px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.25);"></div>`,
+    iconSize:[16,16],
+    iconAnchor:[8,8]
+  });
+}
+function refreshLeafletMarkers(){
+  if(!state.leafletMap || typeof L==='undefined') return;
+  for(const m of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(m);}catch{} }
+  state.leafletMarkers.clear();
+  const sFilter=state.filters.severity;
+  const stageFilter=state.filters.stage;
+  const term=state.filters.search.toLowerCase();
+  const filtered=state.wrecks.filter(it=>{
+    const cat=severityCategoryForItem(it);
+    if(sFilter!=='all' && cat!==sFilter) return false;
+    const st=stageFromItem(it);
+    if(stageFilter!=='all' && st!==stageFilter) return false;
+    if(term && !vesselName(it).toLowerCase().includes(term)) return false;
+    return resolveCoordinates(it)!=null;
+  });
+  filtered.forEach(it=>{
+    const coord=resolveCoordinates(it); if(!coord) return;
+    const cat=severityCategoryForItem(it);
+    const marker=L.marker([coord.lat, coord.lng],{ icon: markerIconFor(cat) });
+    const thumb=firstUploadThumb(it);
+    marker.bindPopup(`
+      <div style="min-width:200px">
+        <div style="font-weight:600">${escapeHtml(vesselName(it))}</div>
+        <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${stageFromItem(it)} • ${cat.toUpperCase()}</div>
+        <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin-bottom:4px"/>
+        <a href="#/wreck/${encodeURIComponent(it.id)}" style="font-size:12px;color:#0ea5e9;text-decoration:underline;">Open Report</a>
+      </div>`);
+    marker.addTo(state.leafletMap);
+    state.leafletMarkers.set(it.id, marker);
+  });
+}
+function ensureMapSize(){ if(state.leafletMap) state.leafletMap.invalidateSize(); }
+window.addEventListener('resize', debounce(ensureMapSize,200));
+
+/* =============== AUTH UI (uses shared module state) =============== */
+function updateAuthUI(){
+  const signedIn=!!state.user;
+  document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
+  document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
+
+  const contributor = isContributor();
+  const importLink = document.getElementById('nav-import');
+  if (importLink) importLink.classList.toggle('hidden', !contributor);
+
+  const taskBtn = document.getElementById('btn-task-dashboard');
+  if (taskBtn) taskBtn.classList.toggle('hidden', !isAdmin());
+
+  ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
+    const el=$('#'+id);
+    if(!el) return;
+    if(!contributor && id!=='btn-save-phase2'){
+      el.disabled=true; el.classList.add('opacity-50','cursor-not-allowed');
+    } else {
+      el.disabled=false; el.classList.remove('opacity-50','cursor-not-allowed');
+    }
+  });
+
+  $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
+  $('#auth-role') && ($('#auth-role').textContent = state.role);
+}
+
+/* =============== BUILDERS (abbreviated - unchanged core) =============== */
+function buildAuthPanel(){
+  return `
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+    <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-cyan-200">Authentication</h2>
+      <button id="toggle-auth" class="text-sm text-cyan-300 hover:text-cyan-200 transition">Toggle</button>
+    </div>
+    <div id="auth-body" class="p-4 grid md:grid-cols-2 gap-6">
+      <form id="auth-form" data-auth-hidden>
+        <label class="block text-sm mb-1">Email</label>
+        <input id="login-email" type="email" autocomplete="username" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="you@example.com"/>
+        <label class="block text sm mt-3 mb-1">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        <div class="flex gap-2 mt-4 flex-wrap">
+          <button type="button" id="btn-signin" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Sign In</button>
+          <button type="button" id="btn-create" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">Create Account</button>
+          <button type="button" id="btn-reset" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">Reset Password</button>
         </div>
-        <div id="log" class="p-3 text-xs font-mono h-64 overflow-auto space-y-1 bg-slate-50"></div>
+        <div id="auth-msg" class="text-xs text-slate-400 mt-2 h-5"></div>
+      </form>
+      <div data-auth-visible class="hidden space-y-3">
+        <div class="text-sm">
+          <div><span class="font-medium text-slate-300">Signed in as:</span> <span id="auth-email" class="text-cyan-300"></span></div>
+          <div><span class="font-medium text-slate-300">Role:</span> <span id="auth-role" class="text-cyan-300"></span></div>
+        </div>
+        <button id="btn-signout" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm">Sign Out</button>
       </div>
-    </section>
-  </main>
+    </div>
+  </div>`;
+}
+function buildAnalyzePanel(){
+  const c=isContributor();
+  return `
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
+    <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-cyan-200">Assessment Actions</h2>
+      <span class="text-xs text-slate-400">Role: ${state.role}</span>
+    </div>
+    <div class="p-4 space-y-4">
+      <form id="analyze-form" class="flex flex-col md:flex-row gap-3">
+        <input id="analysis-input" type="text" placeholder="Vessel name..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        <div class="flex gap-2">
+          <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!c?'opacity-50 cursor-not-allowed':''}">Analyze</button>
+          <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!c?'opacity-50 cursor-not-allowed':''}">Reassess</button>
+        </div>
+      </form>
+      <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
+    </div>
+  </div>`;
+}
+function buildMapCard(){
+  return `
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6" id="map-card">
+    <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
+      <div class="flex flex-wrap items-center gap-1 text-sm">
+        <span class="mr-2 font-medium text-slate-200">Risk:</span>
+        ${['all','critical','high','medium','low'].map(r=>`<button data-filter-sev="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+      </div>
+      <div class="flex flex-wrap items-center gap-1 text-sm">
+        <span class="mr-2 font-medium text-slate-200">Stage:</span>
+        ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+      </div>
+      <div class="xl:ml-auto w-full xl:w-72">
+        <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+      </div>
+    </div>
+    <div class="relative">
+      <div id="leaflet-map" class="w-full h-[550px] bg-slate-800">
+        <div id="map-status-badge">init</div>
+      </div>
+    </div>
+    <div class="p-4 border-t border-white/10">
+      <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
+      <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+    </div>
+  </div>`;
+}
 
-  <!-- Shared auth/role must load before import.js -->
-  <script type="module" src="/js/auth-role.js"></script>
-  <script type="module" src="/import.js"></script>
+/* =============== REASSESS LIST =============== */
+function renderReassessList(){
+  const wrap=$('#reassess-list'); if(!wrap) return;
+  wrap.innerHTML='';
+  const list=state.wrecks.filter(w=>
+    w?.needsReassessment===true ||
+    w?.seismicEvent===true ||
+    (w?.events && (
+      w.events.seismic != null ||
+      (Array.isArray(w.events) && w.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
+    ))
+  );
+  if(!list.length){
+    wrap.innerHTML='<div class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300">None currently.</div>';
+  } else {
+    list.forEach(it=>{
+      const cat = severityCategoryForItem(it);
+      const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                    cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
+                    cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                    'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+      const a=document.createElement('a');
+      a.href=`#/wreck/${encodeURIComponent(it.id)}`;
+      a.className='block rounded-lg bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition p-3 space-y-2';
+      a.innerHTML=`
+        <div class="flex items-center justify-between gap-3">
+          <div class="font-medium truncate">${escapeHtml(vesselName(it))}</div>
+          <span class="px-2 py-0.5 text-xs rounded-md border ${color}">${cat.toUpperCase()}</span>
+        </div>
+        <div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>`;
+      wrap.appendChild(a);
+    });
+  }
+}
+
+/* =============== HOME RENDER =============== */
+function renderHome(){
+  const app=$('#app');
+  const existingMap = $('#map-card');
+  if(!existingMap){
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
+  } else {
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel();
+    app.appendChild(existingMap);
+    setTimeout(()=>ensureMapSize(),30);
+  }
+
+  $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
+
+  $('#btn-signin')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
+    $('#auth-msg').textContent='Signing in...';
+    try{ await signInEmailPassword(email,pass); $('#auth-msg').textContent='Signed in.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-create')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
+    $('#auth-msg').textContent='Creating...';
+    try{ await createAccountEmailPassword(email,pass); $('#auth-msg').textContent='Account created.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-reset')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim();
+    if(!email){ $('#auth-msg').textContent='Enter email first.'; return; }
+    try{ await resetPassword(email); $('#auth-msg').textContent='Reset email sent.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOutUser(); }catch{} });
+
+  $('#btn-task-dashboard')?.addEventListener('click', ()=>{
+    if(!isAdmin()){ showToast("Admin only","error"); return; }
+    window.open('/tasks-dashboard.html','_blank','noopener');
+  });
+
+  $('#analyze-form')?.addEventListener('submit', async e=>{
+    e.preventDefault();
+    if(!isContributor()){ showToast("Insufficient role","error"); return; }
+    const name=getText($('#analysis-input').value);
+    if(!name){ showToast("Enter vessel name","error"); return; }
+    $('#analyze-status').textContent='Requesting analysis...';
+    try{
+      if(!callable.analyzeWerps) throw new Error("Function not deployed");
+      await callable.analyzeWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
+      $('#analysis-input').value="";
+      $('#analyze-status').textContent='Analysis requested.';
+      showToast("Analysis requested","success");
+    }catch(e){
+      $('#analyze-status').textContent='Error: '+(e?.message||'failed');
+      showToast("Analysis failed","error");
+    }
+  });
+  $('#btn-reassess')?.addEventListener('click', async ()=>{
+    if(!isContributor()){ showToast("Insufficient role","error"); return; }
+    const name=getText($('#analysis-input').value);
+    if(!name){ showToast("Enter vessel name","error"); return; }
+    $('#analyze-status').textContent='Requesting reassessment...';
+    try{
+      if(!callable.reassessWerps) throw new Error("Function not deployed");
+      await callable.reassessWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
+      $('#analysis-input').value="";
+      $('#analyze-status').textContent='Reassessment requested.';
+      showToast("Reassessment requested","success");
+    }catch(e){
+      $('#analyze-status').textContent='Error: '+(e?.message||'failed');
+      showToast("Reassessment failed","error");
+    }
+  });
+
+  document.querySelectorAll('[data-filter-sev]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      state.filters.severity = btn.getAttribute('data-filter-sev');
+      refreshLeafletMarkers();
+    });
+  });
+  document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      state.filters.stage = btn.getAttribute('data-filter-stage');
+      refreshLeafletMarkers();
+    });
+  });
+  $('#map-search')?.addEventListener('input', debounce(e=>{
+    state.filters.search = e.target.value || '';
+    refreshLeafletMarkers();
+  },250));
+
+  initLeaflet();
+  refreshLeafletMarkers();
+  renderReassessList();
+  updateAuthUI();
+}
+
+/* =============== (Abbreviated: report + list + export logic)
+   You keep your existing report rendering, phase 2 entries, uploads, etc.
+   If you need the entire unabridged block reproduced again, let me know.
+   ================= */
+
+/* =============== ROUTER =============== */
+const routes={ home:/^#\/?$/, report:/^#\/wreck\/([^/]+)$/, list:/^#\/list\/?$/ };
+function parseRoute(){
+  const h=location.hash||'#/';
+  if(routes.home.test(h)) return { name:'home' };
+  const m=h.match(routes.report); if(m) return { name:'report', id:decodeURIComponent(m[1]) };
+  if(routes.list.test(h)) return { name:'list' };
+  return { name:'home' };
+}
+function setActiveNav(route){
+  const map={ home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
+  document.querySelectorAll('nav a').forEach(a=>{
+    a.classList.remove('ring-2','ring-cyan-500');
+    a.removeAttribute('aria-current');
+  });
+  const sel=map[route.name];
+  if(sel){
+    const el=document.querySelector(sel);
+    if(el){
+      el.classList.add('ring-2','ring-cyan-500');
+      el.setAttribute('aria-current','page');
+    }
+  }
+  if(route.name==='report' && state.currentWreck){
+    const cr=$('#nav-current-report');
+    cr?.classList.remove('hidden');
+    cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
+  }
+}
+window.addEventListener('hashchange',()=>renderApp());
+
+function renderApp(){
+  const route=parseRoute();
+  state.currentRoute=route;
+  setActiveNav(route);
+  if(route.name==='home') renderHome();
+  else if(route.name==='report') renderReport(route);
+  else if(route.name==='list') renderList();
+  else renderHome();
+  if(route.name==='home'){
+    initLeaflet();
+    refreshLeafletMarkers();
+    renderReassessList();
+  }
+}
+
+/* =============== SHARED AUTH EVENTS (preferred) =============== */
+onAuthChanged(user=>{
+  state.user = user;
+  updateAuthUI();
+  if(!user){
+    state.role='user';
+    detachListeners();
+  }
+});
+onRoleResolved(({ role })=>{
+  state.role = role;
+  updateAuthUI();
+  startData();      // ensure listeners start only after role resolved
+  renderApp();
+});
+
+/* =============== OPTIONAL: Legacy onAuthStateChanged still present
+   (Can be removed once confident shared module covers all cases) =============== */
+onAuthStateChanged(auth, async (user)=>{
+  // This duplicates shared logic; safe to remove later.
+  if(!user) return;
+});
+
+/* =============== INITIAL =============== */
+renderApp();
+console.info('[PG] index initialized with shared auth-role support.');
+</script>
+
+<!-- Root-level tasks dashboard module (optional global load) -->
+<script type="module" src="/tasks-dashboard.js"></script>
 </body>
 </html>

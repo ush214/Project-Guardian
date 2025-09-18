@@ -1,14 +1,14 @@
-// Refactored Import Tool: uses shared auth-role.js instead of local auth duplication.
-// Core import logic preserved.
+// Import Tool using root-level shared auth-role.js (no /js/ folder)
+// If you move auth-role.js back into a subfolder, update the import paths accordingly.
 
-import { app, db, auth, functions } from "./js/auth-role.js";
+import { app, db, auth, functions } from "./auth-role.js";
 import {
   doc, setDoc, getDoc, getDocs, collection, deleteDoc, writeBatch
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 import {
   onRoleResolved, onAuthChanged, isAdmin, isContributor
-} from "./js/auth-role.js";
+} from "./auth-role.js";
 
 const callCacheCollection = httpsCallable(functions, "cacheCollectionReferenceMedia");
 
@@ -32,7 +32,6 @@ const logEl = el("log");
 const statusEl = el("statusLine");
 
 // ============ Utility / Parsing ============
-
 function parseJsonFlexible(text) {
   const parsed = JSON.parse(text);
   if (Array.isArray(parsed)) return parsed;
@@ -74,13 +73,11 @@ async function listAllDocIds(colPath) {
   return snap.docs.map(d => d.id);
 }
 
-// UI gating now driven by role events
+// UI gating
 function setControlsEnabled(isContribOrAdmin) {
-  // Safe ops
   btnValidate.disabled = false;
   btnExportPrimary.disabled = false;
 
-  // Gated ops
   for (const b of [btnAppendPrimary, btnReplacePrimary, btnDeleteSecondary, btnReplaceAndDelete, btnCachePrimary]) {
     b.disabled = !isContribOrAdmin;
     b.classList.toggle("opacity-50", !isContribOrAdmin);
@@ -95,7 +92,6 @@ function parseAppIdFromCollectionPath(colPath) {
 }
 
 // ============ Logging / Status ============
-
 function log(msg) {
   const line = document.createElement("div");
   line.textContent = msg;
@@ -106,7 +102,6 @@ function clearLog() { logEl.innerHTML = ""; }
 function setStatus(msg) { statusEl.textContent = msg; }
 
 // ============ Core Firestore Ops ============
-
 async function saveDocs(colPath, arr, merge = true) {
   let wrote = 0;
   const CHUNK = 450;
@@ -134,7 +129,6 @@ async function deleteAll(colPath) {
 }
 
 // ============ Button Handlers ============
-
 btnValidate.addEventListener("click", async () => {
   clearLog();
   try {
@@ -259,8 +253,7 @@ btnCachePrimary.addEventListener("click", async () => {
   }
 });
 
-// ============ Auth / Role UI Wiring via shared module ============
-
+// ============ Auth / Role Wiring ============
 onAuthChanged(user => {
   if (!user) {
     authUserEl.textContent = "Not signed in";

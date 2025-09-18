@@ -1,13 +1,9 @@
 /**
- * tasks-dashboard.js
- * Admin-only Firestore listener for tasks:
- *   /artifacts/{appId}/private/admin/tasks
- *
- * Relies on shared auth-role.js for role gating.
+ * tasks-dashboard.js (root-level version)
+ * Requires: auth-role.js already loaded (root as well).
+ * Listens to admin-only tasks: artifacts/{appId}/private/admin/tasks
  */
-
-import { db } from "./auth-role.js";
-import { onAuthorized, isAdmin, getCurrentUser } from "./auth-role.js";
+import { db, onAuthorized, isAdmin, getCurrentUser } from "./auth-role.js";
 import {
   collection, onSnapshot, query, orderBy
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -15,10 +11,17 @@ import {
 const statusEl = document.getElementById("tasks-status");
 const listEl = document.getElementById("tasks-list");
 const appId = window.appId || "guardian";
-
 let unsubscribe = null;
 
-function renderTask(id, data) {
+function escapeHtml(s){
+  return String(s||"")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+
+function renderTask(id, data){
   const li = document.createElement("li");
   li.className = "border rounded px-3 py-2 bg-white flex flex-col gap-1";
   li.innerHTML = `
@@ -31,43 +34,30 @@ function renderTask(id, data) {
   return li;
 }
 
-function escapeHtml(s) {
-  return String(s || "")
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;");
-}
-
-function startListener() {
-  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+function startListener(){
+  if (unsubscribe){ unsubscribe(); unsubscribe=null; }
   const colRef = collection(db, `artifacts/${appId}/private/admin/tasks`);
-  const q = query(colRef, orderBy("createdAt", "desc"));
-  unsubscribe = onSnapshot(q, snap => {
+  const q = query(colRef, orderBy("createdAt","desc"));
+  unsubscribe = onSnapshot(q, snap=>{
     listEl.innerHTML = "";
-    if (snap.empty) {
+    if (snap.empty){
       statusEl.textContent = "No tasks.";
       return;
     }
     statusEl.textContent = "";
-    snap.forEach(docSnap => {
-      listEl.appendChild(renderTask(docSnap.id, docSnap.data()));
-    });
-  }, err => {
+    snap.forEach(d => listEl.appendChild(renderTask(d.id, d.data())));
+  }, err=>{
     console.error("[tasks] listener error", err);
     statusEl.textContent = "Failed to load tasks (permission/network).";
   });
 }
 
-onAuthorized(["admin"], ({ user, role }) => {
-  if (!isAdmin()) {
+onAuthorized(['admin'], ({ role })=>{
+  if (!isAdmin()){
     statusEl.textContent = "Admin role required (your role: " + role + ")";
     return;
   }
-  statusEl.textContent = "Loading tasks…";
+  statusEl.textContent = "Loading tasks...";
   startListener();
   console.info("[tasks] Listener active for user", getCurrentUser()?.uid);
 });
-
-// If you want to allow contributors read-only in future:
-// onAuthorized(['admin','contributor'], ... ) and only start listener if role === 'admin'.
