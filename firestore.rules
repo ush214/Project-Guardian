@@ -1,110 +1,11 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /* =========================
-       Helper Functions
-       ========================= */
-
-    function isSignedIn() {
-      return request.auth != null;
+    // TEMP: Let any signed-in user fully access tasks path
+    match /artifacts/{appId}/private/admin/tasks/{taskId} {
+      allow read, write: if request.auth != null;
     }
-
-    // Returns the allowlist user document (may not exist).
-    function allowlistDoc() {
-      return get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid));
-    }
-
-    // Whether the allowlist document exists.
-    function hasAllowlist() {
-      return allowlistDoc().exists();
-    }
-
-    // Extracts role (case-insensitive) if stored under role / Role / ROLE.
-    function allowlistRoleString() {
-      return hasAllowlist() &&
-        (
-          (allowlistDoc().data.role is string && allowlistDoc().data.role) ||
-          (allowlistDoc().data.Role is string && allowlistDoc().data.Role) ||
-          (allowlistDoc().data.ROLE is string && allowlistDoc().data.ROLE)
-        );
-    }
-
-    // True if allowlist indicates admin (boolean flag or role text).
-    function allowlistIsAdmin() {
-      return hasAllowlist() && (
-        allowlistDoc().data.admin == true ||
-        (
-          allowlistRoleString() is string &&
-          allowlistRoleString().matches('^[Aa][Dd][Mm][Ii][Nn]$')
-        )
-      );
-    }
-
-    // True if allowlist indicates contributor (boolean flag or role text).
-    function allowlistIsContributor() {
-      return hasAllowlist() && (
-        allowlistDoc().data.contributor == true ||
-        (
-          allowlistRoleString() is string &&
-          allowlistRoleString().matches('^[Cc][Oo][Nn][Tt][Rr][Ii][Bb][Uu][Tt][Oo][Rr]$')
-        )
-      );
-    }
-
-    function hasAdminClaim() {
-      return request.auth.token.admin == true;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (hasAdminClaim() || allowlistIsAdmin());
-    }
-
-    function isContributor() {
-      return isSignedIn() && (isAdmin() || allowlistIsContributor());
-    }
-
-    /* =========================
-       Allowlist Visibility
-       ========================= */
-
-    match /system/allowlist/users/{uid} {
-      // User may read ONLY their own allowlist doc (never write from client).
-      allow get: if isSignedIn() && request.auth.uid == uid;
-      allow list: if false;
-      allow create, update, delete: if false;
-    }
-
-    /* =========================
-       Public Data (Read-Only)
-       ========================= */
-
-    // Everything under /artifacts/{app}/public/** is publicly readable.
-    match /artifacts/{app}/public/{document=**} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    /* =========================
-       Admin-Only Private Area
-       (Tasks dashboard & other admin subtrees under private/admin)
-       ========================= */
-
-    // Strictly admin. Subcollections like tasks, logs, etc.
-    match /artifacts/{app}/private/admin/{document=**} {
-      allow get, list, create, update, delete: if isAdmin();
-    }
-
-    /* =========================
-       (Optional) Contributor Area
-       Uncomment if you later create a contributor subtree:
-       match /artifacts/{app}/private/contributor/{document=**} {
-         allow read, write: if isContributor();
-       }
-       ========================= */
-
-    /* =========================
-       Default Deny (implicit)
-       ========================= */
   }
 }
