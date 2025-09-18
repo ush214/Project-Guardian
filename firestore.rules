@@ -2,52 +2,109 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- Helpers ---
+    /* =========================
+       Helper Functions
+       ========================= */
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function allowlist(uid) {
-      return get(/databases/$(database)/documents/system/allowlist/users/$(uid));
+    // Returns the allowlist user document (may not exist).
+    function allowlistDoc() {
+      return get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid));
     }
 
-    // Case-insensitive "admin"
-    function allowlistRoleIsAdmin() {
-      return (
-        (allowlist(request.auth.uid).data.role is string &&
-         allowlist(request.auth.uid).data.role.matches('^[Aa][Dd][Mm][Ii][Nn]$')) ||
-        (allowlist(request.auth.uid).data.Role is string &&
-         allowlist(request.auth.uid).data.Role.matches('^[Aa][Dd][Mm][Ii][Nn]$')) ||
-        (allowlist(request.auth.uid).data.ROLE is string &&
-         allowlist(request.auth.uid).data.ROLE.matches('^[Aa][Dd][Mm][Ii][Nn]$'))
+    // Whether the allowlist document exists.
+    function hasAllowlist() {
+      return allowlistDoc().exists();
+    }
+
+    // Extracts role (case-insensitive) if stored under role / Role / ROLE.
+    function allowlistRoleString() {
+      return hasAllowlist() &&
+        (
+          (allowlistDoc().data.role is string && allowlistDoc().data.role) ||
+          (allowlistDoc().data.Role is string && allowlistDoc().data.Role) ||
+          (allowlistDoc().data.ROLE is string && allowlistDoc().data.ROLE)
+        );
+    }
+
+    // True if allowlist indicates admin (boolean flag or role text).
+    function allowlistIsAdmin() {
+      return hasAllowlist() && (
+        allowlistDoc().data.admin == true ||
+        (
+          allowlistRoleString() is string &&
+          allowlistRoleString().matches('^[Aa][Dd][Mm][Ii][Nn]$')
+        )
       );
+    }
+
+    // True if allowlist indicates contributor (boolean flag or role text).
+    function allowlistIsContributor() {
+      return hasAllowlist() && (
+        allowlistDoc().data.contributor == true ||
+        (
+          allowlistRoleString() is string &&
+          allowlistRoleString().matches('^[Cc][Oo][Nn][Tt][Rr][Ii][Bb][Uu][Tt][Oo][Rr]$')
+        )
+      );
+    }
+
+    function hasAdminClaim() {
+      return request.auth.token.admin == true;
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.admin == true ||
-        (allowlist(request.auth.uid).exists() && (
-          allowlist(request.auth.uid).data.admin == true ||
-          allowlistRoleIsAdmin()
-        ))
-      );
+      return isSignedIn() && (hasAdminClaim() || allowlistIsAdmin());
     }
 
-    // --- Allowlist doc (read own only) ---
+    function isContributor() {
+      return isSignedIn() && (isAdmin() || allowlistIsContributor());
+    }
+
+    /* =========================
+       Allowlist Visibility
+       ========================= */
+
     match /system/allowlist/users/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
-      allow write: if false;
+      // User may read ONLY their own allowlist doc (never write from client).
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update, delete: if false;
     }
 
-    // --- Public data (read-only) ---
+    /* =========================
+       Public Data (Read-Only)
+       ========================= */
+
+    // Everything under /artifacts/{app}/public/** is publicly readable.
     match /artifacts/{app}/public/{document=**} {
       allow read: if true;
       allow write: if false;
     }
 
-    // --- Admin-only (Task Dashboard etc.) ---
+    /* =========================
+       Admin-Only Private Area
+       (Tasks dashboard & other admin subtrees under private/admin)
+       ========================= */
+
+    // Strictly admin. Subcollections like tasks, logs, etc.
     match /artifacts/{app}/private/admin/{document=**} {
-      allow read, write: if isAdmin();
+      allow get, list, create, update, delete: if isAdmin();
     }
+
+    /* =========================
+       (Optional) Contributor Area
+       Uncomment if you later create a contributor subtree:
+       match /artifacts/{app}/private/contributor/{document=**} {
+         allow read, write: if isContributor();
+       }
+       ========================= */
+
+    /* =========================
+       Default Deny (implicit)
+       ========================= */
   }
 }
