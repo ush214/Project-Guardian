@@ -61,5 +61,8 @@
     "ui": {
       "enabled": true
     }
-  }
+  },
+  "predeploy": [
+    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./predeploy-check.ps1"
+  ]
 }
