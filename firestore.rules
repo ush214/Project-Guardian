@@ -41,7 +41,7 @@ service cloud.firestore {
     function isContributor() {
       return isSignedIn() && (
         lowerRole() == 'contributor' ||
-        lowerRole() == 'admin' ||       // admins count
+        lowerRole() == 'admin' ||        // admins count
         flagTrue('contributor') ||
         flagTrue('admin') ||
         request.auth.token.contributor == true ||
@@ -61,15 +61,17 @@ service cloud.firestore {
       allow create, update, delete: if isContributor() || isAdmin();
     }
 
-    /* ---------- Tasks (NEW) ---------- */
-    // Path: artifacts/{appId}/private/admin/tasks/{taskId}
+    /* ---------- Tasks (NEW) ----------
+       Path: artifacts/{appId}/private/admin/tasks/{taskId}
+    */
     match /artifacts/{appId}/private/admin/tasks/{taskId} {
-      // Allow listing + gets for admins & contributors
+      // Allow listing & single doc reads for admin + contributor
       allow get, list: if isAdmin() || isContributor();
-      // Only admins create/modify/delete
+      // Only admin can write
       allow create, update, delete: if isAdmin();
 
-      // OPTIONAL: later add field validation
+      // OPTIONAL future field validation can go here
+      // e.g., enforce allowed statuses:
       // allow create: if isAdmin()
       //   && request.resource.data.status in ['pending','in_progress','done'];
       // allow update: if isAdmin()
