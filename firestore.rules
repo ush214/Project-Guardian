@@ -8,23 +8,38 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Single fetch of the allowlist doc (only if signed in)
+    // Fetch allowlist doc for current user
     function allowlistDoc() {
       return get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid));
     }
+
     function hasAllowlist() {
       return isSignedIn() && allowlistDoc().exists();
     }
+
+    // Rewritten without '??'
     function roleString() {
       return hasAllowlist()
-        ? (allowlistDoc().data.role ??
-           allowlistDoc().data.Role ??
-           allowlistDoc().data.ROLE)
+        ? (
+            allowlistDoc().data.role != null
+              ? allowlistDoc().data.role
+              : (
+                  allowlistDoc().data.Role != null
+                    ? allowlistDoc().data.Role
+                    : (
+                        allowlistDoc().data.ROLE != null
+                          ? allowlistDoc().data.ROLE
+                          : null
+                      )
+                )
+          )
         : null;
     }
+
     function lowerRole() {
       return roleString() == null ? null : lower(roleString());
     }
+
     function flagTrue(flag) {
       return hasAllowlist() && allowlistDoc().data[flag] == true;
     }
@@ -41,7 +56,7 @@ service cloud.firestore {
     function isContributor() {
       return isSignedIn() && (
         lowerRole() == 'contributor' ||
-        lowerRole() == 'admin' ||        // admins count
+        lowerRole() == 'admin' ||          // admins count as contributors
         flagTrue('contributor') ||
         flagTrue('admin') ||
         request.auth.token.contributor == true ||
@@ -65,13 +80,12 @@ service cloud.firestore {
        Path: artifacts/{appId}/private/admin/tasks/{taskId}
     */
     match /artifacts/{appId}/private/admin/tasks/{taskId} {
-      // Allow listing & single doc reads for admin + contributor
+      // Read (list/get) for admin + contributor
       allow get, list: if isAdmin() || isContributor();
-      // Only admin can write
+      // Writes only for admin
       allow create, update, delete: if isAdmin();
 
-      // OPTIONAL future field validation can go here
-      // e.g., enforce allowed statuses:
+      // OPTIONAL field validation (uncomment & adapt later)
       // allow create: if isAdmin()
       //   && request.resource.data.status in ['pending','in_progress','done'];
       // allow update: if isAdmin()
