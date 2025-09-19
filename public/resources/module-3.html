@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Project Guardian - Reassessment & Training</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #050816; }
+    .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-in-out; }
+    .accordion-header.active .icon { transform: rotate(180deg); }
+    .icon { transition: transform 0.3s ease-in-out; }
+    .tab-btn.active { border-color: #06b6d4; color: #a5f3fc; background-color: rgba(6,182,212,0.12); }
+    .sop-item input:checked + label span { text-decoration: line-through; color: #94a3b8; }
+    .sop-item .checkmark { transition: background-color 0.2s, border-color 0.2s; }
+    .sop-item input:checked + label .checkmark { background-color: #2563eb; border-color: #60a5fa; }
+    .sop-item input:checked + label .checkmark > div { opacity: 1; }
+  </style>
+</head>
+<body class="text-slate-100">
+  <div id="app" class="max-w-5xl mx-auto p-4 md:p-8">
+    <header class="mb-8 border-b border-white/10 pb-6">
+      <div class="flex items-center justify-between">
+        <a href="./index.html" class="text-sm text-slate-300 hover:text-slate-100">&larr; Resource Center</a>
+        <h1 class="text-2xl md:text-3xl font-semibold text-cyan-200">Wreck Reassessment & Data Management</h1>
+      </div>
+      <p class="text-slate-300 mt-2 max-w-3xl">Guide to conducting wreck surveys and managing data within Project Guardian.</p>
+    </header>
+
+    <!-- Tabs -->
+    <div class="mb-6 border-b border-white/10">
+      <nav class="flex -mb-px" aria-label="Tabs">
+        <button class="tab-btn w-1/2 py-3 px-1 text-center border-b-2 font-medium text-base text-slate-400 hover:text-slate-200 hover:border-white/20" data-tab="protocol">Reassessment Protocol</button>
+        <button class="tab-btn w-1/2 py-3 px-1 text-center border-b-2 font-medium text-base text-slate-400 hover:text-slate-200 hover:border-white/20" data-tab="training">Platform Training</button>
+      </nav>
+    </div>
+
+    <main>
+      <!-- Protocol Tab Content -->
+      <div id="protocol" class="tab-content">
+        <div class="space-y-4">
+          <!-- Desktop Survey -->
+          <div class="bg-slate-900 rounded-xl border border-white/10 shadow-card">
+            <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+              <div class="flex items-center">
+                <span class="text-3xl mr-4">🖥️</span>
+                <div>
+                  <h2 class="text-xl font-semibold text-blue-200">Part A: Desktop Survey</h2>
+                  <p class="text-xs text-slate-400">Gathering information before deploying assets.</p>
+                </div>
+              </div>
+              <div class="icon text-blue-200 text-2xl font-bold">▼</div>
+            </div>
+            <div class="accordion-content">
+              <div class="p-6 border-t border-white/10 text-slate-200">
+                <p class="mb-4">Review the complete dossier from the initial assessment to ensure the field team is informed and safe.</p>
+                <ul class="list-disc list-inside space-y-2 text-slate-300">
+                  <li><b>Historical Records:</b> Vessel plans, cargo manifests, crew lists.</li>
+                  <li><b>Loss Incident Reports:</b> Action reports, salvage reports, witness statements.</li>
+                  <li><b>Previous Survey Data:</b> Hydrographic surveys, diver reports, academic research.</li>
+                  <li><b>Local Archives & Knowledge:</b> Museums, historical societies, fishing communities.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- On-Site Survey -->
+          <div class="bg-slate-900 rounded-xl border border-white/10 shadow-card">
+            <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+              <div class="flex items-center">
+                <span class="text-3xl mr-4">🌊</span>
+                <div>
+                  <h2 class="text-xl font-semibold text-blue-200">Part B: On-Site Survey Checklist</h2>
+                  <p class="text-xs text-slate-400">Visual inspection protocol for ROV or Diver teams.</p>
+                </div>
+              </div>
+              <div class="icon text-blue-200 text-2xl font-bold">▼</div>
+            </div>
+            <div class="accordion-content">
+              <div class="px-6 pb-6 border-t border-white/10">
+                <div class="space-y-4 pt-4 text-slate-200">
+                  <div class="sop-item">
+                    <input type="checkbox" id="taskB-1" class="hidden">
+                    <label for="taskB-1" class="flex items-start cursor-pointer">
+                      <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
+                        <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                      </div>
+                      <div><span class="font-semibold">Vessel Identification</span><p class="text-xs text-slate-400">Confirm wreck identity, name, and any visible markings.</p></div>
+                    </label>
+                  </div>
+
+                  <div class="sop-item">
+                    <input type="checkbox" id="taskB-2" class="hidden">
+                    <label for="taskB-2" class="flex items-start cursor-pointer">
+                      <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
+                        <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                      </div>
+                      <div><span class="font-semibold">Position & Orientation</span><p class="text-xs text-slate-400">Record GPS, depth, and hull attitude (upright, on side, inverted).</p></div>
+                    </label>
+                  </div>
+
+                  <div class="sop-item">
+                    <input type="checkbox" id="taskB-3" class="hidden">
+                    <label for="taskB-3" class="flex items-start cursor-pointer">
+                      <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
+                        <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                      </div>
+                      <div><span class="font-semibold">Hull Integrity - Overall</span><p class="text-xs text-slate-400">Assess structure and document major breaches.</p></div>
+                    </label>
+                  </div>
+
+                  <div class="sop-item">
+                    <input type="checkbox" id="taskB-4" class="hidden">
+                    <label for="taskB-4" class="flex items-start cursor-pointer">
+                      <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
+                        <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                      </div>
+                      <div><span class="font-semibold">Hull Integrity - Corrosion</span><p class="text-xs text-slate-400">Note pitting, plate thinning, graphitization; check rivets/welds.</p></div>
+                    </label>
+                  </div>
+
+                  <div class="sop-item">
+                    <input type="checkbox" id="taskB-5" class="hidden">
+                    <label for="taskB-5" class="flex items-start cursor-pointer">
+                      <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
+                        <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                      </div>
+                      <div><span class="font-semibold">Potential Leak Points</span><p class="text-xs text-slate-400">Inspect vents, pipes, manholes, and tank locations.</p></div>
+                    </label>
+                  </div>
+
+                  <div class="sop-item">
+                    <input type="checkbox" id="taskB-6" class="hidden">
+                    <label for="taskB-6" class="flex items-start cursor-pointer">
+                      <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
+                        <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                      </div>
+                      <div><span class="font-semibold">Seabed Interaction</span><p class="text-xs text-slate-400">Scouring, burial depth, and debris field mapping.</p></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Environmental Sampling -->
+          <div class="bg-slate-900 rounded-xl border border-white/10 shadow-card">
+            <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+              <div class="flex items-center">
+                <span class="text-3xl mr-4">🧪</span>
+                <div>
+                  <h2 class="text-xl font-semibold text-blue-200">Part C: Environmental Sampling</h2>
+                  <p class="text-xs text-slate-400">Testing for hydrocarbon contamination.</p>
+                </div>
+              </div>
+              <div class="icon text-blue-200 text-2xl font-bold">▼</div>
+            </div>
+            <div class="accordion-content">
+              <div class="p-6 border-t border-white/10 text-slate-300">
+                <p class="mb-4">Sampling provides evidence of active or historical leaks. Maintain strict chain of custody.</p>
+                <ul class="list-disc list-inside space-y-2">
+                  <li><b>Water Samples:</b> Collect upstream and downstream relative to current.</li>
+                  <li><b>Sediment Samples:</b> Beside the hull and a control site at least 100 m away.</li>
+                  <li><b>Analysis:</b> Test for TPH and PAHs.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Training Tab Content -->
+      <div id="training" class="tab-content hidden">
+        <div class="space-y-4">
+          <div class="bg-slate-900 rounded-xl border border-white/10 shadow-card">
+            <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+              <div class="flex items-center">
+                <span class="text-3xl mr-4">📄</span>
+                <div><h2 class="text-xl font-semibold text-teal-200">Tutorial 1: Upload a New Survey Report</h2></div>
+              </div>
+              <div class="icon text-teal-200 text-2xl font-bold">▼</div>
+            </div>
+            <div class="accordion-content">
+              <div class="

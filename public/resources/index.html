@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <title>Project Guardian - Resource Center</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #050816; }
+  </style>
+</head>
+<body class="min-h-screen bg-[#050816] text-slate-100">
+  <header class="sticky top-0 z-40 backdrop-blur bg-[#050816]/90 border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
+      <a href="/#/" class="text-xl md:text-2xl font-semibold tracking-tight text-cyan-200 hover:text-cyan-300 transition">Project Guardian</a>
+      <span class="text-slate-400 text-sm">Resources</span>
+      <a href="/#/" class="ml-auto px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Back to App</a>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-semibold text-cyan-200 mb-2">Resource Center</h1>
+    <p class="text-slate-300 mb-6 max-w-3xl">Guides and checklists to support remediation and response activities for issues identified by Project Guardian.</p>
+
+    <div class="grid gap-5 md:grid-cols-2">
+      <!-- Module 1 -->
+      <a href="./module-1.html" class="group block rounded-xl bg-slate-900 border border-white/10 hover:bg-slate-800/80 transition overflow-hidden">
+        <div class="p-5">
+          <div class="flex items-start gap-4">
+            <div class="text-3xl">📋</div>
+            <div>
+              <h2 class="text-xl font-semibold text-slate-100 group-hover:text-slate-200">Spill Response SOPs</h2>
+              <p class="text-sm text-slate-400 mt-1">Interactive, phased checklist for oil spill response with progress tracking.</p>
+              <ul class="mt-3 text-sm text-slate-300 list-disc list-inside space-y-1">
+                <li>Immediate actions (0–6h)</li>
+                <li>Initial assessment and planning (6–24h)</li>
+                <li>Sustained operations (24h+)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <!-- Module 2 -->
+      <a href="./module-2.html" class="group block rounded-xl bg-slate-900 border border-white/10 hover:bg-slate-800/80 transition overflow-hidden">
+        <div class="p-5">
+          <div class="flex items-start gap-4">
+            <div class="text-3xl">🛠️</div>
+            <div>
+              <h2 class="text-xl font-semibold text-slate-100 group-hover:text-slate-200">Remediation Techniques Guide</h2>
+              <p class="text-sm text-slate-400 mt-1">Reference for containment, recovery, chemical methods, and shoreline cleanup.</p>
+              <ul class="mt-3 text-sm text-slate-300 list-disc list-inside space-y-1">
+                <li>Mechanical containment (booms)</li>
+                <li>Mechanical recovery (skimmers, sorbents)</li>
+                <li>Chemical methods (dispersants)</li>
+                <li>Shoreline cleanup options</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <!-- Module 3 (full width) -->
+      <a href="./module-3.html" class="group block rounded-xl bg-slate-900 border border-white/10 hover:bg-slate-800/80 transition overflow-hidden md:col-span-2">
+        <div class="p-5">
+          <div class="flex items-start gap-4">
+            <div class="text-3xl">📚</div>
+            <div>
+              <h2 class="text-xl font-semibold text-slate-100 group-hover:text-slate-200">Wreck Reassessment & Platform Training</h2>
+              <p class="text-sm text-slate-400 mt-1">Tabbed guide covering survey protocols and step-by-step platform training tutorials.</p>
+              <ul class="mt-3 text-sm text-slate-300 list-disc list-inside space-y-1">
+                <li>Desktop and on-site survey checklists</li>
+                <li>Environmental sampling guidance</li>
+                <li>How-to tutorials for platform workflows</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </a>
+    </div>
+  </main>
+
+  <footer class="mt-10 py-6 text-center text-xs text-slate-400 border-t border-white/10">
+    Project Guardian Resource Center
+  </footer>
+</body>
+</html>

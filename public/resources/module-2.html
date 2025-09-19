@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Project Guardian - Remediation Techniques Guide</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #050816; }
+    .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-in-out; }
+    .accordion-header.active .icon { transform: rotate(180deg); }
+    .icon { transition: transform 0.3s ease-in-out; }
+  </style>
+</head>
+<body class="text-slate-100">
+  <div id="app" class="max-w-5xl mx-auto p-4 md:p-8">
+    <header class="mb-8 border-b border-white/10 pb-6">
+      <div class="flex items-center justify-between">
+        <a href="./index.html" class="text-sm text-slate-300 hover:text-slate-100">&larr; Resource Center</a>
+        <h1 class="text-2xl md:text-3xl font-semibold text-cyan-200">Remediation Techniques Guide</h1>
+      </div>
+      <p class="text-slate-300 mt-2 max-w-3xl">Interactive reference to primary methods for oil spill cleanup. Use it to choose the right tool for the job.</p>
+    </header>
+
+    <main class="space-y-4">
+      <!-- Category: Mechanical Containment -->
+      <div class="technique-category bg-slate-900 rounded-xl border border-white/10 shadow-card">
+        <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+          <div class="flex items-center">
+            <span class="text-3xl mr-4">🚧</span>
+            <div>
+              <h2 class="text-xl font-semibold text-cyan-200">Mechanical Containment</h2>
+              <p class="text-xs text-slate-400">Physically corralling oil to prevent it from spreading.</p>
+            </div>
+          </div>
+          <div class="icon text-cyan-200 text-2xl font-bold">▼</div>
+        </div>
+        <div class="accordion-content">
+          <div class="p-6 border-t border-white/10 text-slate-200">
+            <h3 class="text-lg font-semibold mb-2">Booms</h3>
+            <p class="mb-4 text-slate-300">Floating barriers used to contain or deflect oil slicks. Proper deployment is critical; effectiveness drops in rough seas or strong currents.</p>
+            <div class="grid md:grid-cols-2 gap-4 text-sm">
+              <div class="bg-slate-800/70 p-4 rounded-lg border border-white/10">
+                <h4 class="font-semibold mb-2 text-slate-100">Key Considerations</h4>
+                <ul class="list-disc list-inside space-y-1 text-slate-300">
+                  <li>Effectiveness decreases in waves &gt;1 m or currents &gt;1 knot.</li>
+                  <li>Requires skilled personnel and specialized vessels.</li>
+                  <li>Types: Containment, Sorbent, Fire (heat-resistant).</li>
+                </ul>
+              </div>
+              <div class="bg-cyan-900/30 p-4 rounded-lg border border-cyan-500/30">
+                <h4 class="font-semibold text-cyan-200 mb-2">Best For</h4>
+                <ul class="list-disc list-inside space-y-1 text-cyan-100">
+                  <li>Protecting shorelines, mangroves, or water intakes.</li>
+                  <li>Concentrating oil for recovery.</li>
+                  <li>Calm to moderate conditions.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category: Mechanical Recovery -->
+      <div class="technique-category bg-slate-900 rounded-xl border border-white/10 shadow-card">
+        <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+          <div class="flex items-center">
+            <span class="text-3xl mr-4">🔧</span>
+            <div>
+              <h2 class="text-xl font-semibold text-sky-200">Mechanical Recovery</h2>
+              <p class="text-xs text-slate-400">Removing contained oil from the water surface.</p>
+            </div>
+          </div>
+          <div class="icon text-sky-200 text-2xl font-bold">▼</div>
+        </div>
+        <div class="accordion-content">
+          <div class="space-y-4 p-6 border-t border-white/10 text-slate-200">
+            <!-- Skimmers -->
+            <div>
+              <h3 class="text-lg font-semibold mb-2">Skimmers</h3>
+              <p class="mb-4 text-slate-300">Devices that remove oil from the surface; most efficient on thick, contained slicks.</p>
+              <div class="grid md:grid-cols-2 gap-4 text-sm">
+                <div class="bg-slate-800/70 p-4 rounded-lg border border-white/10">
+                  <h4 class="font-semibold mb-2">Key Considerations</h4>
+                  <ul class="list-disc list-inside space-y-1 text-slate-300">
+                    <li>Types: Oleophilic and Weir.</li>
+                    <li>Efficiency depends on oil thickness and viscosity.</li>
+                    <li>Water entrainment may require separation.</li>
+                  </ul>
+                </div>
+                <div class="bg-sky-900/30 p-4 rounded-lg border border-sky-500/30">
+                  <h4 class="font-semibold text-sky-200 mb-2">Best For</h4>
+                  <ul class="list-disc list-inside space-y-1 text-sky-100">
+                    <li>Large spills in open water with booms in place.</li>
+                    <li>Relatively calm sea states.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <!-- Sorbents -->
+            <div class="pt-4 border-t border-white/10">
+              <h3 class="text-lg font-semibold mb-2">Sorbents</h3>
+              <p class="mb-4 text-slate-300">Materials that absorb oil (pads, booms, loose). Useful for final cleanup or small slicks.</p>
+              <div class="grid md:grid-cols-2 gap-4 text-sm">
+                <div class="bg-slate-800/70 p-4 rounded-lg border border-white/10">
+                  <h4 class="font-semibold mb-2">Key Considerations</h4>
+                  <ul class="list-disc list-inside space-y-1 text-slate-300">
+                    <li>Become hazardous waste when saturated.</li>
+                    <li>Labor-intensive to deploy and recover.</li>
+                    <li>Natural (peat, straw) and synthetic (polypropylene) options.</li>
+                  </ul>
+                </div>
+                <div class="bg-sky-900/30 p-4 rounded-lg border border-sky-500/30">
+                  <h4 class="font-semibold text-sky-200 mb-2">Best For</h4>
+                  <ul class="list-disc list-inside space-y-1 text-sky-100">
+                    <li>Final cleanup of thin sheens.</li>
+                    <li>Small, contained spills or hard-to-reach areas.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div> <!-- space-y-4 -->
+        </div> <!-- accordion-content -->
+      </div>
+
+      <!-- Category: Chemical Methods -->
+      <div class="technique-category bg-slate-900 rounded-xl border border-white/10 shadow-card">
+        <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+          <div class="flex items-center">
+            <span class="text-3xl mr-4">🧪</span>
+            <div>
+              <h2 class="text-xl font-semibold text-amber-200">Chemical Methods</h2>
+              <p class="text-xs text-slate-400">Changing oil properties using chemical agents.</p>
+            </div>
+          </div>
+          <div class="icon text-amber-200 text-2xl font-bold">▼</div>
+        </div>
+        <div class="accordion-content">
+          <div class="p-6 border-t border-white/10 text-slate-200">
+            <h3 class="text-lg font-semibold mb-2">Dispersants</h3>
+            <p class="mb-4 text-slate-300">Break oil into droplets to mix into the water column, accelerating natural breakdown.</p>
+            <div class="grid md:grid-cols-2 gap-4 text-sm">
+              <div class="bg-rose-900/30 p-4 rounded-lg border border-rose-500/30">
+                <h4 class="font-semibold text-rose-200 mb-2">Ecological Trade-Offs & Limitations</h4>
+                <ul class="list-disc list-inside space-y-1 text-rose-100">
+                  <li>Moves oil into the water column; impacts marine life.</li>
+                  <li>Use is restricted in many jurisdictions.</li>
+                  <li>Effective only on fresh oil and specific conditions.</li>
+                </ul>
+              </div>
+              <div class="bg-amber-900/30 p-4 rounded-lg border border-amber-500/30">
+                <h4 class="font-semibold text-amber-200 mb-2">Best For</h4>
+                <ul class="list-disc list-inside space-y-1 text-amber-100">
+                  <li>Very large spills in deep, open water.</li>
+                  <li>When preventing shoreline impact is paramount.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category: Shoreline Cleanup -->
+      <div class="technique-category bg-slate-900 rounded-xl border border-white/10 shadow-card">
+        <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+          <div class="flex items-center">
+            <span class="text-3xl mr-4">🏖️</span>
+            <div>
+              <h2 class="text-xl font-semibold text-fuchsia-200">Shoreline Cleanup</h2>
+              <p class="text-xs text-slate-400">Removing oil that has reached the coast.</p>
+            </div>
+          </div>
+          <div class="icon text-fuchsia-200 text-2xl font-bold">▼</div>
+        </div>
+        <div class="accordion-content">
+          <div class="space-y-4 p-6 border-t border-white/10 text-slate-200">
+            <!-- Manual -->
+            <div>
+              <h3 class="text-lg font-semibold mb-2">Manual Removal</h3>
+              <p class="mb-4 text-slate-300">Teams using tools like rakes, shovels, and sorbent pads. Highly effective, but resource-intensive.</p>
+              <div class="grid md:grid-cols-2 gap-4 text-sm">
+                <div class="bg-slate-800/70 p-4 rounded-lg border border-white/10">
+                  <h4 class="font-semibold mb-2">Key Considerations</h4>
+                  <ul class="list-disc list-inside space-y-1 text-slate-300">
+                    <li>Large workforce and logistics required.</li>
+                    <li>Less ecological damage than aggressive methods.</li>
+                    <li>Generates substantial oiled solid waste.</li>
+                  </ul>
+                </div>
+                <div class="bg-fuchsia-900/30 p-4 rounded-lg border border-fuchsia-500/30">
+                  <h4 class="font-semibold text-fuchsia-200 mb-2">Best For</h4>
+                  <ul class="list-disc list-inside space-y-1 text-fuchsia-100">
+                    <li>Sensitive areas like marshes and mangroves.</li>
+                    <li>Light to moderate oiling.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <!-- Washing -->
+            <div class="pt-4 border-t border-white/10">
+              <h3 class="text-lg font-semibold mb-2">High-Pressure / Hot-Water Washing</h3>
+              <p class="mb-4 text-slate-300">Flushing oil from surfaces (rocks, seawalls) into water for collection by booms and skimmers.</p>
+              <div class="grid md:grid-cols-2 gap-4 text-sm">
+                <div class="bg-rose-900/30 p-4 rounded-lg border border-rose-500/30">
+                  <h4 class="font-semibold text-rose-200 mb-2">Ecological Trade-Offs & Limitations</h4>
+                  <ul class="list-disc list-inside space-y-1 text-rose-100">
+                    <li>Highly destructive to surface biota.</li>
+                    <li>May drive oil deeper into sediment.</li>
+                    <li>Use sparingly and with caution.</li>
+                  </ul>
+                </div>
+                <div class="bg-fuchsia-900/30 p-4 rounded-lg border border-fuchsia-500/30">
+                  <h4 class="font-semibold text-fuchsia-200 mb-2">Best For</h4>
+                  <ul class="list-disc list-inside space-y-1 text-fuchsia-100">
+                    <li>Man-made structures (piers, seawalls).</li>
+                    <li>Less-sensitive rocky shorelines.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div> <!-- p-6 -->
+        </div> <!-- accordion-content -->
+      </div> <!-- technique-category -->
+    </main>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const headers = document.querySelectorAll('.accordion-header');
+      headers.forEach(header => {
+        header.addEventListener('click', () => {
+          const content = header.nextElementSibling;
+          const isOpen = header.classList.contains('active');
+          headers.forEach(h => {
+            if (h !== header) {
+              h.classList.remove('active');
+              const c = h.nextElementSibling;
+              if (c) c.style.maxHeight = null;
+            }
+          });
+          header.classList.toggle('active', !isOpen);
+          if (!isOpen) {
+            setTimeout(() => { content.style.maxHeight = content.scrollHeight + 'px'; }, 10);
+          } else {
+            content.style.maxHeight = null;
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
