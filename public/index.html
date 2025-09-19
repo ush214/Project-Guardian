@@ -56,34 +56,16 @@
     }
 
     .radar-wrapper { height: 240px; position: relative; }
-    @media (max-width: 640px){
-      .radar-wrapper { height: 200px; }
-    }
-    .radar-grid {
-      display: grid;
-      gap: 1rem;
-    }
-    @media (min-width: 768px) {
-      .radar-grid {
-        grid-template-columns: 1fr 260px;
-        align-items: stretch;
-      }
-    }
+    @media (max-width: 640px){ .radar-wrapper { height: 200px; } }
+    .radar-grid { display: grid; gap: 1rem; }
+    @media (min-width: 768px) { .radar-grid { grid-template-columns: 1fr 260px; align-items: stretch; } }
 
     #map-status-badge {
-      position:absolute;
-      top:8px;
-      right:8px;
+      position:absolute; top:8px; right:8px;
       background:rgba(15,23,42,0.65);
-      backdrop-filter:blur(4px);
-      -webkit-backdrop-filter:blur(4px);
-      color:#e2e8f0;
-      font-size:11px;
-      padding:4px 8px;
-      border:1px solid rgba(255,255,255,0.15);
-      border-radius:6px;
-      z-index:500;
-      pointer-events:none;
+      backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+      color:#e2e8f0; font-size:11px; padding:4px 8px; border:1px solid rgba(255,255,255,0.15);
+      border-radius:6px; z-index:500; pointer-events:none;
     }
     .leaflet-container { background:#0f172a; }
 
@@ -142,9 +124,8 @@
       flex-direction:column;
       justify-content:space-between;
     }
-    .severity-panel-compact .severity-score {
-      font-size:2.25rem;
-    }
+    .severity-panel-compact .severity-score { font-size:2.25rem; }
+
     .upload-thumb {
       position:relative;
       border:1px solid rgba(255,255,255,0.12);
@@ -158,37 +139,14 @@
       object-fit:cover;
       display:block;
     }
-    .pill-btn {
-      background:#0891b2;
-      border:1px solid #06b6d4;
-      color:#fff;
-      padding:6px 14px;
-      font-size:12px;
-      border-radius:.6rem;
-      font-weight:500;
-    }
+    .pill-btn { background:#0891b2; border:1px solid #06b6d4; color:#fff; padding:6px 14px; font-size:12px; border-radius:.6rem; font-weight:500; }
     .pill-btn:hover { background:#0ea5e9; }
-    .btn-neutral {
-      background:rgba(255,255,255,0.08);
-      border:1px solid rgba(255,255,255,0.15);
-      color:#f1f5f9;
-    }
+    .btn-neutral { background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:#f1f5f9; }
     .btn-neutral:hover { background:rgba(255,255,255,0.14); }
-    .note-item {
-      border:1px solid rgba(255,255,255,0.08);
-      background:#0f172a;
-      border-radius:0.6rem;
-      padding:.65rem .75rem;
-    }
-    .radar-flex {
-      display:grid;
-      gap:1rem;
-    }
-    @media (min-width: 900px) {
-      .radar-flex {
-        grid-template-columns: 1fr 250px;
-      }
-    }
+
+    .note-item { border:1px solid rgba(255,255,255,0.08); background:#0f172a; border-radius:0.6rem; padding:.65rem .75rem; }
+    .radar-flex { display:grid; gap:1rem; }
+    @media (min-width: 900px) { .radar-flex { grid-template-columns: 1fr 250px; } }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -260,7 +218,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection,
-  onSnapshot, getDocs
+  onSnapshot, getDocs, getDocsFromServer
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL
@@ -293,7 +251,6 @@ const state = {
   mapStatus: 'init'
 };
 window.pgState = state;
-/* Expose appId for other modules if needed */
 window.appId = appId;
 
 /* =============== UTILITIES =============== */
@@ -364,14 +321,65 @@ function vesselSummary(it){
          "No summary available.";
 }
 function vesselNationality(it){
-  const cands = [
-    it?.nationality, it?.flag, it?.country, it?.flagState, it?.flag_state,
+  const candidates = [
+    it?.nationality, it?.Nationality,
+    it?.flag, it?.Flag,
+    it?.country, it?.Country, it?.countryOfOrigin, it?.country_of_origin,
+    it?.flagState, it?.flag_state, it?.flagOfRegistry, it?.registry,
     it?.metadata?.nationality, it?.metadata?.flag, it?.metadata?.country, it?.metadata?.flagState,
     it?.meta?.nationality, it?.meta?.flag, it?.meta?.country, it?.meta?.flagState,
     it?.historical?.nationality, it?.historical?.flag, it?.historical?.country,
-    it?.vessel?.nationality, it?.vessel?.flag, it?.vessel?.country
+    it?.historical?.vesselNationality, it?.historical?.vesselFlag, it?.historical?.flagState,
+    it?.historical?.registry?.country, it?.historical?.registry?.flag,
+    it?.phase1?.screening?.nationality, it?.phase1?.screening?.flag, it?.phase1?.screening?.flagState,
+    it?.vessel?.nationality, it?.vessel?.flag, it?.vessel?.country, it?.vessel?.flagState
   ];
-  for (const v of cands) { const t = getText(v); if (t) return t; }
+  function clean(s) { return String(s || "").replace(/\(.*?\)/g, "").replace(/\bflag\s*of\s*/i, "").trim(); }
+  function mapAlpha2(code){
+    if (!code || typeof code !== 'string') return "";
+    const c = code.trim().toUpperCase();
+    const map = {
+      US: "United States",
+      UK: "United Kingdom", GB: "United Kingdom",
+      JP: "Japan", DE: "Germany", FR: "France", NL: "Netherlands",
+      NO: "Norway", SE: "Sweden", FI: "Finland",
+      IT: "Italy", ES: "Spain", PT: "Portugal",
+      RU: "Russia", CN: "China",
+      AU: "Australia", NZ: "New Zealand",
+      IN: "India", ID: "Indonesia", PH: "Philippines",
+      MY: "Malaysia", SG: "Singapore", KR: "South Korea"
+    };
+    return map[c] || "";
+  }
+  for (const v of candidates) {
+    const t = clean(v);
+    if (t) {
+      if (/^[A-Za-z]{2,3}$/.test(t)) {
+        const mapped = mapAlpha2(t);
+        if (mapped) return mapped;
+      }
+      return t;
+    }
+  }
+  const summary = [
+    it?.historical?.summary, it?.phase2?.summary, it?.description, it?.title, it?.name
+  ].map(clean).join(" ").toLowerCase();
+  const wordToCountry = [
+    { re: /\bjapanese\b/, val: "Japan" },
+    { re: /\bamerican|u\.s\.|united states\b/, val: "United States" },
+    { re: /\bbritish|uk|u\.k\.|royal navy|rn\b/, val: "United Kingdom" },
+    { re: /\bgerman\b/, val: "Germany" },
+    { re: /\bfrench\b/, val: "France" },
+    { re: /\bdutch|netherlands\b/, val: "Netherlands" },
+    { re: /\bnorwegian\b/, val: "Norway" },
+    { re: /\bitalian\b/, val: "Italy" },
+    { re: /\bspanish\b/, val: "Spain" },
+    { re: /\bportuguese\b/, val: "Portugal" },
+    { re: /\brussian\b/, val: "Russia" }
+  ];
+  for (const m of wordToCountry) {
+    if (m.re.test(summary)) return m.val;
+  }
   return "";
 }
 function resolveCoordinates(item){
@@ -461,7 +469,17 @@ async function forceFetchLatest() {
   try {
     const accumulator = new Map();
     for (const p of READ_COLLECTIONS) {
-      const snap = await getDocs(collection(db, p));
+      let snap = null;
+      try {
+        if (typeof getDocsFromServer === 'function') {
+          snap = await getDocsFromServer(collection(db, p));
+        } else {
+          snap = await getDocs(collection(db, p));
+        }
+      } catch {
+        try { snap = await getDocs(collection(db, p)); } catch {}
+      }
+      if (!snap) continue;
       snap.forEach(docSnap => {
         const raw = docSnap.data() || {};
         const rec = { ...normalizeDoc(raw), id: raw.id || docSnap.id, _path: p };
@@ -473,6 +491,7 @@ async function forceFetchLatest() {
     if (state.currentRoute?.name === 'home') {
       refreshLeafletMarkers();
       renderReassessList();
+      setTimeout(() => { if (state.leafletMap) state.leafletMap.invalidateSize(); }, 50);
     }
   } catch (e) {
     console.warn('[forceFetchLatest] failed', e);
@@ -573,7 +592,6 @@ function refreshLeafletMarkers(){
         <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin-bottom:4px"/>
         <a href="#/wreck/${encodeURIComponent(it.id)}" style="font-size:12px;color:#0ea5e9;text-decoration:underline;">Open Report</a>
       </div>`);
-    marker.addEventListener('click',()=>{ /* ensure latest single doc if needed */ });
     marker.addTo(state.leafletMap);
     state.leafletMarkers.set(it.id, marker);
   });
@@ -1427,11 +1445,25 @@ function renderApp(){
   else renderHome();
 
   if(route.name==='home'){
-    // ensure freshest markers on return
-    forceFetchLatest();
+    // Ensure freshest data and proper map layout immediately on return
+    initLeaflet();
+    refreshLeafletMarkers();
+    renderReassessList();
+    setTimeout(() => {
+      if (state.leafletMap) state.leafletMap.invalidateSize();
+      forceFetchLatest();
+    }, 0);
   }
 }
-window.addEventListener('hashchange',()=>renderApp());
+window.addEventListener('hashchange', () => {
+  renderApp();
+  if (state.currentRoute?.name === 'home') {
+    setTimeout(() => {
+      if (state.leafletMap) state.leafletMap.invalidateSize();
+      forceFetchLatest();
+    }, 0);
+  }
+});
 
 // Refresh on tab focus when on Home
 document.addEventListener('visibilitychange', ()=>{
