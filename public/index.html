@@ -69,7 +69,7 @@
     }
     .leaflet-container { background:#0f172a; }
 
-    /* Restored layout styling (v73) */
+    /* Restored layout styling (v73 + refresh/nationality patch) */
     .card-surface {
       background: rgba(15,23,42,0.70);
       border: 1px solid rgba(255,255,255,0.08);
@@ -193,6 +193,9 @@
 
 <!-- Main application code -->
 <script type="module">
+/* ================= VERSION ================= */
+console.info('[PG] index.html v73+patch (server-refresh + nationality popup)');
+
 /* =============== CONFIG & CONSTANTS =============== */
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
@@ -248,7 +251,8 @@ const state = {
   chart: null,
   leafletMap: null,
   leafletMarkers: new Map(),
-  mapStatus: 'init'
+  mapStatus: 'init',
+  lastRefreshAt: null
 };
 window.pgState = state;
 window.appId = appId;
@@ -270,6 +274,7 @@ function showToast(msg,type='info'){
   setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
 }
 const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
+function nowTime(){ const d=new Date(); return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}); }
 
 /* =============== STAGE/SEVERITY LOGIC =============== */
 const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
@@ -361,13 +366,27 @@ function vesselNationality(it){
       return t;
     }
   }
-  const summary = [
-    it?.historical?.summary, it?.phase2?.summary, it?.description, it?.title, it?.name
-  ].map(clean).join(" ").toLowerCase();
+  // Heuristics from text and vesselName (common in this dataset)
+  const blob = [
+    it?.historical?.summary, it?.phase2?.summary,
+    it?.description, it?.title, it?.name
+  ].map(x => String(x||'')).join(' ').toLowerCase();
+
+  const name = (String(it?.name||it?.title||'') || '').toUpperCase();
+
+  // Prefix/suffix patterns
+  if (/^HMS\s/.test(name) || /\bROYAL NAVY\b/i.test(blob)) return "United Kingdom";
+  if (/^HMAS\s/.test(name)) return "Australia";
+  if (/^USS\s/.test(name) || /\bU\.S\.S\.\b/i.test(blob) || /\bUNITED STATES\b/i.test(blob)) return "United States";
+  if (/^IJN\s/.test(name) || /\bIMPERIAL JAPANESE NAVY\b/i.test(blob) || /\bjapanese\b/i.test(blob)) return "Japan";
+  if (/\bU-\d{1,3}\b/.test(name)) return "Germany"; // German U-Boat designation
+  if (/\bMARU\b/.test(name)) return "Japan"; // Merchant ships "Maru"
+
+  // Keyword fallbacks
   const wordToCountry = [
     { re: /\bjapanese\b/, val: "Japan" },
     { re: /\bamerican|u\.s\.|united states\b/, val: "United States" },
-    { re: /\bbritish|uk|u\.k\.|royal navy|rn\b/, val: "United Kingdom" },
+    { re: /\bbritish|uk|u\.k\.\b|royal navy|rn\b/, val: "United Kingdom" },
     { re: /\bgerman\b/, val: "Germany" },
     { re: /\bfrench\b/, val: "France" },
     { re: /\bdutch|netherlands\b/, val: "Netherlands" },
@@ -378,7 +397,7 @@ function vesselNationality(it){
     { re: /\brussian\b/, val: "Russia" }
   ];
   for (const m of wordToCountry) {
-    if (m.re.test(summary)) return m.val;
+    if (m.re.test(blob)) return m.val;
   }
   return "";
 }
@@ -465,6 +484,13 @@ async function startData(){
     }catch(e){ console.error("Failed to listen",p,e); }
   }
 }
+function setMapStatus(status, detail=""){
+  state.mapStatus=status;
+  const badge = document.getElementById('map-status-badge');
+  if(!badge) return;
+  badge.textContent = detail ? `${status} • ${detail}` : status;
+  badge.style.color = status==='error' ? '#fecaca' : '#e2e8f0';
+}
 async function forceFetchLatest() {
   try {
     const accumulator = new Map();
@@ -488,34 +514,35 @@ async function forceFetchLatest() {
       });
     }
     state.wrecks = Array.from(accumulator.values());
+    state.lastRefreshAt = Date.now();
+    const ts = nowTime();
     if (state.currentRoute?.name === 'home') {
       refreshLeafletMarkers();
       renderReassessList();
-      setTimeout(() => { if (state.leafletMap) state.leafletMap.invalidateSize(); }, 50);
+      setTimeout(() => { if (state.leafletMap) state.leafletMap.invalidateSize(); }, 30);
+      setMapStatus('ready', `refreshed ${ts}`);
+    } else {
+      setMapStatus('ready', `bg refreshed ${ts}`);
     }
+    console.info('[PG] forceFetchLatest completed at', ts, 'items:', state.wrecks.length);
   } catch (e) {
     console.warn('[forceFetchLatest] failed', e);
+    setMapStatus('error', 'refresh-failed');
   }
 }
 
 /* =============== MAP (STABLE INIT) =============== */
-function setMapStatus(status, detail=""){
-  state.mapStatus=status;
-  const badge = document.getElementById('map-status-badge');
-  if(!badge) return;
-  badge.textContent = detail ? `${status} • ${detail}` : status;
-  badge.style.color = status==='error' ? '#fecaca' : '#e2e8f0';
-}
 function initLeaflet(){
-  if(state.leafletMap && $('#leaflet-map')) {
+  const container=$('#leaflet-map');
+  if(state.leafletMap && container) {
     setTimeout(()=>state.leafletMap.invalidateSize(),50);
     return;
   }
   let attempts=0;
   function attempt(){
     attempts++;
-    const container=$('#leaflet-map');
-    if(!container){
+    const c=$('#leaflet-map');
+    if(!c){
       if(attempts<8){ setTimeout(attempt,200); return; }
       setMapStatus('error','no-container');
       return;
@@ -525,12 +552,12 @@ function initLeaflet(){
       setMapStatus('error','leaflet-missing');
       return;
     }
-    if(container._leaflet_id){
-      try{ delete container._leaflet_id; }catch{}
-      container.innerHTML='';
+    if(c._leaflet_id){
+      try{ delete c._leaflet_id; }catch{}
+      c.innerHTML='';
     }
     try{
-      state.leafletMap = L.map(container,{ zoomControl:true }).setView([10,150],3);
+      state.leafletMap = L.map(c,{ zoomControl:true }).setView([10,150],3);
       window.pgMap = state.leafletMap;
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution:"© OpenStreetMap contributors",
@@ -538,7 +565,7 @@ function initLeaflet(){
       }).addTo(state.leafletMap);
       state.leafletMap.on('load',()=>setMapStatus('ready'));
       refreshLeafletMarkers();
-      setMapStatus('ready');
+      setMapStatus('ready', 'init');
       setTimeout(()=>state.leafletMap.invalidateSize(),60);
     }catch(e){
       console.error(e);
@@ -546,7 +573,7 @@ function initLeaflet(){
       else setMapStatus('error','init-failed');
     }
   }
-  setMapStatus('loading');
+  setMapStatus('loading','init');
   attempt();
 }
 function markerIconFor(category){
@@ -585,7 +612,7 @@ function refreshLeafletMarkers(){
     const nat=vesselNationality(it);
     const natLine = nat ? `<div style="font-size:11px;color:#64748b;margin:2px 0;">Nationality: ${escapeHtml(nat)}</div>` : "";
     marker.bindPopup(`
-      <div style="min-width:200px">
+      <div style="min-width:220px">
         <div style="font-weight:600">${escapeHtml(vesselName(it))}</div>
         <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${stageFromItem(it)} • ${cat.toUpperCase()}</div>
         ${natLine}
@@ -842,7 +869,8 @@ async function deletePhase2Entry(entryId){
     const snap=await getDoc(ref);
     if(!snap.exists()) return;
     const data=snap.data();
-    const list=Array.isArray(data?.phase2?.entries)? data.phase2.entries.filter(e=>e.entryId!==entryId):[];
+    const list=Array.isArray(data?.phase2?.entries)? data.phase2.entries.filter(e=>e.entryId!==entryId):[].
+      sort((a,b)=>(b?.createdAtMs||0)-(a?.createdAtMs||0));
     await updateDoc(ref,{ "phase2.entries": list, "phase2.updatedAt": serverTimestamp() });
     document.querySelector(`[data-entry-id="${entryId}"]`)?.remove();
     showToast("Entry deleted","success");
