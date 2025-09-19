@@ -78,7 +78,7 @@
       <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
       <a id="nav-import" href="import.html" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden" title="Open Import Dashboard">Import</a>
 
-      <!-- NEW: Admin-only Approvals link -->
+      <!-- Admin-only Approvals link -->
       <a id="nav-approvals" href="approvals.html"
          class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden"
          title="Approve registrations">Approvals</a>
@@ -111,7 +111,7 @@ import {
 } from "./auth-role.js";
 
 import {
-  collection, onSnapshot
+  collection, onSnapshot, doc, getDoc
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
@@ -125,6 +125,7 @@ const READ_COLLECTIONS = [
   "artifacts/guardian-agent-default/public/data/werpassessments"
 ];
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
+const MAP_OVERLAYS_DOC = `artifacts/${appId}/public/config/mapOverlays`; // { mpaGeoJsonUrl: "https://..." }
 
 /* Utilities */
 const $ = s => document.querySelector(s);
@@ -165,6 +166,19 @@ function severityCategoryForItem(it){
 
 /* Data helpers */
 function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
+function vesselNationality(it){
+  const cands = [
+    it?.nationality, it?.flag, it?.country,
+    it?.historical?.nationality, it?.historical?.flag, it?.historical?.country,
+    it?.vessel?.nationality, it?.vessel?.flag, it?.vessel?.country,
+    it?.metadata?.nationality, it?.meta?.nationality
+  ];
+  for (const v of cands) {
+    const t = getText(v);
+    if (t) return t;
+  }
+  return "";
+}
 function vesselSummary(it){
   return getText(it?.historical?.circumstancesOfLoss) ||
          getText(it?.historical?.summary) ||
@@ -220,7 +234,12 @@ const state = {
   filters: { severity:'all', stage:'all', search:'' },
   leafletMap: null,
   leafletMarkers: new Map(),
-  mapStatus: 'init'
+  mapStatus: 'init',
+  overlays: {
+    mpaUrl: null,
+    mpaLayer: null,
+    mpaLoading: false
+  }
 };
 window.pgState = state;
 
@@ -263,12 +282,17 @@ function refreshLeafletMarkers(){
     const coord=resolveCoordinates(it); if(!coord) return;
     const cat=severityCategoryForItem(it);
     const marker=L.marker([coord.lat, coord.lng],{ icon: markerIconFor(cat) });
+
+    const nat = vesselNationality(it);
+    const natLine = nat ? `<div style="font-size:11px;color:#64748b;margin:2px 0;">Nationality: ${nat}</div>` : "";
+
     const thumb=PLACEHOLDER_SVG;
     marker.bindPopup(`
-      <div style="min-width:200px">
+      <div style="min-width:220px">
         <div style="font-weight:600">${vesselName(it)}</div>
         <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${it?.stage||'initial'} • ${cat.toUpperCase()}</div>
-        <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin-bottom:4px"/>
+        ${natLine}
+        <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin:6px 0 6px"/>
         <a href="#/wreck/${encodeURIComponent(it.id)}" style="font-size:12px;color:#0ea5e9;text-decoration:underline;">Open Report</a>
       </div>`);
     marker.addTo(state.leafletMap);
@@ -317,7 +341,71 @@ function initLeaflet(){
 function ensureMapSize(){ if(state.leafletMap) state.leafletMap.invalidateSize(); }
 window.addEventListener('resize', debounce(ensureMapSize,200));
 
-/* Listeners */
+/* MPA Overlay */
+async function ensureOverlayConfig() {
+  if (state.overlays.mpaUrl) return state.overlays.mpaUrl;
+  try {
+    const snap = await getDoc(doc(sharedDb, MAP_OVERLAYS_DOC));
+    if (snap.exists()) {
+      const data = snap.data() || {};
+      if (data.mpaGeoJsonUrl && typeof data.mpaGeoJsonUrl === 'string') {
+        state.overlays.mpaUrl = data.mpaGeoJsonUrl.trim();
+        return state.overlays.mpaUrl;
+      }
+    }
+  } catch (e) {
+    console.warn('[map] overlay config fetch failed', e);
+  }
+  return null;
+}
+async function toggleMpaLayer(on) {
+  if (!state.leafletMap) return;
+  if (!on) {
+    if (state.overlays.mpaLayer) {
+      try { state.leafletMap.removeLayer(state.overlays.mpaLayer); } catch {}
+      state.overlays.mpaLayer = null;
+    }
+    return;
+  }
+  if (state.overlays.mpaLayer || state.overlays.mpaLoading) return;
+  state.overlays.mpaLoading = true;
+
+  try {
+    const url = await ensureOverlayConfig();
+    if (!url) {
+      showToast("MPA dataset URL not configured", "error");
+      state.overlays.mpaLoading = false;
+      const cb = $('#mpa-toggle'); if (cb) cb.checked = false;
+      return;
+    }
+    const res = await fetch(url, { credentials: 'omit', mode: 'cors' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const gj = await res.json();
+    const style = {
+      color: '#34d399',
+      weight: 1,
+      fillColor: '#10b981',
+      fillOpacity: 0.15
+    };
+    const layer = L.geoJSON(gj, {
+      style,
+      onEachFeature: (feature, lyr) => {
+        const name = feature?.properties?.NAME || feature?.properties?.name || feature?.properties?.designation || '';
+        if (name) lyr.bindTooltip(String(name), { sticky: true, direction: 'top' });
+      }
+    });
+    layer.addTo(state.leafletMap);
+    state.overlays.mpaLayer = layer;
+  } catch (e) {
+    console.error('[map] failed to load MPA layer', e);
+    showToast("Failed to load MPA layer", "error");
+    const cb = $('#mpa-toggle'); if (cb) cb.checked = false;
+  } finally {
+    state.overlays.mpaLoading = false;
+  }
+}
+
+/* Listeners (Firestore) */
 function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
 function startData(){
   detachListeners();
@@ -354,7 +442,15 @@ function startData(){
   }
 }
 
-/* UI Builders (trimmed for brevity; unchanged content except updateAuthUI below) */
+/* Auto-refresh when returning to Home or tab gets focus */
+window.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'visible' && state.currentRoute?.name === 'home') {
+    startData();            // reattach listeners to ensure fresh data
+    refreshLeafletMarkers(); // rerender markers with any new data
+  }
+});
+
+/* UI Builders */
 function buildAuthPanel(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
@@ -417,6 +513,12 @@ function buildMapCard(){
         <span class="mr-2 font-medium text-slate-200">Stage:</span>
         ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
       </div>
+      <div class="flex flex-wrap items-center gap-3 text-sm">
+        <label class="inline-flex items-center gap-2">
+          <input type="checkbox" id="mpa-toggle" class="rounded border-white/20 bg-slate-800">
+          <span class="text-slate-200">MPA layer</span>
+        </label>
+      </div>
       <div class="xl:ml-auto w-full xl:w-72">
         <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
       </div>
@@ -433,7 +535,7 @@ function buildMapCard(){
   </div>`;
 }
 
-/* Auth UI (UPDATED to show Approvals link for admins) */
+/* Auth UI */
 function updateAuthUI(){
   const signedIn=!!state.user;
   document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
@@ -489,7 +591,7 @@ function renderReassessList(){
   }
 }
 
-/* Home render (and remaining app logic; unchanged aside from updateAuthUI usage) */
+/* Home render */
 function renderHome(){
   const app=$('#app');
   const existingMap = $('#map-card');
@@ -523,6 +625,7 @@ function renderHome(){
   });
   $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOutUser(); }catch{} });
 
+  // Task dashboard button (admin only)
   const taskBtn = document.getElementById('btn-task-dashboard');
   if (taskBtn && !taskBtn.dataset.bound) {
     taskBtn.addEventListener('click', (e)=>{
@@ -533,6 +636,7 @@ function renderHome(){
     taskBtn.dataset.bound = '1';
   }
 
+  // Analyze/Reassess
   $('#analyze-form')?.addEventListener('submit', async e=>{
     e.preventDefault();
     if(!isContributor()){ showToast("Insufficient role","error"); return; }
@@ -567,6 +671,7 @@ function renderHome(){
     }
   });
 
+  // Filters
   document.querySelectorAll('[data-filter-sev]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       state.filters.severity = btn.getAttribute('data-filter-sev');
@@ -584,13 +689,18 @@ function renderHome(){
     refreshLeafletMarkers();
   },250));
 
+  // MPA toggle
+  $('#mpa-toggle')?.addEventListener('change', (e)=> toggleMpaLayer(!!e.target.checked));
+
+  // Ensure map and latest data on entering Home
   initLeaflet();
-  refreshLeafletMarkers();
+  startData();             // re-attach snapshot listeners upon arriving Home
+  refreshLeafletMarkers(); // render markers now
   renderReassessList();
   updateAuthUI();
 }
 
-/* Simple List + Report (trimmed; unchanged except for role badge text) */
+/* Simple List + Report */
 function renderReport(route){
   const app=$('#app');
   const it=state.wrecks.find(w=>String(w.id)===String(route.id));
@@ -697,6 +807,7 @@ onAuthChanged(user=>{
 onRoleResolved(({ role })=>{
   state.role = role;
   updateAuthUI();
+  // ensure listeners are active when role resolves
   startData();
   renderApp();
 });
@@ -706,12 +817,18 @@ function renderApp(){
   const route=parseRoute();
   state.currentRoute=route;
   setActiveNav(route);
-  if(route.name==='home') renderHome();
-  else if(route.name==='report') renderReport(route);
-  else if(route.name==='list') renderList();
-  else renderHome();
+  if(route.name==='home') {
+    renderHome();
+  } else if(route.name==='report') {
+    renderReport(route);
+  } else if(route.name==='list') {
+    renderList();
+  } else {
+    renderHome();
+  }
   if(route.name==='home'){
-    initLeaflet();
+    // when navigating back to Home, ensure we re-fetch and re-render
+    startData();
     refreshLeafletMarkers();
     renderReassessList();
   }
