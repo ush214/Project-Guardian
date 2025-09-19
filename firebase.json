@@ -17,7 +17,7 @@
         "headers": [
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' 'inline-speculation-rules' blob: https://www.gstatic.com https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; script-src-elem 'self' 'unsafe-inline' blob: https://www.gstatic.com https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; font-src 'self' https: data:; frame-src 'self'; base-uri 'self'; form-action 'self'"
+            "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' 'inline-speculation-rules' blob: https://www.gstatic.com https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; script-src-elem 'self' 'unsafe-inline' blob: https://www.gstatic.com https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; font-src 'self' https: data:; frame-src 'self'; base-uri 'self'; form-action 'self'"
           }
         ]
       },

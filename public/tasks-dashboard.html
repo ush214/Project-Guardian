@@ -1,101 +1,215 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" class="h-full">
 <head>
-  <meta charset="UTF-8">
-  <title>Task Dashboard</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8" />
+  <title>Task Dashboard • Project Guardian</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Tailwind (allowed by CSP: https://cdn.tailwindcss.com) -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .cycle-btn { cursor:pointer; }
-    .status-pill {
-      @apply inline-block px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase;
+  <script>
+    /* Inline Tailwind config (needs 'unsafe-inline' in CSP) */
+    tailwind.config = {
+      theme: {
+        extend: {
+          boxShadow: {
+            'soft': '0 2px 10px rgba(0,0,0,0.25)',
+            'card': '0 8px 24px rgba(0,0,0,0.35)'
+          },
+          colors: {
+            surface: {
+              900: '#0f172a', /* slate-900-ish */
+              800: '#1e293b', /* slate-800-ish */
+              700: '#334155'  /* slate-700-ish */
+            }
+          },
+          borderColor: {
+            subtle: 'rgba(255,255,255,0.10)'
+          }
+        }
+      }
     }
+  </script>
+
+  <!-- Chart.js (allowed by CSP: https://cdn.jsdelivr.net) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    /* Minor utilities */
+    .card-surface {
+      background: rgba(15,23,42,0.72);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 0.75rem;
+    }
+    .card-inner {
+      background: rgba(30,41,59,0.55);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 0.75rem;
+    }
+    .fade-enter { opacity:0; transform:translateY(3px); }
+    .fade-enter-active { transition:all .22s; opacity:1; transform:translateY(0); }
+    .kanban-column.drop-target { background: rgba(255,255,255,0.06); border: 1px dashed rgba(255,255,255,0.18); }
+    .task-card.dragging { opacity: .65; transform: scale(.99); }
+    .modal-backdrop { background: rgba(0,0,0,.55); }
+    .chart-container { position: relative; height: 320px; }
+    @media (min-width: 1024px){ .chart-container { height: 360px; } }
   </style>
 </head>
-<body class="bg-slate-50 text-gray-900 min-h-screen flex flex-col">
-  <header class="bg-white border-b shadow-sm">
-    <div class="max-w-4xl mx-auto px-5 py-4 flex flex-wrap gap-4 items-center">
-      <h1 class="text-2xl font-semibold text-slate-800">Task Dashboard</h1>
-      <div class="ml-auto flex flex-col items-end text-xs text-slate-600">
-        <div><span class="font-medium">User:</span> <span id="hdr-email" class="text-slate-800">—</span></div>
-        <div><span class="font-medium">Role:</span> <span id="hdr-role" class="text-slate-800">—</span></div>
+<body class="min-h-screen bg-[#050816] text-slate-100">
+  <header class="sticky top-0 z-40 bg-[#050816]/90 backdrop-blur border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center gap-3">
+      <a href="/" class="text-cyan-200 hover:text-cyan-300 font-semibold text-lg">← Back</a>
+      <div class="ml-auto flex items-center gap-3 text-sm">
+        <span id="header-user" class="text-slate-300"></span>
+        <span id="header-role" class="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-cyan-200"></span>
       </div>
-      <button id="btn-signout"
-              class="text-xs px-3 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-700">
-        Sign out
-      </button>
-      <a href="index.html"
-         class="text-xs px-3 py-1 rounded border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700">
-        ← Back to App
-      </a>
     </div>
   </header>
 
-  <main class="flex-1 max-w-4xl mx-auto w-full px-5 py-6 space-y-8">
-    <!-- Admin Create Form -->
-    <section id="create-section"
-             class="bg-white border rounded-xl shadow-sm p-5 space-y-4 hidden">
-      <div class="flex items-center gap-2">
-        <h2 class="text-lg font-semibold text-slate-800">Create Task</h2>
-        <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-300">ADMIN</span>
-      </div>
-      <form id="task-form" class="grid md:grid-cols-3 gap-4 items-start">
-        <div class="md:col-span-1">
-          <label class="text-xs font-semibold text-slate-600 block mb-1">Title</label>
-          <input id="task-title" type="text" required
-                 class="w-full px-3 py-2 rounded border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                 placeholder="Short summary">
-        </div>
-        <div class="md:col-span-1">
-          <label class="text-xs font-semibold text-slate-600 block mb-1">Status</label>
-          <select id="task-status"
-                  class="w-full px-3 py-2 rounded border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="pending">pending</option>
-            <option value="in_progress">in_progress</option>
-            <option value="done">done</option>
-          </select>
-        </div>
-        <div class="md:col-span-1">
-          <label class="text-xs font-semibold text-slate-600 block mb-1">Optional Tags (comma‑sep)</label>
-          <input id="task-tags" type="text"
-                 class="w-full px-3 py-2 rounded border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                 placeholder="ops,urgent">
-        </div>
-        <div class="md:col-span-3">
-          <label class="text-xs font-semibold text-slate-600 block mb-1">Description</label>
-          <textarea id="task-desc" rows="3"
-                    class="w-full px-3 py-2 rounded border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Details of the task or next steps..."></textarea>
-        </div>
-        <div class="md:col-span-3 flex items-center justify-end gap-3">
-          <span id="create-msg" class="text-xs text-slate-500 h-4"></span>
-          <button type="submit"
-                  class="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium shadow">
-            Create Task
-          </button>
-        </div>
-      </form>
-    </section>
+  <main class="max-w-7xl mx-auto px-4 py-6 lg:py-10">
+    <h1 class="text-2xl md:text-3xl font-semibold text-cyan-200 tracking-tight mb-6">Task Dashboard</h1>
 
-    <!-- Task List -->
-    <section class="bg-white border rounded-xl shadow-sm p-5">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-slate-800">Tasks</h2>
-        <div id="tasks-status" class="text-xs text-slate-600">Initializing…</div>
-      </div>
-      <ul id="tasks-list" class="space-y-3"></ul>
-      <div id="empty-indicator" class="hidden text-sm text-slate-500 py-4 text-center">
-        No tasks found.
-      </div>
-    </section>
+    <!-- Admin Gate -->
+    <div id="gate-denied" class="card-surface p-6 mb-6 hidden">
+      <h2 class="text-xl font-semibold text-rose-300">Access denied</h2>
+      <p class="text-slate-300 mt-2">You must be an admin to view the Task Dashboard.</p>
+    </div>
 
-    <p class="text-[11px] text-slate-500">
-      Path: <code>artifacts/guardian/private/admin/tasks</code>.
-      Only admins (custom claim or allowlist) have read/write permission per Firestore rules.
-    </p>
+    <section id="dashboard-body" class="space-y-8 hidden">
+      <!-- Summary -->
+      <section class="card-surface p-5">
+        <h2 class="text-xl font-semibold text-cyan-200 mb-4">Project Overview</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="card-inner p-4">
+            <h3 class="text-sm font-medium text-slate-300 mb-2">Tasks by Status</h3>
+            <div class="chart-container">
+              <canvas id="statusChart"></canvas>
+            </div>
+          </div>
+          <div class="card-inner p-4">
+            <h3 class="text-sm font-medium text-slate-300 mb-2">Tasks by Priority</h3>
+            <div class="chart-container">
+              <canvas id="priorityChart"></canvas>
+            </div>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 mt-4">Charts update in real time as you move tasks between columns or add new tasks.</p>
+      </section>
+
+      <!-- Controls -->
+      <section class="card-surface p-5">
+        <div class="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+          <h2 class="text-lg font-semibold text-cyan-200">Task Board</h2>
+          <div class="lg:ml-auto flex flex-wrap gap-2">
+            <select id="priorityFilter" class="px-3 py-2 rounded-lg bg-surface-800 border border-white/10 text-slate-100">
+              <option value="all">All Priorities</option>
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+            <select id="areaFilter" class="px-3 py-2 rounded-lg bg-surface-800 border border-white/10 text-slate-100">
+              <option value="all">All Areas</option>
+              <option value="Backend / Frontend">Backend / Frontend</option>
+              <option value="Frontend">Frontend</option>
+              <option value="Frontend / Firestore">Frontend / Firestore</option>
+              <option value="Frontend / Data">Frontend / Data</option>
+              <option value="Backend / Data">Backend / Data</option>
+            </select>
+            <button id="addTaskBtn" type="button" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium">＋ New Task</button>
+          </div>
+        </div>
+
+        <!-- Kanban Board -->
+        <div id="kanban-board" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <!-- Columns injected here -->
+        </div>
+      </section>
+    </section>
   </main>
 
+  <!-- View Modal -->
+  <div id="taskModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+    <div class="card-surface w-full max-w-2xl shadow-card">
+      <div class="p-5 border-b border-white/10 flex items-start justify-between">
+        <div>
+          <h3 id="modal-title" class="text-xl font-semibold text-cyan-200"></h3>
+          <p id="modal-id" class="text-xs text-slate-400 mt-1"></p>
+        </div>
+        <button id="closeModal" class="text-slate-300 hover:text-white text-2xl font-bold" aria-label="Close">&times;</button>
+      </div>
+      <div class="p-5 space-y-3">
+        <div>
+          <p class="text-sm font-semibold text-slate-200">Description</p>
+          <p id="modal-description" class="text-slate-300 text-sm"></p>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <p class="text-sm font-semibold text-slate-200">Priority</p>
+            <p id="modal-priority" class="text-sm"></p>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-slate-200">System Area</p>
+            <p id="modal-area" class="text-sm"></p>
+          </div>
+          <div class="col-span-2">
+            <p class="text-sm font-semibold text-slate-200">Status</p>
+            <p id="modal-status" class="text-sm"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Task Modal -->
+  <div id="addTaskModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+    <div class="card-surface w-full max-w-2xl shadow-card">
+      <form id="addTaskForm" class="p-5">
+        <div class="flex items-start justify-between border-b border-white/10 pb-4">
+          <h3 class="text-xl font-semibold text-cyan-200">Add New Task</h3>
+          <button type="button" id="cancelAddTaskBtn" class="text-slate-300 hover:text-white text-2xl font-bold" aria-label="Close">&times;</button>
+        </div>
+        <div class="space-y-4 pt-4">
+          <div>
+            <label for="newTaskName" class="block text-sm text-slate-300 mb-1">Task Name</label>
+            <input id="newTaskName" type="text" required class="w-full px-3 py-2 rounded-lg bg-surface-800 border border-white/10 text-slate-100" />
+          </div>
+          <div>
+            <label for="newTaskDescription" class="block text-sm text-slate-300 mb-1">Description</label>
+            <textarea id="newTaskDescription" rows="4" required class="w-full px-3 py-2 rounded-lg bg-surface-800 border border-white/10 text-slate-100"></textarea>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="newTaskPriority" class="block text-sm text-slate-300 mb-1">Priority</label>
+              <select id="newTaskPriority" required class="w-full px-3 py-2 rounded-lg bg-surface-800 border border-white/10 text-slate-100">
+                <option>Low</option>
+                <option>Medium</option>
+                <option>High</option>
+                <option>Critical</option>
+              </select>
+            </div>
+            <div>
+              <label for="newTaskArea" class="block text-sm text-slate-300 mb-1">System Area</label>
+              <select id="newTaskArea" required class="w-full px-3 py-2 rounded-lg bg-surface-800 border border-white/10 text-slate-100">
+                <option>Backend / Frontend</option>
+                <option>Frontend</option>
+                <option>Frontend / Firestore</option>
+                <option>Frontend / Data</option>
+                <option>Backend / Data</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="pt-5 flex justify-end">
+          <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium">Save Task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Shared auth module -->
   <script type="module" src="./auth-role.js"></script>
+  <!-- Dashboard logic -->
   <script type="module" src="./tasks-dashboard.js"></script>
 </body>
 </html>

@@ -1,178 +1,321 @@
+// tasks-dashboard.js
+// Self-contained Task Dashboard aligned to the app's dark aesthetic.
+// Uses localStorage for data (safe, no Firestore writes). Admin-gated via auth-role.js.
+
 import {
-  db, onAuthorized, isAdmin, getCurrentUser,
-  onAuthChanged, onRoleResolved, signOutUser
-} from "./auth-role.js";
-import {
-  collection, onSnapshot, query, orderBy,
-  doc, setDoc, updateDoc, deleteDoc, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+  onAuthChanged, onRoleResolved, isAdmin, db
+} from './auth-role.js';
 
-const appId = window.appId || "guardian";
-const collectionPath = `artifacts/${appId}/private/admin/tasks`;
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-const statusEl = document.getElementById("tasks-status");
-const listEl = document.getElementById("tasks-list");
-const emptyIndicator = document.getElementById("empty-indicator");
-const hdrEmail = document.getElementById("hdr-email");
-const hdrRole = document.getElementById("hdr-role");
-const signOutBtn = document.getElementById("btn-signout");
-const createSection = document.getElementById("create-section");
-const taskForm = document.getElementById("task-form");
-const titleInput = document.getElementById("task-title");
-const descInput = document.getElementById("task-desc");
-const statusInput = document.getElementById("task-status");
-const tagsInput = document.getElementById("task-tags");
-const createMsg = document.getElementById("create-msg");
-let unsubscribe = null;
+/* --------- Admin Gate --------- */
+let currentUser = null;
+let currentRole = 'guest';
 
-function escapeHtml(s){
-  return String(s||"").replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+function setGate(allowed) {
+  const denied = $('#gate-denied');
+  const body = $('#dashboard-body');
+  if (allowed) {
+    denied.classList.add('hidden');
+    body.classList.remove('hidden');
+  } else {
+    body.classList.add('hidden');
+    denied.classList.remove('hidden');
+  }
+  $('#header-user').textContent = currentUser?.email || '';
+  $('#header-role').textContent = allowed ? 'admin' : (currentRole || 'guest');
 }
-function statusBadgeClass(st){
-  switch(st){
-    case "done": return "bg-emerald-100 text-emerald-700 border border-emerald-300";
-    case "in_progress": return "bg-amber-100 text-amber-700 border border-amber-300";
-    default: return "bg-slate-200 text-slate-700 border border-slate-300";
+
+/* --------- Data Model (Local) --------- */
+const STORAGE_KEY = 'pg_tasks_v1';
+
+const DEFAULT_TASKS = [
+  { id: 'PG-001', name: 'Fix Vessel Analyse Function', description: 'Diagnose and resolve the error within the in-app "analyse" feature. This will likely involve debugging the trigger mechanism and the backend Python service it calls.', area: 'Backend / Frontend', priority: 'Critical', status: 'Not Started' },
+  { id: 'PG-002', name: 'Fix Map Auto-Reload', description: 'Ensure the map component automatically re-fetches the latest data from Firestore when a user navigates back to it, so the status of wrecks is always current without a manual refresh.', area: 'Frontend', priority: 'High', status: 'Not Started' },
+  { id: 'PG-003', name: 'Add Nationality to Map Pop-up', description: "Update the map pop-up UI component to display the vessel's nationality and ensure that data field is being pulled correctly from the main `werpassessments` document.", area: 'Frontend / Firestore', priority: 'Medium', status: 'Not Started' },
+  { id: 'PG-004', name: 'Overlay Marine Protected Areas', description: 'Source a dataset of Marine Protected Areas (MPAs), likely as a GeoJSON file, and render it as a toggleable layer on the main map interface.', area: 'Frontend / Data', priority: 'Medium', status: 'Not Started' },
+  { id: 'PG-005', name: 'Develop Spill Trajectory Simulation', description: 'Use metocean data (currents and wind) to run a basic simulation showing where a potential leak would drift. The output should be a visual path on the map that highlights any intersections with the MPA layer.', area: 'Backend / Data', priority: 'Low', status: 'Not Started' },
+  { id: 'PG-006', name: 'Monitor Earthquakes', description: 'A more robust approach uses Peak Ground Acceleration (PGA) at the wreck location derived from USGS events. Threshold: 0.1g.', area: 'Backend / Data', priority: 'Low', status: 'Not Started' },
+  { id: 'PG-007', name: 'Monitor Tropical Storms', description: 'Shallow (<50m): sustained winds ≥ 64 kn within 100 km. Deep: significant wave height > 6 m or ≥24h hurricane-force winds within core.', area: 'Backend / Data', priority: 'Low', status: 'Not Started' },
+  { id: 'PG-008', name: 'Monitor Ocean Currents', description: 'Flag sustained average current speed > 2 kn for > 48 hours near wreck location. Indicates potential sediment transport and scouring risk.', area: 'Backend / Data', priority: 'Low', status: 'Not Started' },
+  { id: 'PG-009', name: 'Monitor Ocean Acidification', description: 'Long-term risk factor. Flag regions with average pH < 7.8 for accelerated corrosion risk prioritization.', area: 'Backend / Data', priority: 'Low', status: 'Not Started' }
+];
+
+function loadTasks() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [...DEFAULT_TASKS];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [...DEFAULT_TASKS];
+    return parsed;
+  } catch {
+    return [...DEFAULT_TASKS];
   }
 }
-function cycleStatus(st){
-  return st==="pending" ? "in_progress" : st==="in_progress" ? "done" : "pending";
+function saveTasks(tasks) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); } catch {}
 }
 
-function renderTask(id,data){
-  const li=document.createElement('li');
-  li.className="group border rounded-lg p-4 bg-white shadow-sm hover:shadow transition flex flex-col gap-2";
-  const title=escapeHtml(data.title||id);
-  const desc=escapeHtml(data.description||"");
-  const st=data.status||"pending";
-  const created=data.createdAt?.toDate?data.createdAt.toDate().toLocaleString():"—";
-  const tags=Array.isArray(data.tags)?data.tags:[];
-  const tagsHtml=tags.map(t=>`<span class="px-2 py-0.5 text-[10px] rounded bg-slate-100 border border-slate-300 text-slate-600">${escapeHtml(t)}</span>`).join(" ");
-  const adminControls=isAdmin()?`
-    <div class="flex items-center gap-2">
-      <button data-action="cycle" data-id="${id}" class="text-[11px] underline text-indigo-600 hover:text-indigo-500">Cycle</button>
-      <button data-action="delete" data-id="${id}" class="text-[11px] underline text-rose-600 hover:text-rose-500">Delete</button>
-    </div>`:"";
-  li.innerHTML=`
-    <div class="flex flex-col md:flex-row md:items-start gap-2 md:gap-4">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-start gap-2">
-          <h3 class="font-semibold text-slate-800 truncate">${title}</h3>
-          <span class="status-pill ${statusBadgeClass(st)}"
-                data-action="${isAdmin()?'cycle':''}"
-                data-id="${id}"
-                style="cursor:${isAdmin()?'pointer':'default'}">${st.replace(/_/g,' ')}</span>
-        </div>
-        ${desc?`<p class="text-sm text-slate-600 mt-1 whitespace-pre-line">${desc}</p>`:""}
-        ${tagsHtml?`<div class="mt-2 flex flex-wrap gap-1">${tagsHtml}</div>`:""}
-      </div>
-      <div class="flex flex-col items-end gap-1 text-xs text-slate-500">
-        <div><span class="font-medium">Created:</span> ${escapeHtml(created)}</div>
-        ${adminControls}
-      </div>
-    </div>`;
-  return li;
+let tasks = loadTasks();
+
+/* --------- Filters --------- */
+const priorityFilter = $('#priorityFilter');
+const areaFilter = $('#areaFilter');
+
+function applyFilters(list) {
+  const p = priorityFilter?.value || 'all';
+  const a = areaFilter?.value || 'all';
+  return list.filter(t => (p === 'all' || t.priority === p) && (a === 'all' || t.area === a));
 }
 
-function startListener(){
-  if(unsubscribe){ unsubscribe(); }
-  const colRef=collection(db, collectionPath);
-  const q=query(colRef, orderBy("createdAt","desc"));
-  unsubscribe=onSnapshot(q,snap=>{
-    listEl.innerHTML="";
-    if(snap.empty){
-      emptyIndicator.classList.remove("hidden");
-      statusEl.textContent="No tasks.";
-      return;
+/* --------- Charts --------- */
+let statusChart, priorityChart;
+
+function rebuildCharts() {
+  const ctxStatus = document.getElementById('statusChart').getContext('2d');
+  const ctxPriority = document.getElementById('priorityChart').getContext('2d');
+
+  const byStatus = tasks.reduce((acc, t) => { acc[t.status] = (acc[t.status] || 0) + 1; return acc; }, {});
+  const byPriority = tasks.reduce((acc, t) => { acc[t.priority] = (acc[t.priority] || 0) + 1; return acc; }, {});
+
+  const commonOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#cbd5e1' } } }
+  };
+
+  // Status (doughnut)
+  if (statusChart) statusChart.destroy();
+  statusChart = new Chart(ctxStatus, {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(byStatus),
+      datasets: [{
+        label: 'Tasks by Status',
+        data: Object.values(byStatus),
+        backgroundColor: ['#475569', '#06b6d4', '#22c55e'],
+        borderColor: '#0f172a',
+        borderWidth: 3
+      }]
+    },
+    options: {
+      ...commonOpts,
+      plugins: { ...commonOpts.plugins, title: { display: true, text: 'Tasks by Status', color: '#e2e8f0' } }
     }
-    emptyIndicator.classList.add("hidden");
-    statusEl.textContent="";
-    snap.forEach(d=>listEl.appendChild(renderTask(d.id,d.data())));
-  },err=>{
-    console.error("[tasks] listener error",err);
-    statusEl.textContent="Permission denied or network error.";
+  });
+
+  // Priority (bar)
+  if (priorityChart) priorityChart.destroy();
+  priorityChart = new Chart(ctxPriority, {
+    type: 'bar',
+    data: {
+      labels: Object.keys(byPriority),
+      datasets: [{
+        label: 'Tasks by Priority',
+        data: Object.values(byPriority),
+        backgroundColor: ['#22c55e', '#eab308', '#f97316', '#ef4444'],
+        borderColor: '#0f172a',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      ...commonOpts,
+      scales: {
+        x: { ticks: { color: '#cbd5e1' }, grid: { color: 'rgba(148,163,184,0.15)' } },
+        y: { ticks: { color: '#cbd5e1', stepSize: 1 }, grid: { color: 'rgba(148,163,184,0.15)' }, beginAtZero: true }
+      },
+      plugins: {
+        ...commonOpts.plugins,
+        title: { display: true, text: 'Tasks by Priority', color: '#e2e8f0' },
+        legend: { display: false }
+      }
+    }
   });
 }
 
-async function createTask(e){
+/* --------- Kanban --------- */
+const STATUS_ORDER = ['Not Started', 'In Progress', 'Done'];
+const PRIORITY_BADGES = {
+  'Critical': 'text-rose-300 border-rose-400/30 bg-rose-500/10',
+  'High': 'text-orange-300 border-orange-400/30 bg-orange-500/10',
+  'Medium': 'text-amber-200 border-amber-300/30 bg-amber-400/10',
+  'Low': 'text-emerald-200 border-emerald-300/30 bg-emerald-400/10'
+};
+
+const board = $('#kanban-board');
+
+function renderBoard() {
+  if (!board) return;
+  board.innerHTML = '';
+  const filtered = applyFilters(tasks);
+
+  STATUS_ORDER.forEach(status => {
+    const col = document.createElement('div');
+    col.className = 'kanban-column card-inner p-3 min-h-[320px]';
+    col.dataset.status = status;
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between pb-2 border-b border-white/10';
+    header.innerHTML = `<h3 class="text-slate-200 font-semibold">${status}</h3>
+      <span class="text-xs text-slate-400">${filtered.filter(t=>t.status===status).length}</span>`;
+    col.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'pt-3 space-y-3';
+
+    filtered
+      .filter(t => t.status === status)
+      .forEach(task => {
+        const card = document.createElement('div');
+        card.className = 'task-card bg-surface-800 border border-white/10 rounded-lg p-3 hover:border-white/20 transition cursor-grab';
+        card.draggable = true;
+        card.dataset.id = task.id;
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-3">
+            <div class="font-medium text-slate-100">${escapeHtml(task.name)}</div>
+            <span class="px-2 py-0.5 rounded-md border text-[11px] ${PRIORITY_BADGES[task.priority]||'text-slate-300 border-white/10 bg-white/5'}">${task.priority}</span>
+          </div>
+          <div class="mt-2 text-xs text-slate-400">${task.id}</div>
+        `;
+        // Events
+        card.addEventListener('click', () => openViewModal(task.id));
+        card.addEventListener('dragstart', handleDragStart);
+        card.addEventListener('dragend', handleDragEnd);
+
+        list.appendChild(card);
+      });
+
+    // DnD targets
+    col.addEventListener('dragover', handleDragOver);
+    col.addEventListener('dragleave', handleDragLeave);
+    col.addEventListener('drop', handleDrop);
+
+    col.appendChild(list);
+    board.appendChild(col);
+  });
+}
+
+/* --------- Modals --------- */
+const taskModal = $('#taskModal');
+const addTaskModal = $('#addTaskModal');
+
+function openViewModal(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  $('#modal-title').textContent = task.name;
+  $('#modal-id').textContent = task.id;
+  $('#modal-description').innerHTML = (task.description||'').replace(/\n/g,'<br/>');
+  $('#modal-priority').innerHTML = `<span class="px-2 py-0.5 rounded-md border text-[12px] ${PRIORITY_BADGES[task.priority]||'text-slate-300 border-white/10 bg-white/5'}">${task.priority}</span>`;
+  $('#modal-area').textContent = task.area;
+  $('#modal-status').textContent = task.status;
+
+  taskModal.classList.remove('hidden');
+  taskModal.classList.add('flex');
+}
+function closeViewModal() {
+  taskModal.classList.add('hidden');
+  taskModal.classList.remove('flex');
+}
+
+function openAddModal() {
+  addTaskModal.classList.remove('hidden');
+  addTaskModal.classList.add('flex');
+}
+function closeAddModal() {
+  addTaskModal.classList.add('hidden');
+  addTaskModal.classList.remove('flex');
+}
+
+$('#closeModal')?.addEventListener('click', closeViewModal);
+taskModal?.addEventListener('click', (e)=>{
+  if (e.target === taskModal) closeViewModal();
+});
+$('#cancelAddTaskBtn')?.addEventListener('click', closeAddModal);
+addTaskModal?.addEventListener('click', (e)=>{
+  if (e.target === addTaskModal) closeAddModal();
+});
+
+/* --------- Add Task --------- */
+$('#addTaskBtn')?.addEventListener('click', openAddModal);
+
+$('#addTaskForm')?.addEventListener('submit', (e)=>{
   e.preventDefault();
-  if(!isAdmin()){ createMsg.textContent="Not authorized."; return; }
-  const title=titleInput.value.trim();
-  if(!title){ createMsg.textContent="Title required."; return; }
-  const description=descInput.value.trim();
-  const status=statusInput.value;
-  const tags=tagsInput.value.split(',').map(t=>t.trim()).filter(Boolean);
-  createMsg.textContent="Creating…";
-  try{
-    const id=crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2);
-    await setDoc(doc(collection(db, collectionPath), id), {
-      title, description, status, tags,
-      createdAt: serverTimestamp(),
-      createdBy: getCurrentUser()?.uid || null
-    });
-    titleInput.value="";
-    descInput.value="";
-    tagsInput.value="";
-    statusInput.value="pending";
-    createMsg.textContent="Created.";
-    setTimeout(()=>createMsg.textContent="",2000);
-  }catch(e2){
-    console.error(e2);
-    createMsg.textContent=e2?.message||"Failed.";
-  }
-}
+  const name = $('#newTaskName').value.trim();
+  const description = $('#newTaskDescription').value.trim();
+  const priority = $('#newTaskPriority').value;
+  const area = $('#newTaskArea').value;
 
-async function cycleTaskStatus(id){
-  if(!isAdmin()) return;
-  const pill=listEl.querySelector(`.status-pill[data-id="${CSS.escape(id)}"]`);
-  if(!pill) return;
-  const current=pill.textContent.trim().replace(/\s+/g,'_');
-  const next=cycleStatus(current);
-  pill.textContent=next.replace(/_/g,' ');
-  pill.className="status-pill "+statusBadgeClass(next);
-  try{
-    await updateDoc(doc(db, collectionPath, id), { status: next, updatedAt: serverTimestamp() });
-  }catch(e){ console.error(e); statusEl.textContent="Update failed."; }
-}
+  // Generate next ID
+  const maxNum = tasks
+    .map(t => Number(String(t.id).split('-')[1]||0))
+    .reduce((m,v)=>Number.isFinite(v)&&v>m?v:m, 0);
+  const nextId = `PG-${String(maxNum+1).padStart(3,'0')}`;
 
-async function deleteTask(id){
-  if(!isAdmin()) return;
-  if(!confirm("Delete this task?")) return;
-  try{
-    await deleteDoc(doc(db, collectionPath, id));
-  }catch(e){ console.error(e); statusEl.textContent="Delete failed."; }
-}
-
-listEl.addEventListener("click", e=>{
-  const t=e.target.closest("[data-action]");
-  if(!t) return;
-  const action=t.getAttribute("data-action");
-  const id=t.getAttribute("data-id");
-  if(!id) return;
-  if(action==="cycle") cycleTaskStatus(id);
-  else if(action==="delete") deleteTask(id);
+  tasks.push({
+    id: nextId, name, description, priority, area, status: 'Not Started'
+  });
+  saveTasks(tasks);
+  renderBoard();
+  rebuildCharts();
+  e.target.reset();
+  closeAddModal();
 });
-taskForm?.addEventListener("submit", createTask);
 
-onAuthChanged(user=>{
-  hdrEmail.textContent = user ? (user.email || user.uid) : "Not signed in";
+/* --------- DnD --------- */
+let draggingId = null;
+
+function handleDragStart(e) {
+  draggingId = e.currentTarget?.dataset?.id || null;
+  e.currentTarget?.classList.add('dragging');
+}
+function handleDragEnd(e) {
+  e.currentTarget?.classList.remove('dragging');
+  draggingId = null;
+}
+function handleDragOver(e) {
+  e.preventDefault();
+  const col = e.currentTarget;
+  col.classList.add('drop-target');
+}
+function handleDragLeave(e) {
+  e.currentTarget.classList.remove('drop-target');
+}
+function handleDrop(e) {
+  e.preventDefault();
+  const col = e.currentTarget;
+  col.classList.remove('drop-target');
+  const toStatus = col.dataset.status;
+  if (!draggingId || !toStatus) return;
+  const t = tasks.find(x => x.id === draggingId);
+  if (!t) return;
+  t.status = toStatus;
+  saveTasks(tasks);
+  renderBoard();
+  rebuildCharts();
+}
+
+/* --------- Filters --------- */
+priorityFilter?.addEventListener('change', renderBoard);
+areaFilter?.addEventListener('change', renderBoard);
+
+/* --------- Helpers --------- */
+function escapeHtml(s){ return String(s||'').replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;","\">":"&gt;","\"":"&quot;","'":"&#39;"}[c]||c)); }
+
+/* --------- Auth & Init --------- */
+onAuthChanged((user)=>{
+  currentUser = user;
+  $('#header-user').textContent = user?.email || '';
 });
+
 onRoleResolved(({ role })=>{
-  hdrRole.textContent = role;
-  if(isAdmin()){
-    createSection.classList.remove("hidden");
-    if(!unsubscribe) startListener();
-  } else {
-    createSection.classList.add("hidden");
+  currentRole = role || 'guest';
+  const allowed = isAdmin();
+  setGate(allowed);
+  if (allowed) {
+    // Initialize UI
+    renderBoard();
+    rebuildCharts();
   }
 });
-onAuthorized(['admin'], ()=>{
-  statusEl.textContent="Loading tasks...";
-  if(!unsubscribe) startListener();
-});
-signOutBtn?.addEventListener("click", async ()=>{
-  await signOutUser();
-  location.reload();
-});
-statusEl.textContent="Initializing…";
-console.debug("[tasks-dashboard] collectionPath:", collectionPath);
