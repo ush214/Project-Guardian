@@ -1,4 +1,4 @@
-// Firestore-persisted Task Dashboard (allowlisted users can write; admins can also delete in future).
+// Firestore-persisted Task Dashboard (allowlisted users can write; admins can also delete).
 // Requires: auth-role.js (exports db, isAdmin, isContributor, isAllowlisted, onAuthChanged, onRoleResolved)
 
 import {
@@ -7,7 +7,7 @@ import {
 
 import {
   collection, doc, setDoc, updateDoc, onSnapshot,
-  serverTimestamp, runTransaction
+  serverTimestamp, runTransaction, deleteDoc
 } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
 const $ = (s) => document.querySelector(s);
@@ -15,7 +15,7 @@ const $ = (s) => document.querySelector(s);
 /* ---------- Access helpers ---------- */
 const CAN_READ = () => isAllowlisted();
 const CAN_WRITE = () => isAllowlisted(); // approved users can add/move
-// const CAN_DELETE = () => isAdmin(); // for future administrative deletes
+const CAN_DELETE = () => isAdmin();      // admins can delete
 
 /* ---------- Gate ---------- */
 let currentUser = null;
@@ -172,22 +172,44 @@ function renderBoard(tasks) {
   });
 }
 
-/* ---------- Modal logic ---------- */
+/* ---------- Modal logic (with admin-only delete) ---------- */
 const taskModal = $('#taskModal');
 const addTaskModal = $('#addTaskModal');
+const deleteBtn = $('#deleteTaskBtn');
+
+let viewingTaskId = null;
 
 function openViewModal(task) {
+  viewingTaskId = task.id || null;
   $('#modal-title').textContent = task.name || '';
   $('#modal-id').textContent = task.id || '';
   $('#modal-description').innerHTML = String(task.description||'').replace(/\n/g,'<br/>');
   $('#modal-priority').innerHTML = `<span class="px-2 py-0.5 rounded-md border text-[12px] ${PRIORITY_BADGES[task.priority]||'text-slate-300 border-white/10 bg-white/5'}">${task.priority||''}</span>`;
   $('#modal-area').textContent = task.area || '';
   $('#modal-status').textContent = task.status || '';
+  if (deleteBtn) deleteBtn.classList.toggle('hidden', !CAN_DELETE());
   taskModal.classList.remove('hidden'); taskModal.classList.add('flex');
 }
-function closeViewModal() { taskModal.classList.add('hidden'); taskModal.classList.remove('flex'); }
+function closeViewModal() { taskModal.classList.add('hidden'); taskModal.classList.remove('flex'); viewingTaskId = null; }
 $('#closeModal')?.addEventListener('click', closeViewModal);
 taskModal?.addEventListener('click', (e)=>{ if (e.target === taskModal) closeViewModal(); });
+
+deleteBtn?.addEventListener('click', async ()=>{
+  if (!CAN_DELETE()) { alert('Admin only.'); return; }
+  if (!viewingTaskId) return;
+  const ok = confirm(`Delete task ${viewingTaskId}? This cannot be undone.`);
+  if (!ok) return;
+  try {
+    await deleteDoc(doc(collection(db, TASKS_PATH), viewingTaskId));
+    closeViewModal();
+  } catch (err) {
+    console.error('[tasks] delete failed', err);
+    alert('Failed to delete task. Check console for details.');
+  }
+});
+
+/* ---------- Add Task (allowlisted) ---------- */
+$('#addTaskBtn')?.addEventListener('click', openAddModal);
 
 function openAddModal() {
   if (!CAN_WRITE()) { alert('You need an approved account to add tasks.'); return; }
@@ -196,9 +218,6 @@ function openAddModal() {
 function closeAddModal() { addTaskModal.classList.add('hidden'); addTaskModal.classList.remove('flex'); }
 $('#cancelAddTaskBtn')?.addEventListener('click', closeAddModal);
 addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ closeViewModal(); closeAddModal(); }});
-
-/* ---------- Add Task (allowlisted) ---------- */
-$('#addTaskBtn')?.addEventListener('click', openAddModal);
 
 $('#addTaskForm')?.addEventListener('submit', async (e)=>{
   e.preventDefault();

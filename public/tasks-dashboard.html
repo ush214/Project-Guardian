@@ -117,7 +117,7 @@
     </section>
   </main>
 
-  <!-- View Modal -->
+  <!-- View Modal (UPDATED: footer with Delete button) -->
   <div id="taskModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
     <div class="card-surface w-full max-w-2xl shadow-card">
       <div class="p-5 border-b border-white/10 flex items-start justify-between">
@@ -146,6 +146,10 @@
             <p id="modal-status" class="text-sm"></p>
           </div>
         </div>
+      </div>
+      <div class="px-5 py-4 border-t border-white/10 flex items-center justify-between">
+        <div class="text-xs text-slate-400">Admin tools</div>
+        <button id="deleteTaskBtn" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm hidden">Delete Task</button>
       </div>
     </div>
   </div>
