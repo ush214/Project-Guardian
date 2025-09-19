@@ -37,12 +37,6 @@
     ::-webkit-scrollbar-thumb:hover { background: #334155; }
     .fade-enter { opacity:0; transform:translateY(4px); }
     .fade-enter-active { transition:all .28s; opacity:1; transform:translateY(0); }
-    .img-badge {
-      position:absolute; top:4px; left:4px;
-      background:rgba(0,0,0,0.55); color:#e2e8f0;
-      font-size:10px; padding:2px 5px; border-radius:4px;
-      letter-spacing:.5px; text-transform:uppercase;
-    }
     .note-block { border:1px solid rgba(255,255,255,0.08); background:#0f172a; }
     .admin-btn { opacity:.85; } .admin-btn:hover { opacity:1; }
     @media print {
@@ -50,19 +44,14 @@
       .no-print { display:none!important; }
       body { background:#ffffff!important; }
     }
-    .radar-wrapper { height: 240px; position: relative; }
-    @media (max-width: 640px){ .radar-wrapper { height: 200px; } }
-    .radar-grid { display: grid; gap: 1rem; }
-    @media (min-width: 768px) { .radar-grid { grid-template-columns: 1fr 260px; align-items: stretch; } }
-    #map-status-badge {
-      position:absolute; top:8px; right:8px;
-      background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
-      color:#e2e8f0; font-size:11px; padding:4px 8px; border:1px solid rgba(255,255,255,0.15);
-      border-radius:6px; z-index:500; pointer-events:none;
-    }
+    .radar-wrapper { height: 260px; position: relative; }
+    @media (max-width: 640px){ .radar-wrapper { height: 220px; } }
     .leaflet-container { background:#0f172a; }
     .card-surface { background: rgba(15,23,42,0.70); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; }
     .card-inner { background: rgba(30,41,59,0.50); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; }
+    table.report { width:100%; border-collapse: collapse; }
+    table.report th, table.report td { border:1px solid rgba(255,255,255,0.08); padding:6px 8px; vertical-align: top; }
+    table.report th { background: rgba(255,255,255,0.04); font-weight:600; }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -125,7 +114,9 @@ const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/w
 /* Utilities */
 const $ = s => document.querySelector(s);
 const getText = v => v==null ? "" : String(v).trim();
+const escapeHtml = s => String(s||"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 const debounce = (fn,ms=250)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+
 function showToast(msg,type='info'){
   const stack=$('#toast-stack'); if(!stack)return;
   const color=type==='success'?'bg-emerald-600':type==='error'?'bg-rose-600':'bg-slate-700';
@@ -136,6 +127,7 @@ function showToast(msg,type='info'){
   requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
   setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
 }
+
 const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
 const WEB_IMG_EXT_RX = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(?:\?|#|$)/i;
 function isHttpUrl(u) {
@@ -144,28 +136,21 @@ function isHttpUrl(u) {
   if (!s || s.startsWith("data:") || s.startsWith("blob:")) return false;
   return /^https?:\/\//i.test(s);
 }
-function looksLikeImageUrl(u) {
-  return isHttpUrl(u) && WEB_IMG_EXT_RX.test(u);
-}
+function looksLikeImageUrl(u) { return isHttpUrl(u) && WEB_IMG_EXT_RX.test(u); }
 function dedupe(arr) {
-  const seen = new Set(); const out = [];
-  for (const v of arr) {
-    const k = String(v || "");
-    if (!k || seen.has(k)) continue;
-    seen.add(k); out.push(v);
-  }
+  const seen=new Set(), out=[];
+  for(const v of arr){ const k=String(v||""); if(!k||seen.has(k)) continue; seen.add(k); out.push(v); }
   return out;
 }
 
-/* Image helpers: prefer cached Storage assets; fallback to external URLs */
+/* Image helpers (cached asset first, fallback external) */
 function getExternalImageUrls(item) {
   const urls = [];
   const arr = Array.isArray(item?.media?.images) ? item.media.images : [];
   for (const it of arr) {
     if (!it) continue;
-    if (typeof it === "string" && looksLikeImageUrl(it)) {
-      urls.push(it);
-    } else if (typeof it === "object") {
+    if (typeof it === "string" && looksLikeImageUrl(it)) urls.push(it);
+    else if (typeof it === "object") {
       const cands = [it.url, it.href, it.src, it.imageUrl, it.thumbnail, it.thumb, it.picture, it.pic];
       for (const c of cands) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
       if (it.link && typeof it.link === "object") {
@@ -214,10 +199,7 @@ function vesselNationality(it){
     it?.historical?.nationality, it?.historical?.flag, it?.historical?.country, it?.historical?.vesselNationality, it?.historical?.vesselFlag,
     it?.vessel?.nationality, it?.vessel?.flag, it?.vessel?.country
   ];
-  for (const v of cands) {
-    const t = getText(v);
-    if (t) return t;
-  }
+  for (const v of cands) { const t = getText(v); if (t) return t; }
   return "";
 }
 function vesselSummary(it){
@@ -227,44 +209,21 @@ function vesselSummary(it){
          "No summary available.";
 }
 
-/* Severity helpers */
-const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
-function computeSeverityTotal({ wcs, phs, esi, rpm }) { return (wcs + phs + (esi / 3)) * rpm; }
-function categorizeSeverity(score) {
-  if (score > ACTION_THRESHOLDS.critical) return "critical";
-  if (score >= ACTION_THRESHOLDS.high) return "high";
-  if (score >= ACTION_THRESHOLDS.medium) return "medium";
-  return "low";
-}
-function rpmFinalMultiplier(it){
-  const m=Number(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
-  return Number.isFinite(m)?m:1;
-}
-function severityCategoryForItem(it){
-  const wcs = Number(it?.totals?.wcs||0);
-  const phs = Number(it?.totals?.phs||0);
-  const esi = Number(it?.totals?.esi||0);
-  const rpm = rpmFinalMultiplier(it);
-  return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
-}
+/* Coordinates helper */
 function resolveCoordinates(item){
-  const toNumL=v=>{ const n=Number(v); return Number.isFinite(n)?n:null; };
+  const toNum=v=>{ const n=Number(v); return Number.isFinite(n)?n:null; };
   function extract(obj){
     if(!obj)return null;
     if(Array.isArray(obj)&&obj.length>=2){
-      const lng=toNumL(obj[0]); const lat=toNumL(obj[1]);
+      const lng=toNum(obj[0]); const lat=toNum(obj[1]);
       if(lat!=null && lng!=null) return {lat,lng};
       return null;
     }
-    if(obj.coordinates){
-      const nested=extract(obj.coordinates); if(nested)return nested;
-    }
-    const lat=toNumL(obj.latitude ?? obj.lat ?? obj.y);
-    const lng=toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
+    if(obj.coordinates){ const nested=extract(obj.coordinates); if(nested) return nested; }
+    const lat=toNum(obj.latitude ?? obj.lat ?? obj.y);
+    const lng=toNum(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
     if(lat!=null && lng!=null) return {lat,lng};
-    if(obj.latlng){
-      const ll=extract(obj.latlng); if(ll)return ll;
-    }
+    if(obj.latlng){ const ll=extract(obj.latlng); if(ll) return ll; }
     return null;
   }
   const cands=[
@@ -278,31 +237,234 @@ function resolveCoordinates(item){
   return null;
 }
 
-/* Storage and Functions */
-const storage = getStorage();
-let callable = { analyzeWerps:null, reassessWerps:null };
-try { callable.analyzeWerps = httpsCallable(sharedFunctions,"analyzeWerps"); } catch {}
-try { callable.reassessWerps = httpsCallable(sharedFunctions,"reassessWerps"); } catch {}
+/* Scoring helpers for full report */
+const deepGet=(o,p)=>p.split(".").reduce((a,k)=>a&&a[k]!=null?a[k]:undefined,o);
+const isFiniteNum = (n) => typeof n === "number" && Number.isFinite(n);
+function readNumberByPaths(obj, paths) {
+  for (const p of paths) {
+    const v = deepGet(obj, p);
+    if (v == null) continue;
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const m = v.match(/-?\d+(\.\d+)?/);
+      if (m) { const n = Number(m[0]); if (Number.isFinite(n)) return n; }
+    }
+  }
+  return null;
+}
+function hasUnifiedV2(item) {
+  return Array.isArray(item?.wcs?.parameters)
+      && Array.isArray(item?.phs?.parameters)
+      && Array.isArray(item?.esi?.parameters)
+      && (Array.isArray(item?.rpm?.factors) || Array.isArray(item?.rpm?.parameters) || isFiniteNum(item?.rpm?.finalMultiplier));
+}
+function resolveRPMMultiplier(item) {
+  const toNum = (v)=>{ const n=Number(v); return Number.isFinite(n)?n:null; };
+  const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+  const explicit = toNum(deepGet(item, "rpm.finalMultiplier")) ?? toNum(deepGet(item, "RPM.finalMultiplier"));
+  if (Number.isFinite(explicit)) return clamp(explicit, 0.5, 2.5);
+  const factors = deepGet(item, "rpm.factors") || deepGet(item, "RPM.factors") || deepGet(item, "rpm.parameters");
+  if (Array.isArray(factors) && factors.length) {
+    let base = 1.0;
+    for (const f of factors) {
+      const name = String(f?.name ?? f?.factor ?? "").toLowerCase();
+      let v = toNum(f?.value); if (!Number.isFinite(v)) continue;
+      if (name.includes("chemical")) v = Math.min(v, 1.2);
+      else if (name.includes("thermal") || name.includes("warming") || name.includes("temperature")) v = Math.min(v, 1.4);
+      else if (name.includes("physical") || name.includes("seismic") || name.includes("storm") || name.includes("current")) v = Math.min(v, 1.4);
+      else v = Math.min(v, 1.4);
+      base += Math.max(v - 1.0, 0);
+    }
+    return clamp(base, 0.5, 2.5);
+  }
+  const generic = toNum(deepGet(item, "rpm")) ?? toNum(deepGet(item, "RPM")) ?? toNum(deepGet(item, "scores.RPM"));
+  if (Number.isFinite(generic)) return clamp(generic, 0.5, 2.5);
+  return 1.0;
+}
+function normalizeWcsParameters(rawParams = []) {
+  const params = (Array.isArray(rawParams) ? rawParams : [])
+    .map(p => ({ name: String(p?.name ?? p?.parameter ?? "").trim(), rationale: String(p?.rationale ?? "").trim(), score: Number(p?.score) }))
+    .filter(p => (p.name || p.rationale) && Number.isFinite(p.score));
+  const rawScores = params.map(p => p.score);
+  const maxScore = rawScores.length ? Math.max(...rawScores) : 0;
+  const scale = maxScore > 5 && maxScore <= 10 ? 10 : 5;
+  const scaleNote = maxScore > 5;
+  const rx = {
+    age: [/\bage\b/i, /\byear/i, /\bbuilt\b/i, /\blaunched\b/i, /\bcommission/i, /\bdecommission/i, /since\s*sink/i, /\bsubmerged\b/i],
+    vessel: [/\bvessel\b/i, /\bship\b/i, /\bclass\b/i, /\btype\b/i, /\bsize\b/i, /\btonnage\b/i, /\bgrt\b/i, /\bdisplacement\b/i],
+    trauma: [/\btorpedo/i, /\bdepth\s*charge/i, /\bmine\b/i, /\bbomb/i, /\bexplosion/i, /\bdetonat/i, /\bshell/i, /\bgunfire\b/i, /\bcollision\b/i, /\bgrounding\b/i],
+    integrity: [/\bstructur/i, /\bintegrit/i, /\bintact\b/i, /\bcollaps/i, /\bfragment/i, /\bbroken\b/i, /\bruptur/i, /\bhull\b/i]
+  };
+  function matchScore(p, patterns) {
+    const name = p.name || "", rat = p.rationale || ""; let s = 0;
+    for (const re of (Array.isArray(patterns) ? patterns : [patterns])) { if (re.test(name)) s += 3; if (re.test(rat)) s += 1; }
+    return s;
+  }
+  function best(patterns) { let best = null; for (const p of params) { const s = matchScore(p, patterns); if (s > 0 && (!best || s > best.s)) best = { p, s }; } return best?.p; }
+  const picks = { age: best(rx.age), vessel: best(rx.vessel), trauma: best(rx.trauma), integrity: best(rx.integrity) };
+  const norm = (v) => !Number.isFinite(v) ? 0 : scale === 10 ? Math.max(0, Math.min(5, v/2)) : Math.max(0, Math.min(5, v));
+  let traumaNormalized, traumaRationale = "Not provided.";
+  if (picks.trauma) { traumaNormalized = norm(picks.trauma.score); traumaRationale = picks.trauma.rationale || "Not provided."; }
+  else if (picks.integrity) {
+    const rat = picks.integrity.rationale || "", name = picks.integrity.name || "";
+    const looks = rx.trauma.some(re => re.test(rat) || re.test(name));
+    traumaNormalized = looks ? 5 : 0; traumaRationale = looks ? (rat || "Derived from integrity rationale.") : "Not provided.";
+  } else traumaNormalized = 0;
+  const rows = [
+    { title: "Age", rationale: picks.age?.rationale || "Not provided.", normalized: norm(picks.age?.score ?? 0) },
+    { title: "Vessel Type/Size", rationale: picks.vessel?.rationale || "Not provided.", normalized: norm(picks.vessel?.score ?? 0) },
+    { title: "Sinking Trauma", rationale: traumaRationale, normalized: norm(picks.trauma?.score ?? 0) },
+    { title: "Current Structural Integrity", rationale: picks.integrity?.rationale || "Not provided.", normalized: norm(picks.integrity?.score ?? 0) }
+  ];
+  const total = rows.reduce((s, r) => s + (Number(r.normalized) || 0), 0);
+  return { rows, total: Number(total.toFixed(2)), scaleNote };
+}
+function normalizePhsWeights(params = []) {
+  function parseScore(v) {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const m = v.match(/-?\d+(\.\d+)?/);
+      if (m) return Number(m[0]);
+    }
+    if (v != null) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return NaN;
+  }
+  function parseWeightFrom(obj) {
+    const keys = ["weight","Weight","w","W","weightPct","weight_percent","weightPercent","percentage","percent","Percent","Percentage","Weight (%)","Weight %","Weight(%)"];
+    for (const k of keys) {
+      if (obj && Object.prototype.hasOwnProperty.call(obj, k)) {
+        const raw = obj[k];
+        if (typeof raw === "number" && Number.isFinite(raw)) return { value: raw, hadPercent: raw > 1.5 || raw > 100 };
+        if (typeof raw === "string") {
+          const t = raw.trim(); const hadPercent = /%/.test(t);
+          const num = parseFloat(t.replace("%","")); if (Number.isFinite(num)) return { value: num, hadPercent };
+        }
+      }
+    }
+    return { value: NaN, hadPercent: false };
+  }
+  const items = (Array.isArray(params) ? params : [])
+    .map((p) => {
+      const name = String(p?.name ?? p?.parameter ?? p?.title ?? "").trim();
+      const rationale = String(p?.rationale ?? p?.notes ?? p?.note ?? "").trim();
+      const scoreRaw = parseScore(p?.score ?? p?.value ?? p?.points);
+      const { value: weightRaw, hadPercent } = parseWeightFrom(p || {});
+      return { name, rationale, scoreRaw, weightRaw, hadPercent };
+    })
+    .filter((i) => i.name && Number.isFinite(i.scoreRaw));
+  if (!items.length) return { rows: [], totalWeighted: 0, asPercent: false, renormalized: false };
+  const clampScore = (v) => Math.max(0, Math.min(10, Number(v) || 0));
+  let anyWeights=false, anyPercentHint=false;
+  const weights = items.map(i=>{
+    const w=Number(i.weightRaw);
+    if (Number.isFinite(w) && w>0){ anyWeights=true; if (i.hadPercent) anyPercentHint = true; return w; }
+    return NaN;
+  });
+  let weightFracs, asPercent=false, renormalized=false;
+  if (!anyWeights) {
+    const frac=1/items.length; weightFracs=items.map(()=>frac);
+  } else {
+    const finite = weights.map(w=>Number.isFinite(w)?w:0);
+    const sumW = finite.reduce((a,b)=>a+b,0);
+    if (anyPercentHint || (sumW > 85 && sumW < 115)) {
+      asPercent = true; weightFracs = finite.map(w=>w/100);
+    } else { weightFracs = finite.slice(); }
+    let fracSum = weightFracs.reduce((a,b)=>a+(Number.isFinite(b)?b:0),0);
+    if (!Number.isFinite(fracSum) || fracSum<=0) { const f=1/items.length; weightFracs=items.map(()=>f); }
+    else if (Math.abs(fracSum-1)>0.01){ weightFracs=weightFracs.map(w=>Number.isFinite(w)?w/fracSum:0); renormalized=true; }
+  }
+  const rows = items.map((i,idx)=>{
+    const weightFrac = weightFracs[idx] || 0;
+    const weightPct = weightFrac * 100;
+    const score = clampScore(i.scoreRaw);
+    const weighted = score * weightFrac;
+    return { name:i.name, rationale:i.rationale, weightFrac, weightPct, score, weighted };
+  });
+  const totalWeighted = rows.reduce((s,r)=>s+r.weighted,0);
+  return { rows, totalWeighted: Number(totalWeighted.toFixed(2)), asPercent, renormalized };
+}
+function v2Totals(item) {
+  const wNorm = normalizeWcsParameters(item?.wcs?.parameters || []);
+  const wcs = wNorm.total;
+  const p = normalizePhsWeights(item?.phs?.parameters || []);
+  const phs = Math.max(0, Math.min(10, p.totalWeighted));
+  const eParams = Array.isArray(item?.esi?.parameters) ? item.esi.parameters : [];
+  const esi = eParams.reduce((s, par) => s + Math.max(0, Math.min(10, Number(par?.score) || 0)), 0);
+  const esiMax = Number(item?.esi?.maxScore) || (eParams.length ? eParams.length * 10 : 30);
+  const rpm = resolveRPMMultiplier(item);
+  return { wcs, phs, esi, esiMax, rpm, wcsRows: wNorm.rows, phsRows: p.rows, phsRenormalized: p.renormalized, wcsScaleNote: wNorm.scaleNote };
+}
+function computeFormulaSeverity(item) {
+  if (hasUnifiedV2(item)) { const v = v2Totals(item); return (v.wcs + v.phs + (v.esi / 3)) * v.rpm; }
+  const W = readNumberByPaths(item, ["scores.WCS","wcs","WCS","phase1.screening.WCS","phase2.scores.WCS"]) ?? 0;
+  const P = readNumberByPaths(item, ["scores.PHS","phs","PHS","phase1.screening.PHS","phase2.scores.PHS"]) ?? 0;
+  const E = readNumberByPaths(item, ["scores.ESI","esi","ESI","phase1.screening.ESI","phase2.scores.ESI"]) ?? 0;
+  const R = resolveRPMMultiplier(item);
+  return (W + P + (E / 3)) * R;
+}
 
-/* App State */
-const state = {
-  wrecks: [],
-  byIdPath: new Map(),
-  currentWreck: null,
-  currentRoute: null,
-  role: 'user',
-  user: null,
-  listeners: [],
-  filters: { severity:'all', stage:'all', search:'' },
-  leafletMap: null,
-  leafletMarkers: new Map(),
-  mapStatus: 'init'
-};
-window.pgState = state;
+/* Severity categorization used by map/list */
+const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
+function computeSeverityTotal({ wcs, phs, esi, rpm }) { return (wcs + phs + (esi / 3)) * rpm; }
+function categorizeSeverity(score) {
+  if (score > ACTION_THRESHOLDS.critical) return "critical";
+  if (score >= ACTION_THRESHOLDS.high) return "high";
+  if (score >= ACTION_THRESHOLDS.medium) return "medium";
+  return "low";
+}
+function rpmFinalMultiplier(it){
+  const m=Number(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
+  return Number.isFinite(m)?m:1;
+}
+function severityCategoryForItem(it){
+  if (hasUnifiedV2(it)) {
+    const v=v2Totals(it); return categorizeSeverity(computeSeverityTotal(v));
+  }
+  const wcs = Number(it?.totals?.wcs||0);
+  const phs = Number(it?.totals?.phs||0);
+  const esi = Number(it?.totals?.esi||0);
+  const rpm = rpmFinalMultiplier(it);
+  return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
+}
 
-/* Map helpers (Leaflet) */
+/* Radar */
+let radarChart=null;
+function renderRadar(canvas, item){
+  if(!canvas) return;
+  if (radarChart) try{ radarChart.destroy(); }catch{}
+  let w, p, e, rpm;
+  if (hasUnifiedV2(item)) { const v=v2Totals(item); w=v.wcs; p=v.phs; e=v.esi; rpm=v.rpm; }
+  else { w=Number(item?.totals?.wcs||0); p=Number(item?.totals?.phs||0); e=Number(item?.totals?.esi||0); rpm=rpmFinalMultiplier(item); }
+  // Scale to 0–20 radial scale for visual parity
+  const to20 = (val,max)=> Math.max(0, Math.min(20, max ? (val/max)*20 : val));
+  const w20 = Math.max(0, Math.min(20, w)); // assume WCS already on 0–20
+  const p20 = to20(p,10);
+  const esiMax = hasUnifiedV2(item) ? (v2Totals(item).esiMax || 30) : 30;
+  const e20 = to20(e,esiMax);
+  const r20 = Math.max(0, Math.min(20, ((Math.min(Math.max(rpm,0.5),2.5) - 0.5)/2.0)*20));
+  radarChart = new Chart(canvas.getContext('2d'), {
+    type:'radar',
+    data:{
+      labels:['WCS','PHS','ESI','RPM'],
+      datasets:[
+        { label:'Profile', data:[w20,p20,e20,r20], backgroundColor:'rgba(30,64,175,0.22)', borderColor:'rgba(30,64,175,1)', pointBackgroundColor:'rgba(30,64,175,1)' }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{ r:{ suggestedMin:0, suggestedMax:20, ticks:{ stepSize:4 }, grid:{ color:'rgba(148,163,184,0.2)' }, angleLines:{ color:'rgba(148,163,184,0.25)' } } },
+      plugins:{ legend:{ display:false } }
+    }
+  });
+}
+
+/* Map */
+let leafletMap=null;
+const markers = new Map();
 function setMapStatus(status, detail=""){
-  state.mapStatus=status;
   const badge = document.getElementById('map-status-badge');
   if(!badge) return;
   badge.textContent = detail ? `${status} • ${detail}` : status;
@@ -321,9 +483,9 @@ function markerIconFor(category){
   });
 }
 function refreshLeafletMarkers(){
-  if(!state.leafletMap || typeof L==='undefined') return;
-  for(const m of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(m);}catch{} }
-  state.leafletMarkers.clear();
+  if(!leafletMap || typeof L==='undefined') return;
+  for(const m of markers.values()){ try{ leafletMap.removeLayer(m);}catch{} }
+  markers.clear();
   const sFilter=state.filters.severity;
   const stageFilter=state.filters.stage;
   const term=(state.filters.search || '').toString().toLowerCase();
@@ -339,68 +501,61 @@ function refreshLeafletMarkers(){
     const coord=resolveCoordinates(it); if(!coord) return;
     const cat=severityCategoryForItem(it);
     const marker=L.marker([coord.lat, coord.lng],{ icon: markerIconFor(cat) });
-
     const nat = vesselNationality(it);
-    const natLine = nat ? `<div style="font-size:11px;color:#64748b;margin:2px 0;">Nationality: ${nat}</div>` : "";
-
+    const natLine = nat ? `<div style="font-size:11px;color:#64748b;margin:2px 0;">Nationality: ${escapeHtml(nat)}</div>` : "";
     const thumb = getMarkerImageUrl(it) || PLACEHOLDER_SVG;
-    const imgAttr = thumb.startsWith('data:') ? thumb : thumb; // already URL
     marker.bindPopup(`
       <div style="min-width:220px">
-        <div style="font-weight:600">${vesselName(it)}</div>
-        <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${it?.stage||'initial'} • ${cat.toUpperCase()}</div>
+        <div style="font-weight:600">${escapeHtml(vesselName(it))}</div>
+        <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${escapeHtml(it?.stage||'initial')} • ${cat.toUpperCase()}</div>
         ${natLine}
-        <img src="${imgAttr}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'"
+        <img src="${thumb}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'"
              style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin:6px 0 6px"/>
         <a href="#/wreck/${encodeURIComponent(it.id)}" style="font-size:12px;color:#0ea5e9;text-decoration:underline;">Open Report</a>
       </div>`);
-    marker.addTo(state.leafletMap);
-    state.leafletMarkers.set(it.id, marker);
+    marker.addTo(leafletMap);
+    markers.set(it.id, marker);
   });
 }
 function initLeaflet(){
-  if(state.leafletMap && $('#leaflet-map')) {
-    setTimeout(()=>state.leafletMap.invalidateSize(),50);
+  const container=$('#leaflet-map');
+  if(!container) return;
+  if(leafletMap){
+    setTimeout(()=>leafletMap.invalidateSize(),50);
     return;
   }
-  let attempts=0;
-  function attempt(){
-    attempts++;
-    const container=$('#leaflet-map');
-    if(!container){
-      if(attempts<8){ setTimeout(attempt,200); return; }
-      setMapStatus('error','no-container'); return;
-    }
-    if(typeof L==='undefined'){
-      if(attempts<8){ setTimeout(attempt,300); return; }
-      setMapStatus('error','leaflet-missing'); return;
-    }
-    if(container._leaflet_id){
-      try{ delete container._leaflet_id; }catch{}
-      container.innerHTML='';
-    }
-    try{
-      state.leafletMap = L.map(container,{ zoomControl:true }).setView([10,150],3);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution:"© OpenStreetMap contributors",
-        maxZoom:18
-      }).addTo(state.leafletMap);
-      state.leafletMap.on('load',()=>setMapStatus('ready'));
-      refreshLeafletMarkers();
-      setMapStatus('ready');
-      setTimeout(()=>state.leafletMap.invalidateSize(),60);
-    }catch(e){
-      console.error(e);
-      if(attempts<5){ setTimeout(attempt,300*attempts); }
-      else setMapStatus('error','init-failed');
-    }
+  try{
+    leafletMap = L.map(container,{ zoomControl:true }).setView([10,150],3);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution:"© OpenStreetMap contributors",
+      maxZoom:18
+    }).addTo(leafletMap);
+    leafletMap.on('load',()=>setMapStatus('ready'));
+    refreshLeafletMarkers();
+    setMapStatus('ready');
+    setTimeout(()=>leafletMap.invalidateSize(),60);
+  }catch(e){
+    console.error(e);
+    setMapStatus('error','init-failed');
   }
-  setMapStatus('loading'); attempt();
 }
-function ensureMapSize(){ if(state.leafletMap) state.leafletMap.invalidateSize(); }
+function ensureMapSize(){ if(leafletMap) leafletMap.invalidateSize(); }
 window.addEventListener('resize', debounce(ensureMapSize,200));
 
-/* Data listeners + forced refresh */
+/* App State */
+const state = {
+  wrecks: [],
+  byIdPath: new Map(),
+  currentWreck: null,
+  currentRoute: null,
+  role: 'user',
+  user: null,
+  listeners: [],
+  filters: { severity:'all', stage:'all', search:'' }
+};
+window.pgState = state;
+
+/* Firestore listeners + forced refresh */
 function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
 function startData(){
   detachListeners();
@@ -428,7 +583,7 @@ function startData(){
       }
     }
   };
-  for (const p of READ_COLLECTIONS){
+  for(const p of READ_COLLECTIONS){
     try{
       const un=onSnapshot(collection(sharedDb,p),(snap)=>applySnap(snap,p),
         e=>console.error("Listener error",p,e));
@@ -436,7 +591,6 @@ function startData(){
     }catch(e){ console.error("Failed to listen",p,e); }
   }
 }
-/* Force a one-shot fetch to avoid stale markers when returning to Home */
 async function forceFetchLatest() {
   try {
     const accumulator = new Map();
@@ -457,14 +611,14 @@ async function forceFetchLatest() {
   }
 }
 
-/* Auto-refresh when returning to Home (hash change) or tab gets focus */
+/* Auto-refresh when returning to Home or tab gets focus */
 window.addEventListener('visibilitychange', ()=>{
   if (document.visibilityState === 'visible' && state.currentRoute?.name === 'home') {
     forceFetchLatest();
   }
 });
 
-/* UI Builders */
+/* UI builders */
 function buildAuthPanel(){
   return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
@@ -589,16 +743,156 @@ function renderReassessList(){
       a.className='block rounded-lg bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition p-3 space-y-2';
       a.innerHTML=`
         <div class="flex items-center justify-between gap-3">
-          <div class="font-medium truncate">${vesselName(it)}</div>
+          <div class="font-medium truncate">${escapeHtml(vesselName(it))}</div>
           <span class="px-2 py-0.5 text-xs rounded-md border ${color}">${cat.toUpperCase()}</span>
         </div>
-        <div class="text-xs text-slate-400 line-clamp-2">${vesselSummary(it)}</div>`;
+        <div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>`;
       wrap.appendChild(a);
     });
   }
 }
 
-/* Home render */
+/* Report rendering (FULL BREAKDOWN) */
+function buildFactorSummaryTable(item) {
+  let rows = [];
+  if (hasUnifiedV2(item)) {
+    const v = v2Totals(item);
+    rows.push(`<tr><th>WCS</th><td>${v.wcs.toFixed(2)}</td><td>0–20</td></tr>`);
+    rows.push(`<tr><th>PHS</th><td>${v.phs.toFixed(2)}</td><td>0–10</td></tr>`);
+    rows.push(`<tr><th>ESI</th><td>${v.esi.toFixed(2)}</td><td>0–${v.esiMax}</td></tr>`);
+    rows.push(`<tr><th>RPM</th><td>${v.rpm.toFixed(2)}×</td><td>multiplier</td></tr>`);
+  } else {
+    const W = Number(item?.totals?.wcs||0);
+    const P = Number(item?.totals?.phs||0);
+    const E = Number(item?.totals?.esi||0);
+    const R = rpmFinalMultiplier(item);
+    rows.push(`<tr><th>WCS</th><td>${W.toFixed(2)}</td><td>0–20</td></tr>`);
+    rows.push(`<tr><th>PHS</th><td>${P.toFixed(2)}</td><td>0–10</td></tr>`);
+    rows.push(`<tr><th>ESI</th><td>${E.toFixed(2)}</td><td>0–30/40</td></tr>`);
+    rows.push(`<tr><th>RPM</th><td>${R.toFixed(2)}×</td><td>multiplier</td></tr>`);
+  }
+  return `<table class="report"><thead><tr><th>Factor</th><th>Score</th><th>Scale</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+}
+
+function renderReport(route){
+  const app=$('#app');
+  const it=state.wrecks.find(w=>String(w.id)===String(route.id));
+  state.currentWreck=it||null;
+  if(!it){
+    app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
+    return;
+  }
+
+  // Image gallery
+  const assets = Array.isArray(it?.phase2?.assets) ? it.phase2.assets : [];
+  const webExt = /\.(png|jpe?g|gif|webp)$/i;
+  let urls = assets.filter(a => a?.url && webExt.test(String(a?.name || a?.path || ""))).map(a => a.url);
+  if (!urls.length) urls = getExternalImageUrls(it);
+  const gallery = urls.length
+    ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">${urls.slice(0,9).map(u=>`<img src="${u}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-40 object-cover rounded border border-white/10" />`).join('')}</div>`
+    : `<div class="text-xs text-slate-400">No images available.</div>`;
+
+  // Analysis sections
+  let wcsHtml="", phsHtml="", esiHtml="", rpmHtml="", radarCanvasId="werSpiderChart";
+
+  if (hasUnifiedV2(it)) {
+    const v=v2Totals(it);
+    wcsHtml = `
+      <section class="space-y-2">
+        <h3 class="text-lg font-semibold text-cyan-200">Phase 3: WCS (Hull & Structure)</h3>
+        <table class="report">
+          <thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–5)</th></tr></thead>
+          <tbody>${v.wcsRows.map(r=>`<tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.rationale)}</td><td>${(Number(r.normalized)||0).toFixed(2)}</td></tr>`).join("")}</tbody>
+        </table>
+        <p class="mt-1 text-sm"><strong>Total:</strong> ${v.wcs.toFixed(2)} / 20</p>
+        ${v.wcsScaleNote ? '<p class="text-xs text-slate-400">Note: WCS values appeared on 0–10; normalized to 0–5.</p>' : ''}
+      </section>`;
+    phsHtml = `
+      <section class="space-y-2">
+        <h3 class="text-lg font-semibold text-cyan-200">Phase 3: PHS (Pollution Hazard)</h3>
+        <p class="text-xs text-slate-400">Weights normalized to sum to 100%. Weighted = Score × Weight.</p>
+        <table class="report">
+          <thead><tr><th>Parameter</th><th>Rationale</th><th>Weight (%)</th><th>Score (0–10)</th><th>Weighted</th></tr></thead>
+          <tbody>${v.phsRows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.rationale)}</td><td>${r.weightPct.toFixed(0)}%</td><td>${r.score.toFixed(2)}</td><td>${r.weighted.toFixed(2)}</td></tr>`).join("")}</tbody>
+        </table>
+        <p class="mt-1 text-sm"><strong>Total Weighted (PHS):</strong> ${v.phs.toFixed(2)} / 10</p>
+        ${v.phsRenormalized ? '<p class="text-xs text-slate-400">Note: input weights normalized.</p>' : ''}
+      </section>`;
+    const eParams = Array.isArray(it?.esi?.parameters) ? it.esi.parameters : [];
+    esiHtml = `
+      <section class="space-y-2">
+        <h3 class="text-lg font-semibold text-cyan-200">Phase 3: ESI (Environmental Sensitivity)</h3>
+        <table class="report">
+          <thead><tr><th>Parameter</th><th>Rationale</th><th>Score (0–10)</th></tr></thead>
+          <tbody>${eParams.map(p=>`<tr><td>${escapeHtml(p?.name ?? p?.parameter ?? "")}</td><td>${escapeHtml(p?.rationale ?? "")}</td><td>${escapeHtml(String(p?.score ?? ""))}</td></tr>`).join("")}</tbody>
+        </table>
+        <p class="mt-1 text-sm"><strong>Total:</strong> ${v.esi.toFixed(2)} / ${v.esiMax}</p>
+      </section>`;
+    const rpmList = Array.isArray(it?.rpm?.parameters) ? it.rpm.parameters : Array.isArray(it?.rpm?.factors) ? it.rpm.factors : [];
+    rpmHtml = `
+      <section class="space-y-2">
+        <h3 class="text-lg font-semibold text-cyan-200">Phase 3: RPM (Release Probability Modifier)</h3>
+        ${Array.isArray(rpmList)&&rpmList.length ? `
+        <table class="report">
+          <thead><tr><th>Factor</th><th>Rationale</th><th>Value</th></tr></thead>
+          <tbody>${rpmList.map(f=>`<tr><td>${escapeHtml(f?.name ?? f?.factor ?? "")}</td><td>${escapeHtml(f?.rationale ?? "Not specified.")}</td><td>${escapeHtml(String(f?.value ?? ""))}</td></tr>`).join("")}</tbody>
+        </table>` : '<p class="text-sm text-slate-300">No factor breakdown provided. Using final multiplier if supplied.</p>'}
+        <p class="mt-1 text-sm"><strong>Final Multiplier:</strong> ${(Number(it?.rpm?.finalMultiplier)||1).toFixed(2)}× <span class="text-xs text-slate-400">(1.00 baseline)</span></p>
+      </section>`;
+  } else {
+    // Legacy/flat totals present only
+    const W = Number(it?.totals?.wcs||0);
+    const P = Number(it?.totals?.phs||0);
+    const E = Number(it?.totals?.esi||0);
+    const R = rpmFinalMultiplier(it);
+    wcsHtml = `<section class="space-y-2"><h3 class="text-lg font-semibold text-cyan-200">WCS</h3><p class="text-sm">Score: ${W.toFixed(2)} / 20</p></section>`;
+    phsHtml = `<section class="space-y-2"><h3 class="text-lg font-semibold text-cyan-200">PHS</h3><p class="text-sm">Score: ${P.toFixed(2)} / 10</p></section>`;
+    esiHtml = `<section class="space-y-2"><h3 class="text-lg font-semibold text-cyan-200">ESI</h3><p class="text-sm">Score: ${E.toFixed(2)} / 30–40</p></section>`;
+    rpmHtml = `<section class="space-y-2"><h3 class="text-lg font-semibold text-cyan-200">RPM</h3><p class="text-sm">Multiplier: ${R.toFixed(2)}×</p></section>`;
+  }
+
+  const nat = vesselNationality(it);
+  const natBadge = nat ? `<span class="ml-2 px-2 py-0.5 text-xs rounded-md bg-white/5 border border-white/10">${escapeHtml(nat)}</span>` : '';
+
+  app.innerHTML=`
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+
+    <section class="card-surface p-5 space-y-5">
+      <h1 class="text-2xl font-semibold text-cyan-200 flex items-center">${escapeHtml(vesselName(it))} ${natBadge}</h1>
+      <p class="text-sm text-slate-300">${escapeHtml(vesselSummary(it))}</p>
+
+      <!-- Factor summary + Radar -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2">
+          <h3 class="text-lg font-semibold text-cyan-200 mb-2">Factor Scores Summary</h3>
+          ${buildFactorSummaryTable(it)}
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold text-cyan-200 mb-2">Risk Profile</h3>
+          <div class="radar-wrapper"><canvas id="${radarCanvasId}"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Detailed sections -->
+      ${wcsHtml}
+      ${phsHtml}
+      ${esiHtml}
+      ${rpmHtml}
+
+      <div>
+        <h3 class="text-sm font-semibold text-slate-200">Images</h3>
+        ${gallery}
+      </div>
+    </section>`;
+
+  // Render radar
+  renderRadar(document.getElementById(radarCanvasId), it);
+}
+
 function renderHome(){
   const app=$('#app');
   const existingMap = $('#map-card');
@@ -693,9 +987,8 @@ function renderHome(){
     refreshLeafletMarkers();
   },250));
 
+  // Init + fresh data
   initLeaflet();
-
-  // Ensure latest data and markers when entering Home
   startData();
   forceFetchLatest();
   refreshLeafletMarkers();
@@ -703,41 +996,6 @@ function renderHome(){
   updateAuthUI();
 }
 
-/* Simple List + Report (enhanced: show image gallery) */
-function renderReport(route){
-  const app=$('#app');
-  const it=state.wrecks.find(w=>String(w.id)===String(route.id));
-  state.currentWreck=it||null;
-  if(!it){
-    app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
-    return;
-  }
-  const assets = Array.isArray(it?.phase2?.assets) ? it.phase2.assets : [];
-  const webExt = /\.(png|jpe?g|gif|webp)$/i;
-  let urls = assets.filter(a => a?.url && webExt.test(String(a?.name || a?.path || ""))).map(a => a.url);
-  if (!urls.length) urls = getExternalImageUrls(it);
-  const gallery = urls.length
-    ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">${urls.slice(0,9).map(u=>`<img src="${u}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-36 object-cover rounded border border-white/10" />`).join('')}</div>`
-    : `<div class="text-xs text-slate-400">No images available.</div>`;
-
-  const nat = vesselNationality(it);
-  const natBadge = nat ? `<span class="ml-2 px-2 py-0.5 text-xs rounded-md bg-white/5 border border-white/10">${nat}</span>` : '';
-
-  app.innerHTML=`
-    <div class="flex flex-wrap items-center gap-3 mb-5">
-      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
-      <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
-      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
-    </div>
-    <section class="card-surface p-5 space-y-4">
-      <h1 class="text-2xl font-semibold text-cyan-200 flex items-center">${vesselName(it)} ${natBadge}</h1>
-      <p class="text-sm text-slate-300">${vesselSummary(it)}</p>
-      <div>
-        <h3 class="text-sm font-semibold text-slate-200">Images</h3>
-        ${gallery}
-      </div>
-    </section>`;
-}
 function renderList(){
   const app=$('#app');
   const term=(state.filters.search || '').toString().toLowerCase();
@@ -764,15 +1022,15 @@ function renderList(){
           const thumb = getMarkerImageUrl(it) || PLACEHOLDER_SVG;
           return `
             <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
-              <div class="w-full h-40 bg-slate-700 border-b border-white/10 flex items-center justify-center text-slate-300 text-xs">
-                <img src="${thumb}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-full object-cover"/>
+              <div class="w-full h-40 bg-slate-700 border-b border-white/10">
+                <img src="${thumb}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover"/>
               </div>
               <div class="p-3">
                 <div class="flex items-center justify-between gap-3">
-                  <h3 class="font-medium truncate">${vesselName(it)}</h3>
+                  <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
                   <span class="px-2 py-0.5 rounded-md text-xs border ${color}">${cat.toUpperCase()}</span>
                 </div>
-                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${vesselSummary(it)}</p>
+                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
               </div>
             </a>`;
         }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
@@ -814,6 +1072,23 @@ function setActiveNav(route){
     cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
   }
 }
+
+/* Init + route */
+function renderApp(){
+  const route=parseRoute();
+  state.currentRoute=route;
+  setActiveNav(route);
+  if(route.name==='home') renderHome();
+  else if(route.name==='report') renderReport(route);
+  else if(route.name==='list') renderList();
+  else renderHome();
+
+  if(route.name==='home'){
+    // ensure freshest markers on return
+    forceFetchLatest();
+  }
+}
+
 window.addEventListener('hashchange',()=>renderApp());
 
 /* Auth events */
@@ -832,27 +1107,6 @@ onRoleResolved(({ role })=>{
   renderApp();
 });
 
-/* Init */
-function renderApp(){
-  const route=parseRoute();
-  state.currentRoute=route;
-  setActiveNav(route);
-  if(route.name==='home') {
-    renderHome();
-  } else if(route.name==='report') {
-    renderReport(route);
-  } else if(route.name==='list') {
-    renderList();
-  } else {
-    renderHome();
-  }
-  if(route.name==='home'){
-    // ensure latest data whenever navigating back to Home
-    forceFetchLatest();
-    refreshLeafletMarkers();
-    renderReassessList();
-  }
-}
 renderApp();
 console.info('[PG] App initialized');
 </script>
