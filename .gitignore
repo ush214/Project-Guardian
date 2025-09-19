@@ -70,3 +70,14 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# Firebase Admin service account keys and secrets
+serviceAccountKey.json
+scripts/serviceAccountKey.json
+**/serviceAccountKey.json
+*.secret.json
+*.secrets.json
+*.private.json
+
+# Node artifacts
+node_modules/

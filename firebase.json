@@ -13,6 +13,15 @@
     ],
     "headers": [
       {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' 'inline-speculation-rules' blob: https://www.gstatic.com https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; script-src-elem 'self' 'unsafe-inline' blob: https://www.gstatic.com https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; font-src 'self' https: data:; frame-src 'self'; base-uri 'self'; form-action 'self'"
+          }
+        ]
+      },
+      {
         "source": "/index.html",
         "headers": [
           { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
@@ -50,21 +59,11 @@
     "runtime": "nodejs20"
   },
   "emulators": {
-    "hosting": {
-      "port": 5000
-    },
-    "functions": {
-      "port": 5001
-    },
-    "firestore": {
-      "port": 8080
-    },
-    "storage": {
-      "port": 9199
-    },
-    "ui": {
-      "enabled": true
-    }
+    "hosting": { "port": 5000 },
+    "functions": { "port": 5001 },
+    "firestore": { "port": 8080 },
+    "storage": { "port": 9199 },
+    "ui": { "enabled": true }
   },
   "predeploy": [
     "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./predeploy-check.ps1"

@@ -1,5 +1,5 @@
 rules_version = '2';
-// SECURE: approved read, admin write @ <timestamp>
+// SECURE: approved read, admin write + public WERP reads @ 2025-09-19
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -10,11 +10,19 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.admin == true;
     }
 
+    // Users can view their own approval doc
     match /system/approvals/users/{uid} {
       allow get: if request.auth != null && request.auth.uid == uid;
       allow list, create, update, delete: if false;
     }
 
+    // Public WERP assessments: anyone can read; only admins may write
+    match /artifacts/{appId}/public/data/werpassessments/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Task manager (approved read, admin write)
     match /artifacts/{appId}/private/admin/tasks/{taskId} {
       allow get, list: if isApproved();
       allow create, update, delete: if isAdmin();
