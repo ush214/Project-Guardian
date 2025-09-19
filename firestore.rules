@@ -6,69 +6,70 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Admin via allowlist
+    function approvalsDoc(uid) {
+      return get(/databases/$(database)/documents/system/approvals/users/$(uid));
+    }
+
+    function allowlistDoc(uid) {
+      return get(/databases/$(database)/documents/system/allowlist/users/$(uid));
+    }
+
     function isAdmin() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true;
+      return isSignedIn() && (
+        approvalsDoc(request.auth.uid).data.role == "admin" ||
+        allowlistDoc(request.auth.uid).data.admin == true ||
+        request.auth.token.admin == true
+      );
     }
 
-    // Contributor via allowlist (admins are contributors by superset)
-    function isContributor() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
-        && (
-          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.contributor == true ||
-          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true
-        );
+    function isApproved() {
+      return isSignedIn() && (
+        approvalsDoc(request.auth.uid).data.status == "approved" ||
+        allowlistDoc(request.auth.uid).data.allowed == true ||
+        request.auth.token.approved == true
+      );
     }
 
-    // Any allowlisted user: allowed OR contributor OR admin
-    function isAllowlisted() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
-        && (
-          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.allowed == true ||
-          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.contributor == true ||
-          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true
-        );
-    }
-
-    // Registration approvals queue
+    // Approvals SoT
     match /system/approvals/users/{uid} {
-      // user can file a request for themselves
+      // Users can create their own pending record if missing
       allow create: if isSignedIn() && request.auth.uid == uid;
-      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow list, update, delete: if isAdmin();
+
+      // Users can read their own record; admins can read all
+      allow read: if (isSignedIn() && request.auth.uid == uid) || isAdmin();
+
+      // Only admins can update (e.g., approve)
+      allow update: if isAdmin();
+
+      // No deletes by clients
+      allow delete: if false;
     }
 
-    // Admin-maintained allowlist
+    // Legacy allowlist (admin-only management)
     match /system/allowlist/users/{uid} {
-      // let a user read their own allowlist entry (for role resolution UX)
-      allow get: if isSignedIn() && request.auth.uid == uid;
-      // only admins can list or modify
-      allow list: if isAdmin();
-      allow create, update, delete: if isAdmin();
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
 
-    // Public WERP assessments
-    match /artifacts/{appId}/public/data/werpassessments/{docId} {
-      allow read: if true;
-      allow create, update, delete: if isAdmin();
+    // Example protected collections (adjust names to your app)
+    match /tasks/{doc=**} {
+      allow read, write: if isApproved();
     }
 
-    // Task data: allowlisted users can read/create/update; admin-only delete
-    match /artifacts/{appId}/private/admin/tasks/{taskId} {
-      allow get, list: if isAllowlisted();
-      allow create, update: if isAllowlisted();
-      allow delete: if isAdmin();
+    match /resourcesData/{doc=**} {
+      allow read, write: if isApproved();
     }
 
-    // Task meta/sequence for ID allocation (same allowlist as tasks)
-    match /artifacts/{appId}/private/admin/tasks_meta/{docId} {
-      allow read: if isAllowlisted();
-      allow create, update: if isAllowlisted();
-      allow delete: if isAdmin();
+    // Optional: user profile docs
+    match /users/{uid} {
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow read, update: if (isSignedIn() && request.auth.uid == uid) || isAdmin();
+      allow delete: if false;
+    }
+
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

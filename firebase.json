@@ -1,3 +1,4 @@
+```json name=firebase.json
 {
   "hosting": {
     "public": "public",
@@ -8,7 +9,6 @@
     ],
     "cleanUrls": true,
     "trailingSlash": false,
-
     "rewrites": [
       { "source": "/resources", "destination": "/resources/index.html" },
       { "source": "/approvals", "destination": "/approvals.html" },
@@ -16,7 +16,6 @@
       { "source": "/tasks-dashboard", "destination": "/tasks-dashboard.html" },
       { "source": "**", "destination": "/index.html" }
     ],
-
     "headers": [
       {
         "source": "**",
@@ -57,32 +56,28 @@
           { "key": "Cache-Control", "value": "public, max-age=300" }
         ]
       }
+    ],
+    "predeploy": [
+      "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"New-Item -ItemType Directory -Force -Path ./public/scripts > $null; Copy-Item -Path ./scripts/approvals-bootstrap.js -Destination ./public/scripts -Force\""
     ]
   },
-
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-
   "storage": {
     "rules": "storage.rules"
   },
-
   "functions": {
     "source": "functions",
     "runtime": "nodejs20"
   },
-
   "emulators": {
     "hosting": { "port": 5000 },
     "functions": { "port": 5001 },
     "firestore": { "port": 8080 },
     "storage": { "port": 9199 },
     "ui": { "enabled": true }
-  },
-
-  "predeploy": [
-    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./predeploy-check.ps1"
-  ]
+  }
 }
+```
