@@ -9,14 +9,11 @@
     "cleanUrls": true,
     "trailingSlash": false,
 
-    "redirects": [
-      { "source": "/resources", "destination": "/resources/index.html", "type": 301 },
-      { "source": "/approvals", "destination": "/approvals.html", "type": 301 },
-      { "source": "/import", "destination": "/import.html", "type": 301 },
-      { "source": "/tasks-dashboard", "destination": "/tasks-dashboard.html", "type": 301 }
-    ],
-
     "rewrites": [
+      { "source": "/resources", "destination": "/resources/index.html" },
+      { "source": "/approvals", "destination": "/approvals.html" },
+      { "source": "/import", "destination": "/import.html" },
+      { "source": "/tasks-dashboard", "destination": "/tasks-dashboard.html" },
       { "source": "**", "destination": "/index.html" }
     ],
 
@@ -87,5 +84,5 @@
 
   "predeploy": [
     "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./predeploy-check.ps1"
-    ]
+  ]
 }
