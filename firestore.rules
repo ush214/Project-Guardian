@@ -1,39 +1,63 @@
 rules_version = '2';
-// Approved users can read and write tasks (create/update); only admins can delete.
-// Public read for WERP assessments. Tasks_meta sequence is writable by approved users.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isApproved() {
-      return request.auth != null && request.auth.token.approved == true;
+    function isSignedIn() {
+      return request.auth != null;
     }
+    // Admin via allowlist (not just custom claims)
     function isAdmin() {
-      return request.auth != null && request.auth.token.admin == true;
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true;
+    }
+    // Contributor via allowlist
+    function isContributor() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)) &&
+        (
+          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.contributor == true ||
+          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true
+        );
+    }
+    // Any allowlisted user (allowed true OR contributor/admin)
+    function isAllowlisted() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)) &&
+        (
+          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.allowed == true ||
+          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.contributor == true ||
+          get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true
+        );
     }
 
-    // Users can view their own approval doc
+    // Users may submit an approval request for themselves
     match /system/approvals/users/{uid} {
-      allow get: if request.auth != null && request.auth.uid == uid;
-      allow list, create, update, delete: if false;
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
-    // Public WERP assessments (guardian, guardian-agent-default)
+    // Admin-maintained allowlist (authoritative source of roles)
+    match /system/allowlist/users/{uid} {
+      // Users can read their own allowlist entry (optional; remove if you prefer to hide)
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      // Only admins list and modify allowlist
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Public WERP assessments
     match /artifacts/{appId}/public/data/werpassessments/{docId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 
-    // Task manager data
+    // Task manager (approved users can read; contributors/admin can write; delete stays admin)
     match /artifacts/{appId}/private/admin/tasks/{taskId} {
-      allow get, list: if isApproved();
-      allow create, update: if isApproved();
-      allow delete: if isAdmin();
-    }
-
-    // Task sequence/meta for ID allocation
-    match /artifacts/{appId}/private/admin/tasks_meta/{docId} {
-      allow read: if isApproved();
-      allow create, update: if isApproved();
+      allow get, list: if isAllowlisted();
+      allow create, update: if isContributor();
       allow delete: if isAdmin();
     }
   }

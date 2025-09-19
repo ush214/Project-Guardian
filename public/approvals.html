@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <title>Approve Registrations • Project Guardian</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          boxShadow: {
+            'soft': '0 2px 10px rgba(0,0,0,0.25)',
+            'card': '0 8px 24px rgba(0,0,0,0.35)'
+          },
+          colors: {
+            surface: {
+              900: '#0f172a',
+              800: '#1e293b',
+              700: '#334155'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    .card-surface {
+      background: rgba(15,23,42,0.72);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 0.75rem;
+    }
+    .card-inner {
+      background: rgba(30,41,59,0.55);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 0.75rem;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[#050816] text-slate-100">
+  <header class="sticky top-0 z-40 bg-[#050816]/90 backdrop-blur border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center gap-3">
+      <a href="/" class="text-cyan-200 hover:text-cyan-300 font-semibold text-lg">← Back</a>
+      <h1 class="text-xl font-semibold text-cyan-200">Approve Registrations</h1>
+      <div class="ml-auto flex items-center gap-3 text-sm">
+        <span id="header-user" class="text-slate-300"></span>
+        <span id="header-role" class="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-cyan-200"></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 lg:py-10">
+    <!-- Admin-only gate -->
+    <div id="gate-denied" class="card-surface p-6">
+      <h2 class="text-xl font-semibold text-rose-300">Access denied</h2>
+      <p class="text-slate-300 mt-2">Only admins can review and approve registrations.</p>
+    </div>
+
+    <section id="approvals-body" class="hidden space-y-8">
+      <!-- Summary -->
+      <section class="card-surface p-5">
+        <h2 class="text-lg font-semibold text-cyan-200">Overview</h2>
+        <div class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="card-inner p-4">
+            <div class="text-sm text-slate-400">Pending</div>
+            <div id="stat-pending" class="text-2xl font-semibold text-slate-100">0</div>
+          </div>
+          <div class="card-inner p-4">
+            <div class="text-sm text-slate-400">Approved</div>
+            <div id="stat-approved" class="text-2xl font-semibold text-slate-100">0</div>
+          </div>
+          <div class="card-inner p-4">
+            <div class="text-sm text-slate-400">Rejected</div>
+            <div id="stat-rejected" class="text-2xl font-semibold text-slate-100">0</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pending queue -->
+      <section class="card-surface p-5">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-lg font-semibold text-cyan-200">Pending Requests</h2>
+          <input id="search" type="text" placeholder="Search email/name/uid..." class="px-3 py-2 rounded-lg bg-surface-800 border border-white/10 text-slate-100 w-full sm:w-80" />
+        </div>
+
+        <div id="pending-list" class="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <!-- cards injected -->
+        </div>
+        <div id="pending-empty" class="mt-4 hidden text-slate-300 text-sm">No pending requests.</div>
+      </section>
+
+      <!-- History -->
+      <section class="card-surface p-5">
+        <h2 class="text-lg font-semibold text-cyan-200">Recent Decisions</h2>
+        <div id="history-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+        <div id="history-empty" class="mt-3 hidden text-slate-300 text-sm">No recent approvals or rejections.</div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="./auth-role.js"></script>
+  <script type="module" src="./approvals.js"></script>
+</body>
+</html>

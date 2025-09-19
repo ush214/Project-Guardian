@@ -1,69 +1,725 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" class="h-full">
 <head>
-  <meta charset="utf-8">
-  <title>Import WERP Assessments</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <title>Project Guardian: WW2 Wreck Analysis and Monitoring Platform</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Tailwind via CDN (CSP allows cdn.tailwindcss.com) -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    /* inline requires 'unsafe-inline' in CSP; used for Tailwind config only */
+    tailwind.config = {
+      theme: {
+        extend: {
+          boxShadow: {
+            'soft': '0 2px 10px rgba(0,0,0,0.25)',
+            'card': '0 8px 24px rgba(0,0,0,0.35)'
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- html2pdf -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" referrerpolicy="no-referrer"></script>
+
+  <style>
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 6px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    .fade-enter { opacity:0; transform:translateY(4px); }
+    .fade-enter-active { transition:all .28s; opacity:1; transform:translateY(0); }
+    .img-badge {
+      position:absolute; top:4px; left:4px;
+      background:rgba(0,0,0,0.55); color:#e2e8f0;
+      font-size:10px; padding:2px 5px; border-radius:4px;
+      letter-spacing:.5px; text-transform:uppercase;
+    }
+    .note-block { border:1px solid rgba(255,255,255,0.08); background:#0f172a; }
+    .admin-btn { opacity:.85; } .admin-btn:hover { opacity:1; }
+    @media print {
+      .page-break { page-break-before: always; }
+      .no-print { display:none!important; }
+      body { background:#ffffff!important; }
+    }
+    .radar-wrapper { height: 240px; position: relative; }
+    @media (max-width: 640px){ .radar-wrapper { height: 200px; } }
+    .radar-grid { display: grid; gap: 1rem; }
+    @media (min-width: 768px) { .radar-grid { grid-template-columns: 1fr 260px; align-items: stretch; } }
+    #map-status-badge {
+      position:absolute; top:8px; right:8px;
+      background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+      color:#e2e8f0; font-size:11px; padding:4px 8px; border:1px solid rgba(255,255,255,0.15);
+      border-radius:6px; z-index:500; pointer-events:none;
+    }
+    .leaflet-container { background:#0f172a; }
+    .card-surface { background: rgba(15,23,42,0.70); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; }
+    .card-inner { background: rgba(30,41,59,0.50); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; }
+  </style>
 </head>
-<body class="bg-slate-50 text-gray-900">
-  <main class="max-w-5xl mx-auto p-6 space-y-6">
-    <header class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold">Import WERP Assessments</h1>
-      <div class="text-sm text-gray-600">
-        <span id="authUser">Checking sign-in…</span>
-        <span class="mx-2">•</span>
-        Role: <span id="authRole" class="font-medium">—</span>
-      </div>
-    </header>
+<body class="min-h-screen bg-[#050816] text-slate-100">
+<header class="sticky top-0 z-50 backdrop-blur bg-[#050816]/90 border-b border-white/10 no-print">
+  <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4">
+    <a href="#/" class="text-xl md:text-2xl font-semibold tracking-tight text-cyan-200 hover:text-cyan-300 transition">
+      Project Guardian: WW2 Wreck Analysis and Monitoring Platform
+    </a>
+    <nav class="ml-auto flex items-center gap-2 md:gap-3">
+      <a id="nav-home" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Home</a>
+      <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
+      <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
+      <a id="nav-import" href="import.html" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden" title="Open Import Data tools">Import Data</a>
 
-    <section class="bg-white border rounded-xl p-4 space-y-4">
-      <div class="grid md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-semibold mb-1">Primary Collection Path</label>
-          <input id="primaryPathInput" type="text" class="w-full px-3 py-2 border rounded"
-                 placeholder="artifacts/guardian-agent-default/public/data/werpassessments">
+      <!-- NEW: Admin-only Approvals link -->
+      <a id="nav-approvals" href="approvals.html" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden" title="Review and approve registrations">Approvals</a>
+
+      <button id="btn-task-dashboard" type="button" title="Open Task Dashboard" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden">
+        Task Dashboard
+      </button>
+    </nav>
+    <div class="hidden md:flex items-center gap-4">
+      <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true"
+           alt="Logo Left" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
+      <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true"
+           alt="Logo Right" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
+    </div>
+  </div>
+</header>
+
+<main id="app" class="max-w-7xl mx-auto px-4 py-6 md:py-10"></main>
+<div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
+
+<!-- Shared modules -->
+<script type="module" src="./auth-role.js"></script>
+
+<!-- Main App Script -->
+<script type="module">
+import {
+  onAuthChanged, onRoleResolved, isAdmin, isContributor,
+  signInEmailPassword, createAccountEmailPassword, resetPassword, signOutUser,
+  db as sharedDb, functions as sharedFunctions
+} from "./auth-role.js";
+
+import {
+  collection, onSnapshot
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getStorage } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+/* Constants */
+const appId = "guardian";
+window.appId = appId;
+
+const READ_COLLECTIONS = [
+  "artifacts/guardian/public/data/werpassessments",
+  "artifacts/guardian-agent-default/public/data/werpassessments"
+];
+const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
+
+/* Utilities */
+const $ = s => document.querySelector(s);
+const getText = v => v==null ? "" : String(v).trim();
+const debounce = (fn,ms=250)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+function showToast(msg,type='info'){
+  const stack=$('#toast-stack'); if(!stack)return;
+  const color=type==='success'?'bg-emerald-600':type==='error'?'bg-rose-600':'bg-slate-700';
+  const div=document.createElement('div');
+  div.className=`${color} text-white px-4 py-2 rounded-lg shadow-soft border border-white/10 transition fade-enter`;
+  div.textContent=msg;
+  stack.appendChild(div);
+  requestAnimationFrame(()=>div.classList.add('fade-enter-active'));
+  setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
+}
+const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"240\"><rect width=\"100%\" height=\"100%\" fill=\"#1e293b\"/></svg>');
+
+/* Severity helpers */
+const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
+function computeSeverityTotal({ wcs, phs, esi, rpm }) { return (wcs + phs + (esi / 3)) * rpm; }
+function categorizeSeverity(score) {
+  if (score > ACTION_THRESHOLDS.critical) return "critical";
+  if (score >= ACTION_THRESHOLDS.high) return "high";
+  if (score >= ACTION_THRESHOLDS.medium) return "medium";
+  return "low";
+}
+function rpmFinalMultiplier(it){
+  const m=Number(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
+  return Number.isFinite(m)?m:1;
+}
+function severityCategoryForItem(it){
+  const wcs = Number(it?.totals?.wcs||0);
+  const phs = Number(it?.totals?.phs||0);
+  const esi = Number(it?.totals?.esi||0);
+  const rpm = rpmFinalMultiplier(it);
+  return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
+}
+
+/* Data helpers */
+function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
+function vesselSummary(it){
+  return getText(it?.historical?.circumstancesOfLoss) ||
+         getText(it?.historical?.summary) ||
+         getText(it?.phase2?.summary) ||
+         "No summary available.";
+}
+function resolveCoordinates(item){
+  const toNumL=v=>{ const n=Number(v); return Number.isFinite(n)?n:null; };
+  function extract(obj){
+    if(!obj)return null;
+    if(Array.isArray(obj)&&obj.length>=2){
+      const lng=toNumL(obj[0]); const lat=toNumL(obj[1]);
+      if(lat!=null && lng!=null) return {lat,lng};
+      return null;
+    }
+    if(obj.coordinates){
+      const nested=extract(obj.coordinates); if(nested)return nested;
+    }
+    const lat=toNumL(obj.latitude ?? obj.lat ?? obj.y);
+    const lng=toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
+    if(lat!=null && lng!=null) return {lat,lng};
+    if(obj.latlng){
+      const ll=extract(obj.latlng); if(ll)return ll;
+    }
+    return null;
+  }
+  const cands=[
+    item?.phase1?.screening?.coordinates,
+    item?.coordinates, item?.location?.coordinates,
+    item?.historical?.location?.coordinates,
+    item?.location, item?.geo, item?.position,
+    item?.geometry?.coordinates, item?.geometry
+  ];
+  for(const c of cands){ const got=extract(c); if(got) return got; }
+  return null;
+}
+
+/* Storage and Functions */
+const storage = getStorage();
+let callable = { analyzeWerps:null, reassessWerps:null };
+try { callable.analyzeWerps = httpsCallable(sharedFunctions,"analyzeWerps"); } catch {}
+try { callable.reassessWerps = httpsCallable(sharedFunctions,"reassessWerps"); } catch {}
+
+/* App State */
+const state = {
+  wrecks: [],
+  byIdPath: new Map(),
+  currentWreck: null,
+  currentRoute: null,
+  role: 'user',
+  user: null,
+  listeners: [],
+  filters: { severity:'all', stage:'all', search:'' },
+  leafletMap: null,
+  leafletMarkers: new Map(),
+  mapStatus: 'init'
+};
+window.pgState = state;
+
+/* Map helpers (Leaflet) */
+function setMapStatus(status, detail=""){
+  state.mapStatus=status;
+  const badge = document.getElementById('map-status-badge');
+  if(!badge) return;
+  badge.textContent = detail ? `${status} • ${detail}` : status;
+  badge.style.color = status==='error' ? '#fecaca' : '#e2e8f0';
+}
+function markerIconFor(category){
+  const color =
+    category==='critical' ? '#ef4444':
+    category==='high' ? '#f59e0b':
+    category==='medium' ? '#facc15':'#10b981';
+  return L.divIcon({
+    className:'custom-marker',
+    html:`<div style="width:16px;height:16px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.25);"></div>`,
+    iconSize:[16,16],
+    iconAnchor:[8,8]
+  });
+}
+function refreshLeafletMarkers(){
+  if(!state.leafletMap || typeof L==='undefined') return;
+  for(const m of state.leafletMarkers.values()){ try{ state.leafletMap.removeLayer(m);}catch{} }
+  state.leafletMarkers.clear();
+  const sFilter=state.filters.severity;
+  const stageFilter=state.filters.stage;
+  const term=(state.filters.search || '').toString().toLowerCase();
+  const filtered=state.wrecks.filter(it=>{
+    const cat=severityCategoryForItem(it);
+    if(sFilter!=='all' && cat!==sFilter) return false;
+    const st = it?.stage || 'initial';
+    if(stageFilter!=='all' && st!==stageFilter) return false;
+    if(term && !vesselName(it).toLowerCase().includes(term)) return false;
+    return resolveCoordinates(it)!=null;
+  });
+  filtered.forEach(it=>{
+    const coord=resolveCoordinates(it); if(!coord) return;
+    const cat=severityCategoryForItem(it);
+    const marker=L.marker([coord.lat, coord.lng],{ icon: markerIconFor(cat) });
+    const thumb=PLACEHOLDER_SVG;
+    marker.bindPopup(`
+      <div style="min-width:200px">
+        <div style="font-weight:600">${vesselName(it)}</div>
+        <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${it?.stage||'initial'} • ${cat.toUpperCase()}</div>
+        <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin-bottom:4px"/>
+        <a href="#/wreck/${encodeURIComponent(it.id)}" style="font-size:12px;color:#0ea5e9;text-decoration:underline;">Open Report</a>
+      </div>`);
+    marker.addTo(state.leafletMap);
+    state.leafletMarkers.set(it.id, marker);
+  });
+}
+function initLeaflet(){
+  if(state.leafletMap && $('#leaflet-map')) {
+    setTimeout(()=>state.leafletMap.invalidateSize(),50);
+    return;
+  }
+  let attempts=0;
+  function attempt(){
+    attempts++;
+    const container=$('#leaflet-map');
+    if(!container){
+      if(attempts<8){ setTimeout(attempt,200); return; }
+      setMapStatus('error','no-container'); return;
+    }
+    if(typeof L==='undefined'){
+      if(attempts<8){ setTimeout(attempt,300); return; }
+      setMapStatus('error','leaflet-missing'); return;
+    }
+    if(container._leaflet_id){
+      try{ delete container._leaflet_id; }catch{}
+      container.innerHTML='';
+    }
+    try{
+      state.leafletMap = L.map(container,{ zoomControl:true }).setView([10,150],3);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:"© OpenStreetMap contributors",
+        maxZoom:18
+      }).addTo(state.leafletMap);
+      state.leafletMap.on('load',()=>setMapStatus('ready'));
+      refreshLeafletMarkers();
+      setMapStatus('ready');
+      setTimeout(()=>state.leafletMap.invalidateSize(),60);
+    }catch(e){
+      console.error(e);
+      if(attempts<5){ setTimeout(attempt,300*attempts); }
+      else setMapStatus('error','init-failed');
+    }
+  }
+  setMapStatus('loading'); attempt();
+}
+function ensureMapSize(){ if(state.leafletMap) state.leafletMap.invalidateSize(); }
+window.addEventListener('resize', debounce(ensureMapSize,200));
+
+/* Listeners */
+function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
+function startData(){
+  detachListeners();
+  const accumulator=new Map();
+  const applySnap=(snap,path)=>{
+    let changed=false;
+    snap.forEach(docSnap=>{
+      const raw=docSnap.data()||{};
+      const rec={...raw, id: raw.id || docSnap.id, _path:path};
+      accumulator.set(`${path}::${rec.id}`, rec);
+      state.byIdPath.set(rec.id, path);
+      changed=true;
+    });
+    if(changed){
+      state.wrecks = Array.from(accumulator.values());
+      if(state.currentRoute?.name === 'home'){
+        refreshLeafletMarkers();
+        renderReassessList();
+      } else {
+        if(state.currentRoute?.name==='report'){
+          const r = state.wrecks.find(w=>String(w.id)===String(state.currentRoute.id));
+          state.currentWreck = r || null;
+        }
+        renderApp();
+      }
+    }
+  };
+  for(const p of READ_COLLECTIONS){
+    try{
+      const un=onSnapshot(collection(sharedDb,p),(snap)=>applySnap(snap,p),
+        e=>console.error("Listener error",p,e));
+      state.listeners.push(un);
+    }catch(e){ console.error("Failed to listen",p,e); }
+  }
+}
+
+/* UI Builders */
+function buildAuthPanel(){
+  return `
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+    <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-cyan-200">Authentication</h2>
+      <button id="toggle-auth" class="text-sm text-cyan-300 hover:text-cyan-200 transition">Toggle</button>
+    </div>
+    <div id="auth-body" class="p-4 grid md:grid-cols-2 gap-6">
+      <form id="auth-form" data-auth-hidden>
+        <label class="block text-sm mb-1">Email</label>
+        <input id="login-email" type="email" autocomplete="username" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
+        <label class="block text-sm mt-3 mb-1">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
+        <div class="flex gap-2 mt-4 flex-wrap">
+          <button type="button" id="btn-signin" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Sign In</button>
+          <button type="button" id="btn-create" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm">Create Account</button>
+          <button type="button" id="btn-reset" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm">Reset Password</button>
         </div>
-        <div>
-          <label class="block text-xs font-semibold mb-1">Secondary Collection Path (optional)</label>
-          <input id="secondaryPathInput" type="text" class="w-full px-3 py-2 border rounded"
-                 placeholder="artifacts/guardian/public/data/werpassessments">
+        <div id="auth-msg" class="text-xs text-slate-400 mt-2 h-5"></div>
+      </form>
+      <div data-auth-visible class="hidden space-y-3">
+        <div class="text-sm">
+          <div><span class="font-medium text-slate-300">Signed in as:</span> <span id="auth-email" class="text-cyan-300"></span></div>
+          <div><span class="font-medium text-slate-300">Role:</span> <span id="auth-role" class="text-cyan-300"></span></div>
+        </div>
+        <button id="btn-signout" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm">Sign Out</button>
+      </div>
+    </div>
+  </div>`;
+}
+function buildAnalyzePanel(){
+  const c=isContributor();
+  return `
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
+    <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-cyan-200">Assessment Actions</h2>
+      <span class="text-xs text-slate-400">Role: ${state.role}</span>
+    </div>
+    <div class="p-4 space-y-4">
+      <form id="analyze-form" class="flex flex-col md:flex-row gap-3">
+        <input id="analysis-input" type="text" placeholder="Vessel name..." class="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
+        <div class="flex gap-2">
+          <button id="btn-analyze" type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm ${!c?'opacity-50 cursor-not-allowed':''}">Analyze</button>
+          <button id="btn-reassess" type="button" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm ${!c?'opacity-50 cursor-not-allowed':''}">Reassess</button>
+        </div>
+      </form>
+      <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
+    </div>
+  </div>`;
+}
+function buildMapCard(){
+  return `
+  <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6" id="map-card">
+    <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
+      <div class="flex flex-wrap items-center gap-1 text-sm">
+        <span class="mr-2 font-medium text-slate-200">Risk:</span>
+        ${['all','critical','high','medium','low'].map(r=>`<button data-filter-sev="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+      </div>
+      <div class="flex flex-wrap items-center gap-1 text-sm">
+        <span class="mr-2 font-medium text-slate-200">Stage:</span>
+        ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+      </div>
+      <div class="xl:ml-auto w-full xl:w-72">
+        <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
+      </div>
+    </div>
+    <div class="relative">
+      <div id="leaflet-map" class="w-full h-[550px] bg-slate-800">
+        <div id="map-status-badge">init</div>
+      </div>
+    </div>
+    <div class="p-4 border-t border-white/10">
+      <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
+      <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+    </div>
+  </div>`;
+}
+
+/* Auth UI */
+function updateAuthUI(){
+  const signedIn=!!state.user;
+  document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
+  document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
+
+  const contributor = isContributor();
+  const importLink = document.getElementById('nav-import');
+  if (importLink) importLink.classList.toggle('hidden', !contributor);
+
+  const taskBtn = document.getElementById('btn-task-dashboard');
+  if (taskBtn) taskBtn.classList.toggle('hidden', !isAdmin());
+
+  // NEW: toggle Approvals link for admins only
+  const approvalsLink = document.getElementById('nav-approvals');
+  if (approvalsLink) approvalsLink.classList.toggle('hidden', !isAdmin());
+
+  $('#auth-email') && ($('#auth-email').textContent = state.user?.email || '');
+  $('#auth-role') && ($('#auth-role').textContent = state.role);
+}
+
+/* Reassess list */
+function renderReassessList(){
+  const wrap=$('#reassess-list'); if(!wrap) return;
+  wrap.innerHTML='';
+  const list=state.wrecks.filter(w=>
+    w?.needsReassessment===true ||
+    w?.seismicEvent===true ||
+    (w?.events && (
+      w.events.seismic != null ||
+      (Array.isArray(w.events) && w.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
+    ))
+  );
+  if(!list.length){
+    wrap.innerHTML='<div class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300">None currently.</div>';
+  } else {
+    list.forEach(it=>{
+      const cat = severityCategoryForItem(it);
+      const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                    cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
+                    cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                    'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+      const a=document.createElement('a');
+      a.href=`#/wreck/${encodeURIComponent(it.id)}`;
+      a.className='block rounded-lg bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition p-3 space-y-2';
+      a.innerHTML=`
+        <div class="flex items-center justify-between gap-3">
+          <div class="font-medium truncate">${vesselName(it)}</div>
+          <span class="px-2 py-0.5 text-xs rounded-md border ${color}">${cat.toUpperCase()}</span>
+        </div>
+        <div class="text-xs text-slate-400 line-clamp-2">${vesselSummary(it)}</div>`;
+      wrap.appendChild(a);
+    });
+  }
+}
+
+/* Home render */
+function renderHome(){
+  const app=$('#app');
+  const existingMap = $('#map-card');
+  if(!existingMap){
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel() + buildMapCard();
+  } else {
+    app.innerHTML = buildAuthPanel() + buildAnalyzePanel();
+    app.appendChild(existingMap);
+    setTimeout(()=>ensureMapSize(),30);
+  }
+
+  $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
+
+  $('#btn-signin')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
+    $('#auth-msg').textContent='Signing in...';
+    try{ await signInEmailPassword(email,pass); $('#auth-msg').textContent='Signed in.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-create')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
+    $('#auth-msg').textContent='Creating...';
+    try{ await createAccountEmailPassword(email,pass); $('#auth-msg').textContent='Account created.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-reset')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim();
+    if(!email){ $('#auth-msg').textContent='Enter email first.'; return; }
+    try{ await resetPassword(email); $('#auth-msg').textContent='Reset email sent.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOutUser(); }catch{} });
+
+  // Bind once to prevent multiple tabs
+  const taskBtn = document.getElementById('btn-task-dashboard');
+  if (taskBtn && !taskBtn.dataset.bound) {
+    taskBtn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      if(!isAdmin()){ showToast("Admin only","error"); return; }
+      window.open('tasks-dashboard.html','_blank','noopener');
+    });
+    taskBtn.dataset.bound = '1';
+  }
+
+  $('#analyze-form')?.addEventListener('submit', async e=>{
+    e.preventDefault();
+    if(!isContributor()){ showToast("Insufficient role","error"); return; }
+    const name=getText($('#analysis-input').value);
+    if(!name){ showToast("Enter vessel name","error"); return; }
+    $('#analyze-status').textContent='Requesting analysis...';
+    try{
+      if(!callable.analyzeWerps) throw new Error("Function not deployed");
+      await callable.analyzeWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
+      $('#analysis-input').value="";
+      $('#analyze-status').textContent='Analysis requested.';
+      showToast("Analysis requested","success");
+    }catch(e){
+      $('#analyze-status').textContent='Error: '+(e?.message||'failed');
+      showToast("Analysis failed","error");
+    }
+  });
+  $('#btn-reassess')?.addEventListener('click', async ()=>{
+    if(!isContributor()){ showToast("Insufficient role","error"); return; }
+    const name=getText($('#analysis-input').value);
+    if(!name){ showToast("Enter vessel name","error"); return; }
+    $('#analyze-status').textContent='Requesting reassessment...';
+    try{
+      if(!callable.reassessWerps) throw new Error("Function not deployed");
+      await callable.reassessWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
+      $('#analysis-input').value="";
+      $('#analyze-status').textContent='Reassessment requested.';
+      showToast("Reassessment requested","success");
+    }catch(e){
+      $('#analyze-status').textContent='Error: '+(e?.message||'failed');
+      showToast("Reassessment failed","error");
+    }
+  });
+
+  document.querySelectorAll('[data-filter-sev]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      state.filters.severity = btn.getAttribute('data-filter-sev');
+      refreshLeafletMarkers();
+    });
+  });
+  document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      state.filters.stage = btn.getAttribute('data-filter-stage');
+      refreshLeafletMarkers();
+    });
+  });
+  $('#map-search')?.addEventListener('input', debounce(e=>{
+    state.filters.search = (e?.target?.value ?? '').toString();
+    refreshLeafletMarkers();
+  },250));
+
+  initLeaflet();
+  refreshLeafletMarkers();
+  renderReassessList();
+  updateAuthUI();
+}
+
+/* Simple List + Report */
+function renderReport(route){
+  const app=$('#app');
+  const it=state.wrecks.find(w=>String(w.id)===String(route.id));
+  state.currentWreck=it||null;
+  if(!it){
+    app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
+    return;
+  }
+  app.innerHTML=`
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <section class="card-surface p-5 space-y-4">
+      <h1 class="text-2xl font-semibold text-cyan-200">${vesselName(it)}</h1>
+      <p class="text-sm text-slate-300">${vesselSummary(it)}</p>
+    </section>`;
+}
+function renderList(){
+  const app=$('#app');
+  const term=(state.filters.search || '').toString().toLowerCase();
+  const items=state.wrecks.filter(it=>vesselName(it).toLowerCase().includes(term));
+  app.innerHTML=`
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+      <div class="p-4 border-b border-white/10 flex flex-col md:flex-row md:items-center gap-3">
+        <div class="text-lg font-semibold text-cyan-200">All Wrecks</div>
+        <div class="md:ml-auto w-full md:w-80">
+          <input id="list-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
         </div>
       </div>
-
-      <div class="grid md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-semibold mb-1">Upload JSON File</label>
-            <input id="fileInput" type="file" accept=".json" class="w-full text-sm">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold mb-1">Paste JSON (optional)</label>
-          <textarea id="jsonInput" rows="5" class="w-full px-3 py-2 border rounded text-xs font-mono" placeholder='[{"id":"wreck_1", ...}]'></textarea>
-        </div>
+      <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        ${items.map(it=>{
+          const cat=severityCategoryForItem(it);
+          const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                        cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
+                        cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                        'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+          return `
+            <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
+              <div class="w-full h-40 bg-slate-700 border-b border-white/10 flex items-center justify-center text-slate-300 text-xs">No image</div>
+              <div class="p-3">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="font-medium truncate">${vesselName(it)}</h3>
+                  <span class="px-2 py-0.5 rounded-md text-xs border ${color}">${cat.toUpperCase()}</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${vesselSummary(it)}</p>
+              </div>
+            </a>`;
+        }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
       </div>
+    </div>`;
+  $('#list-search')?.addEventListener('input', e=>{
+    state.filters.search=(e?.target?.value ?? '').toString();
+    renderList();
+  });
+  updateAuthUI();
+}
 
-      <div class="flex flex-wrap gap-2 pt-2">
-        <button id="btnValidate" class="px-3 py-2 text-sm rounded bg-slate-800 text-white hover:bg-slate-700">Validate JSON</button>
-        <button id="btnExportPrimary" class="px-3 py-2 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500">Export Primary</button>
-        <button id="btnAppendPrimary" class="px-3 py-2 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-500">Append → Primary</button>
-        <button id="btnReplacePrimary" class="px-3 py-2 text-sm rounded bg-rose-600 text-white hover:bg-rose-500">Replace → Primary</button>
-        <button id="btnDeleteSecondary" class="px-3 py-2 text-sm rounded bg-amber-600 text-white hover:bg-amber-500">Delete Secondary</button>
-        <button id="btnReplaceAndDelete" class="px-3 py-2 text-sm rounded bg-fuchsia-600 text-white hover:bg-fuchsia-500">Replace Primary + Delete Secondary</button>
-        <button id="btnCachePrimary" class="px-3 py-2 text-sm rounded bg-cyan-600 text-white hover:bg-cyan-500">Trigger Cache</button>
-      </div>
+/* Router */
+const routes={ home:/^#\/?$/, report:/^#\/wreck\/([^/]+)$/, list:/^#\/list\/?$/ };
+function parseRoute(){
+  const h=location.hash||'#/';
+  if(routes.home.test(h)) return { name:'home' };
+  const m=h.match(routes.report); if(m) return { name:'report', id:decodeURIComponent(m[1]) };
+  if(routes.list.test(h)) return { name:'list' };
+  return { name:'home' };
+}
+function setActiveNav(route){
+  const map={ home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
+  document.querySelectorAll('nav a').forEach(a=>{
+    a.classList.remove('ring-2','ring-cyan-500');
+    a.removeAttribute('aria-current');
+  });
+  const sel=map[route.name];
+  if(sel){
+    const el=document.querySelector(sel);
+    if(el){
+      el.classList.add('ring-2','ring-cyan-500');
+      el.setAttribute('aria-current','page');
+    }
+  }
+  if(route.name==='report' && state.currentWreck){
+    const cr=$('#nav-current-report');
+    cr?.classList.remove('hidden');
+    cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
+  }
+}
+window.addEventListener('hashchange',()=>renderApp());
 
-      <div id="statusLine" class="text-xs text-gray-600 pt-1 h-5"></div>
-      <div class="border rounded p-3 bg-slate-100 h-48 overflow-auto text-xs font-mono" id="log"></div>
-    </section>
+/* Auth events */
+onAuthChanged(user=>{
+  state.user = user;
+  updateAuthUI();
+  if(!user){
+    state.role='user';
+    detachListeners();
+  }
+});
+onRoleResolved(({ role })=>{
+  state.role = role;
+  updateAuthUI();
+  startData();
+  renderApp();
+});
 
-    <p class="text-xs text-gray-500">
-      Operations requiring modification are restricted to contributor/admin roles. Validate & export are available to all signed-in users.
-    </p>
+/* Init */
+function renderApp(){
+  const route=parseRoute();
+  state.currentRoute=route;
+  setActiveNav(route);
+  if(route.name==='home') renderHome();
+  else if(route.name==='report') renderReport(route);
+  else if(route.name==='list') renderList();
+  else renderHome();
+  if(route.name==='home'){
+    initLeaflet();
+    refreshLeafletMarkers();
+    renderReassessList();
+  }
+}
+renderApp();
+console.info('[PG] App initialized');
+</script>
 
-    <p><a href="index.html" class="text-indigo-600 underline text-sm">← Back to App</a></p>
-  </main>
-
-  <script type="module" src="./auth-role.js"></script>
-  <script type="module" src="./import.js"></script>
+<!-- NOTE: Do not include tasks-dashboard.js here to avoid duplicate bindings.
+     tasks-dashboard.html should include its own script. -->
 </body>
 </html>
