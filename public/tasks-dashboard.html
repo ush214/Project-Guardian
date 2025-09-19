@@ -5,10 +5,9 @@
   <title>Task Dashboard • Project Guardian</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Tailwind (allowed by CSP: https://cdn.tailwindcss.com) -->
+  <!-- Tailwind (CSP: https://cdn.tailwindcss.com) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    /* Inline Tailwind config (needs 'unsafe-inline' in CSP) */
     tailwind.config = {
       theme: {
         extend: {
@@ -18,24 +17,20 @@
           },
           colors: {
             surface: {
-              900: '#0f172a', /* slate-900-ish */
-              800: '#1e293b', /* slate-800-ish */
-              700: '#334155'  /* slate-700-ish */
+              900: '#0f172a',
+              800: '#1e293b',
+              700: '#334155'
             }
-          },
-          borderColor: {
-            subtle: 'rgba(255,255,255,0.10)'
           }
         }
       }
     }
   </script>
 
-  <!-- Chart.js (allowed by CSP: https://cdn.jsdelivr.net) -->
+  <!-- Chart.js (CSP: https://cdn.jsdelivr.net) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    /* Minor utilities */
     .card-surface {
       background: rgba(15,23,42,0.72);
       border: 1px solid rgba(255,255,255,0.10);
@@ -46,8 +41,6 @@
       border: 1px solid rgba(255,255,255,0.10);
       border-radius: 0.75rem;
     }
-    .fade-enter { opacity:0; transform:translateY(3px); }
-    .fade-enter-active { transition:all .22s; opacity:1; transform:translateY(0); }
     .kanban-column.drop-target { background: rgba(255,255,255,0.06); border: 1px dashed rgba(255,255,255,0.18); }
     .task-card.dragging { opacity: .65; transform: scale(.99); }
     .modal-backdrop { background: rgba(0,0,0,.55); }
@@ -69,10 +62,10 @@
   <main class="max-w-7xl mx-auto px-4 py-6 lg:py-10">
     <h1 class="text-2xl md:text-3xl font-semibold text-cyan-200 tracking-tight mb-6">Task Dashboard</h1>
 
-    <!-- Admin Gate -->
+    <!-- Gate -->
     <div id="gate-denied" class="card-surface p-6 mb-6 hidden">
-      <h2 class="text-xl font-semibold text-rose-300">Access denied</h2>
-      <p class="text-slate-300 mt-2">You must be an admin to view the Task Dashboard.</p>
+      <h2 class="text-xl font-semibold text-rose-300">Access restricted</h2>
+      <p class="text-slate-300 mt-2">You need an approved account to view and manage tasks.</p>
     </div>
 
     <section id="dashboard-body" class="space-y-8 hidden">
@@ -119,11 +112,7 @@
             <button id="addTaskBtn" type="button" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium">＋ New Task</button>
           </div>
         </div>
-
-        <!-- Kanban Board -->
-        <div id="kanban-board" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <!-- Columns injected here -->
-        </div>
+        <div id="kanban-board" class="grid grid-cols-1 lg:grid-cols-3 gap-4"></div>
       </section>
     </section>
   </main>
