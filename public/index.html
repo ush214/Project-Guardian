@@ -24,7 +24,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
-  <!-- Chart.js -->
+  <!-- Chart.js (for radar chart) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <!-- html2pdf -->
@@ -49,47 +49,146 @@
     .admin-btn { opacity:.85; }
     .admin-btn:hover { opacity:1; }
 
-    @media print { .page-break { page-break-before: always; } .no-print { display:none!important; } body { background:#ffffff!important; } }
+    @media print {
+      .page-break { page-break-before: always; }
+      .no-print { display:none!important; }
+      body { background:#ffffff!important; }
+    }
 
     .radar-wrapper { height: 240px; position: relative; }
-    @media (max-width: 640px){ .radar-wrapper { height: 200px; } }
-    .radar-grid { display: grid; gap: 1rem; }
-    @media (min-width: 768px) { .radar-grid { grid-template-columns: 1fr 260px; align-items: stretch; } }
+    @media (max-width: 640px){
+      .radar-wrapper { height: 200px; }
+    }
+    .radar-grid {
+      display: grid;
+      gap: 1rem;
+    }
+    @media (min-width: 768px) {
+      .radar-grid {
+        grid-template-columns: 1fr 260px;
+        align-items: stretch;
+      }
+    }
 
     #map-status-badge {
-      position:absolute; top:8px; right:8px;
-      background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
-      color:#e2e8f0; font-size:11px; padding:4px 8px; border:1px solid rgba(255,255,255,0.15);
-      border-radius:6px; z-index:500; pointer-events:none;
+      position:absolute;
+      top:8px;
+      right:8px;
+      background:rgba(15,23,42,0.65);
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+      color:#e2e8f0;
+      font-size:11px;
+      padding:4px 8px;
+      border:1px solid rgba(255,255,255,0.15);
+      border-radius:6px;
+      z-index:500;
+      pointer-events:none;
     }
     .leaflet-container { background:#0f172a; }
 
-    .card-surface { background: rgba(15,23,42,0.70); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; }
-    .card-inner { background: rgba(30,41,59,0.50); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; }
-
-    .report-grid-main { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
-    @media (min-width: 1024px) { .report-grid-main { grid-template-columns: 320px 1fr; } }
-
-    .table-mini { width:100%; border-collapse: collapse; font-size: 12px; line-height:1.25rem; }
-    .table-mini thead th { text-align:left; padding:6px 8px; font-weight:500; background:rgba(255,255,255,0.04); color:#cbd5e1; white-space:nowrap; }
-    .table-mini tbody td { padding:6px 8px; border-top:1px solid rgba(255,255,255,0.08); vertical-align:top; }
+    /* Restored layout styling (v73) */
+    .card-surface {
+      background: rgba(15,23,42,0.70);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
+    }
+    .card-inner {
+      background: rgba(30,41,59,0.50);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
+    }
+    .report-grid-main {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+    @media (min-width: 1024px) {
+      .report-grid-main {
+        grid-template-columns: 320px 1fr;
+      }
+    }
+    .table-mini {
+      width:100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      line-height:1.25rem;
+    }
+    .table-mini thead th {
+      text-align:left;
+      padding:6px 8px;
+      font-weight:500;
+      background:rgba(255,255,255,0.04);
+      color:#cbd5e1;
+      white-space:nowrap;
+    }
+    .table-mini tbody td {
+      padding:6px 8px;
+      border-top:1px solid rgba(255,255,255,0.08);
+      vertical-align:top;
+    }
     .table-mini tbody tr:first-child td { border-top:none; }
-    .score-right { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
-
-    .severity-panel-compact { background: rgba(30,41,59,0.55); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; padding: 1rem 1rem 0.9rem; display:flex; flex-direction:column; justify-content:space-between; }
-    .severity-panel-compact .severity-score { font-size:2.25rem; }
-
-    .upload-thumb { position:relative; border:1px solid rgba(255,255,255,0.12); background:#1e293b; border-radius:0.6rem; overflow:hidden; }
-    .upload-thumb img { width:100%; height:130px; object-fit:cover; display:block; }
-
-    .pill-btn { background:#0891b2; border:1px solid #06b6d4; color:#fff; padding:6px 14px; font-size:12px; border-radius:.6rem; font-weight:500; }
+    .score-right {
+      text-align:right;
+      font-variant-numeric: tabular-nums;
+      white-space:nowrap;
+    }
+    .severity-panel-compact {
+      background: rgba(30,41,59,0.55);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.75rem;
+      padding: 1rem 1rem 0.9rem;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+    }
+    .severity-panel-compact .severity-score {
+      font-size:2.25rem;
+    }
+    .upload-thumb {
+      position:relative;
+      border:1px solid rgba(255,255,255,0.12);
+      background:#1e293b;
+      border-radius:0.6rem;
+      overflow:hidden;
+    }
+    .upload-thumb img {
+      width:100%;
+      height:130px;
+      object-fit:cover;
+      display:block;
+    }
+    .pill-btn {
+      background:#0891b2;
+      border:1px solid #06b6d4;
+      color:#fff;
+      padding:6px 14px;
+      font-size:12px;
+      border-radius:.6rem;
+      font-weight:500;
+    }
     .pill-btn:hover { background:#0ea5e9; }
-    .btn-neutral { background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:#f1f5f9; }
+    .btn-neutral {
+      background:rgba(255,255,255,0.08);
+      border:1px solid rgba(255,255,255,0.15);
+      color:#f1f5f9;
+    }
     .btn-neutral:hover { background:rgba(255,255,255,0.14); }
-
-    .note-item { border:1px solid rgba(255,255,255,0.08); background:#0f172a; border-radius:0.6rem; padding:.65rem .75rem; }
-    .radar-flex { display:grid; gap:1rem; }
-    @media (min-width: 900px) { .radar-flex { grid-template-columns: 1fr 250px; } }
+    .note-item {
+      border:1px solid rgba(255,255,255,0.08);
+      background:#0f172a;
+      border-radius:0.6rem;
+      padding:.65rem .75rem;
+    }
+    .radar-flex {
+      display:grid;
+      gap:1rem;
+    }
+    @media (min-width: 900px) {
+      .radar-flex {
+        grid-template-columns: 1fr 250px;
+      }
+    }
   </style>
 </head>
 <body class="min-h-screen bg-[#050816] text-slate-100">
@@ -102,16 +201,31 @@
       <a id="nav-home" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">Home</a>
       <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
       <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
-      <a id="nav-import" href="/import.html" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden" title="Open Import Data tools">Import Data</a>
+      <!-- Import Data (Contributor/Admin only) -->
+      <a id="nav-import"
+         href="/import.html"
+         class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden"
+         title="Open Import Data tools">Import Data</a>
+
       <!-- Admin-only Approvals link -->
-      <a id="nav-approvals" href="approvals.html" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden" title="Approve registrations">Approvals</a>
-      <button id="btn-task-dashboard" type="button" title="Open Task Dashboard" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10">
+      <a id="nav-approvals"
+         href="approvals.html"
+         class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden"
+         title="Approve registrations">Approvals</a>
+
+      <!-- Open Task Dashboard (separate page loads its own script) -->
+      <button id="btn-task-dashboard"
+              type="button"
+              title="Open Task Dashboard"
+              class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10">
         Task Dashboard
       </button>
     </nav>
     <div class="hidden md:flex items-center gap-4">
-      <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true" alt="Logo Left" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
-      <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true" alt="Logo Right" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
+      <img id="header-logo-left" src="https://raw.githubusercontent.com/ush214/Logos/main/Screenshot%202025-09-02%20114624.jpg?raw=true"
+           alt="Logo Left" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
+      <img id="header-logo-right" src="https://raw.githubusercontent.com/ush214/Logos/main/DeepTrek.jpg?raw=true"
+           alt="Logo Right" style="height:70px" class="w-auto rounded shadow-soft border border-white/10">
     </div>
   </div>
 </header>
@@ -119,8 +233,9 @@
 <main id="app" class="max-w-7xl mx-auto px-4 py-6 md:py-10"></main>
 <div id="toast-stack" class="fixed top-4 right-4 z-[60] space-y-2"></div>
 
+<!-- Main application code -->
 <script type="module">
-/* Firebase config */
+/* =============== CONFIG & CONSTANTS =============== */
 const firebaseConfig = {
   apiKey: "AIzaSyCiqs5iMg-Nj3r6yRszUxFKOIxmMfs5m6Q",
   authDomain: "project-guardian-agent.firebaseapp.com",
@@ -137,6 +252,7 @@ const READ_COLLECTIONS = [
 ];
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
 
+/* =============== FIREBASE IMPORTS =============== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -144,14 +260,14 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection,
-  onSnapshot, arrayUnion, getDocs
+  onSnapshot, getDocs
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import {
   getStorage, ref as storageRef, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
-/* Init */
+/* =============== FIREBASE INIT =============== */
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
@@ -161,6 +277,7 @@ let callable = { analyzeWerps:null, reassessWerps:null };
 try { callable.analyzeWerps = httpsCallable(functions,"analyzeWerps"); } catch {}
 try { callable.reassessWerps = httpsCallable(functions,"reassessWerps"); } catch {}
 
+/* =============== STATE =============== */
 const state = {
   wrecks: [],
   byIdPath: new Map(),
@@ -176,9 +293,10 @@ const state = {
   mapStatus: 'init'
 };
 window.pgState = state;
+/* Expose appId for other modules if needed */
 window.appId = appId;
 
-/* Utils */
+/* =============== UTILITIES =============== */
 const $ = s => document.querySelector(s);
 const getText = v => v==null ? "" : String(v).trim();
 const toNum = v => { const n=Number(v); return Number.isFinite(n)?n:null; };
@@ -196,7 +314,7 @@ function showToast(msg,type='info'){
 }
 const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
 
-/* Severity */
+/* =============== STAGE/SEVERITY LOGIC =============== */
 const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
 const ACTION_MATRIX = {
   critical: { label:"Critical", color:{ fill:"rgba(239,68,68,0.30)", stroke:"rgba(239,68,68,1)" }, action:"Immediate Intervention: In‑situ survey ≤ 1 year; begin pollutant removal planning." },
@@ -205,8 +323,16 @@ const ACTION_MATRIX = {
   low: { label:"Low", color:{ fill:"rgba(16,185,129,0.28)", stroke:"rgba(16,185,129,1)" }, action:"Archive: No further action unless new information emerges." }
 };
 function computeSeverityTotal({ wcs, phs, esi, rpm }) { return (wcs + phs + (esi / 3)) * rpm; }
-function categorizeSeverity(score) { if (score > ACTION_THRESHOLDS.critical) return "critical"; if (score >= ACTION_THRESHOLDS.high) return "high"; if (score >= ACTION_THRESHOLDS.medium) return "medium"; return "low"; }
-function rpmFinalMultiplier(it){ const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier); return Number.isFinite(m)?m:1; }
+function categorizeSeverity(score) {
+  if (score > ACTION_THRESHOLDS.critical) return "critical";
+  if (score >= ACTION_THRESHOLDS.high) return "high";
+  if (score >= ACTION_THRESHOLDS.medium) return "medium";
+  return "low";
+}
+function rpmFinalMultiplier(it){
+  const m=toNum(it?.rpm?.finalMultiplier ?? it?.rpm?.multiplier);
+  return Number.isFinite(m)?m:1;
+}
 function severityCategoryForItem(it) {
   const wcs = Number(it?.totals?.wcs||0);
   const phs = Number(it?.totals?.phs||0);
@@ -214,8 +340,22 @@ function severityCategoryForItem(it) {
   const rpm = rpmFinalMultiplier(it);
   return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
 }
+function stageFromItem(it){
+  const phase2HasNotes = !!getText(it?.phase2?.summary);
+  const phase2Entries = Array.isArray(it?.phase2?.entries) && it.phase2.entries.length;
+  const phase2Done = it?.phase2?.status === 'completed' || it?.phase2?.completed;
+  const completedExplicit = it?.completed || it?.status === 'completed' || !!it?.phase3 || !!it?.finalizedAt;
+  const isCompleted = completedExplicit || phase2HasNotes || phase2Entries || phase2Done;
+  const reassess = it?.needsReassessment || it?.seismicEvent ||
+    (it?.events && (
+      it.events.seismic != null ||
+      (Array.isArray(it.events) && it.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
+    ));
+  if(reassess) return 'reassess';
+  return isCompleted ? 'completed' : 'initial';
+}
 
-/* Data helpers */
+/* =============== DATA HELPERS =============== */
 function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
 function vesselSummary(it){
   return getText(it?.historical?.circumstancesOfLoss) ||
@@ -239,23 +379,46 @@ function resolveCoordinates(item){
   function extract(obj){
     if(!obj)return null;
     if(Array.isArray(obj)&&obj.length>=2){
-      const lng=toNumL(obj[0]); const lat=toNumL(obj[1]); if(lat!=null && lng!=null) return {lat,lng}; return null;
+      const lng=toNumL(obj[0]); const lat=toNumL(obj[1]);
+      if(lat!=null && lng!=null) return {lat,lng};
+      return null;
     }
-    if(obj.coordinates){ const nested=extract(obj.coordinates); if(nested)return nested; }
+    if(obj.coordinates){
+      const nested=extract(obj.coordinates); if(nested)return nested;
+    }
     const lat=toNumL(obj.latitude ?? obj.lat ?? obj.y);
     const lng=toNumL(obj.longitude ?? obj.lng ?? obj.lon ?? obj.x);
     if(lat!=null && lng!=null) return {lat,lng};
-    if(obj.latlng){ const ll=extract(obj.latlng); if(ll)return ll; }
+    if(obj.latlng){
+      const ll=extract(obj.latlng); if(ll)return ll;
+    }
     return null;
   }
-  const cands=[ item?.phase1?.screening?.coordinates, item?.coordinates, item?.location?.coordinates, item?.historical?.location?.coordinates, item?.location, item?.geo, item?.position, item?.geometry?.coordinates, item?.geometry ];
+  const cands=[
+    item?.phase1?.screening?.coordinates,
+    item?.coordinates,
+    item?.location?.coordinates,
+    item?.historical?.location?.coordinates,
+    item?.location,
+    item?.geo,
+    item?.position,
+    item?.geometry?.coordinates,
+    item?.geometry
+  ];
   for(const c of cands){ const got=extract(c); if(got) return got; }
   return null;
 }
 
-/* Firestore listeners + force fetch */
+/* =============== FIRESTORE LISTENERS + FORCE FETCH =============== */
 function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
-function normalizeDoc(d){ const out={...d}; if(d?.data && typeof d.data==='object') Object.assign(out,d.data); if(d?.payload && typeof d.payload==='object') Object.assign(out,d.payload); if(d?.attributes && typeof d.attributes==='object') Object.assign(out,d.attributes); if(d?.details && typeof d.details==='object') Object.assign(out,d.details); return out; }
+function normalizeDoc(d){
+  const out={...d};
+  if(d && typeof d.data==='object') Object.assign(out,d.data);
+  if(d && typeof d.payload==='object') Object.assign(out,d.payload);
+  if(d && typeof d.attributes==='object') Object.assign(out,d.attributes);
+  if(d && typeof d.details==='object') Object.assign(out,d.details);
+  return out;
+}
 async function startData(){
   detachListeners();
   const accumulator=new Map();
@@ -269,8 +432,8 @@ async function startData(){
       if(rec.severity.value==null) rec.severity.value = raw?.severity?.value ?? raw?.severityValue;
       const key=`${path}::${rec.id}`;
       accumulator.set(key, rec);
-      state.byIdPath.set(rec.id, path);
       changed=true;
+      state.byIdPath.set(rec.id, path);
     });
     if(changed){
       state.wrecks = Array.from(accumulator.values());
@@ -288,7 +451,8 @@ async function startData(){
   };
   for(const p of READ_COLLECTIONS){
     try{
-      const un=onSnapshot(collection(db,p),(snap)=>applySnap(snap,p), e=>console.error("Listener error",p,e));
+      const un=onSnapshot(collection(db,p),(snap)=>applySnap(snap,p),
+        e=>console.error("Listener error",p,e));
       state.listeners.push(un);
     }catch(e){ console.error("Failed to listen",p,e); }
   }
@@ -315,7 +479,7 @@ async function forceFetchLatest() {
   }
 }
 
-/* Map */
+/* =============== MAP (STABLE INIT) =============== */
 function setMapStatus(status, detail=""){
   state.mapStatus=status;
   const badge = document.getElementById('map-status-badge');
@@ -324,31 +488,59 @@ function setMapStatus(status, detail=""){
   badge.style.color = status==='error' ? '#fecaca' : '#e2e8f0';
 }
 function initLeaflet(){
-  if(state.leafletMap && $('#leaflet-map')) { setTimeout(()=>state.leafletMap.invalidateSize(),50); return; }
+  if(state.leafletMap && $('#leaflet-map')) {
+    setTimeout(()=>state.leafletMap.invalidateSize(),50);
+    return;
+  }
   let attempts=0;
   function attempt(){
     attempts++;
     const container=$('#leaflet-map');
-    if(!container){ if(attempts<8){ setTimeout(attempt,200); return; } setMapStatus('error','no-container'); return; }
-    if(typeof L==='undefined'){ if(attempts<8){ setTimeout(attempt,300); return; } setMapStatus('error','leaflet-missing'); return; }
-    if(container._leaflet_id){ try{ delete container._leaflet_id; }catch{} container.innerHTML=''; }
+    if(!container){
+      if(attempts<8){ setTimeout(attempt,200); return; }
+      setMapStatus('error','no-container');
+      return;
+    }
+    if(typeof L==='undefined'){
+      if(attempts<8){ setTimeout(attempt,300); return; }
+      setMapStatus('error','leaflet-missing');
+      return;
+    }
+    if(container._leaflet_id){
+      try{ delete container._leaflet_id; }catch{}
+      container.innerHTML='';
+    }
     try{
       state.leafletMap = L.map(container,{ zoomControl:true }).setView([10,150],3);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution:"© OpenStreetMap contributors", maxZoom:18 }).addTo(state.leafletMap);
+      window.pgMap = state.leafletMap;
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:"© OpenStreetMap contributors",
+        maxZoom:18
+      }).addTo(state.leafletMap);
       state.leafletMap.on('load',()=>setMapStatus('ready'));
       refreshLeafletMarkers();
       setMapStatus('ready');
       setTimeout(()=>state.leafletMap.invalidateSize(),60);
     }catch(e){
       console.error(e);
-      if(attempts<5){ setTimeout(attempt,300*attempts); } else setMapStatus('error','init-failed');
+      if(attempts<5){ setTimeout(attempt,300*attempts); }
+      else setMapStatus('error','init-failed');
     }
   }
-  setMapStatus('loading'); attempt();
+  setMapStatus('loading');
+  attempt();
 }
 function markerIconFor(category){
-  const color = category==='critical' ? '#ef4444' : category==='high' ? '#f59e0b' : category==='medium' ? '#facc15' : '#10b981';
-  return L.divIcon({ className:'custom-marker', html:`<div style="width:16px;height:16px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.25);"></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+  const color =
+    category==='critical' ? '#ef4444':
+    category==='high' ? '#f59e0b':
+    category==='medium' ? '#facc15':'#10b981';
+  return L.divIcon({
+    className:'custom-marker',
+    html:`<div style="width:16px;height:16px;border:2px solid #fff;border-radius:50%;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.25);"></div>`,
+    iconSize:[16,16],
+    iconAnchor:[8,8]
+  });
 }
 function refreshLeafletMarkers(){
   if(!state.leafletMap || typeof L==='undefined') return;
@@ -356,11 +548,11 @@ function refreshLeafletMarkers(){
   state.leafletMarkers.clear();
   const sFilter=state.filters.severity;
   const stageFilter=state.filters.stage;
-  const term=(state.filters.search || '').toString().toLowerCase();
+  const term=state.filters.search.toLowerCase();
   const filtered=state.wrecks.filter(it=>{
     const cat=severityCategoryForItem(it);
     if(sFilter!=='all' && cat!==sFilter) return false;
-    const st = (it?.needsReassessment || it?.seismicEvent) ? 'reassess' : (it?.completed || it?.status==='completed' || it?.phase3 || it?.finalizedAt || it?.phase2?.summary || (Array.isArray(it?.phase2?.entries) && it.phase2.entries.length) || it?.phase2?.status==='completed' || it?.phase2?.completed) ? 'completed' : 'initial';
+    const st=stageFromItem(it);
     if(stageFilter!=='all' && st!==stageFilter) return false;
     if(term && !vesselName(it).toLowerCase().includes(term)) return false;
     return resolveCoordinates(it)!=null;
@@ -369,17 +561,19 @@ function refreshLeafletMarkers(){
     const coord=resolveCoordinates(it); if(!coord) return;
     const cat=severityCategoryForItem(it);
     const marker=L.marker([coord.lat, coord.lng],{ icon: markerIconFor(cat) });
-    const thumb=(Array.isArray(it?.phase2?.assets) && it.phase2.assets.find(a=>a?.url))?.url || PLACEHOLDER_SVG;
+    const imgs=Array.isArray(it?.phase2?.assets)? it.phase2.assets: [];
+    const thumb=imgs.find(a=>a?.url)?.url || PLACEHOLDER_SVG;
     const nat=vesselNationality(it);
     const natLine = nat ? `<div style="font-size:11px;color:#64748b;margin:2px 0;">Nationality: ${escapeHtml(nat)}</div>` : "";
     marker.bindPopup(`
       <div style="min-width:200px">
         <div style="font-weight:600">${escapeHtml(vesselName(it))}</div>
-        <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${escapeHtml((it?.needsReassessment||it?.seismicEvent)?'reassess':(it?.completed||it?.status==='completed'?'completed':'initial'))} • ${cat.toUpperCase()}</div>
+        <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${stageFromItem(it)} • ${cat.toUpperCase()}</div>
         ${natLine}
         <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin-bottom:4px"/>
         <a href="#/wreck/${encodeURIComponent(it.id)}" style="font-size:12px;color:#0ea5e9;text-decoration:underline;">Open Report</a>
       </div>`);
+    marker.addEventListener('click',()=>{ /* ensure latest single doc if needed */ });
     marker.addTo(state.leafletMap);
     state.leafletMarkers.set(it.id, marker);
   });
@@ -387,20 +581,74 @@ function refreshLeafletMarkers(){
 function ensureMapSize(){ if(state.leafletMap) state.leafletMap.invalidateSize(); }
 window.addEventListener('resize', debounce(ensureMapSize,200));
 
-/* Auth UI and role */
+/* =============== AUTH / ROLE =============== */
+async function fetchRoleFor(uid){
+  try{
+    const allow=await getDoc(doc(db,"system","allowlist","users",uid));
+    if(allow.exists()){
+      const d=allow.data()||{}; let r=d.role ?? d.Role ?? d.ROLE;
+      if(typeof r==='string'&&r.trim()){
+        r=r.trim().toLowerCase();
+        if(r.startsWith('admin')) return 'admin';
+        if(r.startsWith('contrib')) return 'contributor';
+        if(['user','reader','viewer'].includes(r)) return 'user';
+      }
+      if(d.admin) return 'admin';
+      if(d.contributor) return 'contributor';
+      if(d.allowed) return 'user';
+    }
+  }catch{}
+  try{
+    const legacy=await getDoc(doc(db,`artifacts/${appId}/private/users/${uid}`));
+    if(legacy.exists()){
+      const d=legacy.data()||{}; let r=d.role ?? d.Role ?? d.ROLE;
+      if(typeof r==='string'&&r.trim()){
+        r=r.trim().toLowerCase();
+        if(r.startsWith('admin')) return 'admin';
+        if(r.startsWith('contrib')) return 'contributor';
+        if(['user','reader','viewer'].includes(r)) return 'user';
+      }
+      if(d.admin) return 'admin';
+      if(d.contributor) return 'contributor';
+    }
+  }catch{}
+  return 'user';
+}
 function updateAuthUI(){
   const signedIn=!!state.user;
   document.querySelectorAll('[data-auth-visible]').forEach(el=>el.classList.toggle('hidden', !signedIn));
   document.querySelectorAll('[data-auth-hidden]').forEach(el=>el.classList.toggle('hidden', signedIn));
   const isContributor=['admin','contributor'].includes(state.role);
-  const importLink = document.getElementById('nav-import'); if (importLink) importLink.classList.toggle('hidden', !isContributor);
-  const approvals = document.getElementById('nav-approvals'); if (approvals) approvals.classList.toggle('hidden', state.role!=='admin');
+
+  // Show Import Data link only for Contributor/Admin
+  const importLink = document.getElementById('nav-import');
+  if (importLink) importLink.classList.toggle('hidden', !isContributor);
+
+  // Show Approvals only for admin
+  const approvals = document.getElementById('nav-approvals');
+  if (approvals) approvals.classList.toggle('hidden', state.role !== 'admin');
+
+  // Display email and role in the auth box
+  const emailEl = document.getElementById('auth-email');
+  const roleEl = document.getElementById('auth-role');
+  if (emailEl) emailEl.textContent = state.user?.email || '';
+  if (roleEl) roleEl.textContent = state.role;
+
+  // Gate action buttons
+  ['btn-analyze','btn-reassess','btn-save-phase2','btn-select-files'].forEach(id=>{
+    const el=$('#'+id);
+    if(!el) return;
+    if(!isContributor && id!=='btn-save-phase2'){
+      el.disabled=true; el.classList.add('opacity-50','cursor-not-allowed');
+    } else {
+      el.disabled=false; el.classList.remove('opacity-50','cursor-not-allowed');
+    }
+  });
 }
 
-/* UI builders omitted for brevity – identical to previous version 73 baseline with Phase 2, lists, exports, and radar ... */
-
-/* Build panels and handlers (same as previous message) */
-function buildAuthPanel(){ /* ... same as prior version ... */ return `
+/* =============== UI BUILDERS (HOME) =============== */
+function buildAuthPanel(){
+  return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
     <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
       <h2 class="text-lg font-semibold text-cyan-200">Authentication</h2>
@@ -427,8 +675,11 @@ function buildAuthPanel(){ /* ... same as prior version ... */ return `
         <button id="btn-signout" class="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm">Sign Out</button>
       </div>
     </div>
-  </div>`; }
-function buildAnalyzePanel(){ const isContributor=['admin','contributor'].includes(state.role); return `
+  </div>`;
+}
+function buildAnalyzePanel(){
+  const isContributor=['admin','contributor'].includes(state.role);
+  return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6">
     <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
       <h2 class="text-lg font-semibold text-cyan-200">Assessment Actions</h2>
@@ -444,8 +695,10 @@ function buildAnalyzePanel(){ const isContributor=['admin','contributor'].includ
       </form>
       <div id="analyze-status" class="text-xs text-slate-400 h-5"></div>
     </div>
-  </div>`; }
-function buildMapCard(){ return `
+  </div>`;
+}
+function buildMapCard(){
+  return `
   <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden mt-6" id="map-card">
     <div class="p-4 md:p-5 border-b border-white/10 flex flex-col xl:flex-row gap-4 xl:items-center">
       <div class="flex flex-wrap items-center gap-1 text-sm">
@@ -469,27 +722,567 @@ function buildMapCard(){ return `
       <h3 class="text-base font-semibold text-cyan-200">Flagged for Reassessment</h3>
       <div id="reassess-list" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
     </div>
-  </div>`; }
+  </div>`;
+}
 
-/* Reassess list */
-function renderReassessList(){ /* same as previous version */ 
+/* =============== REASSESS LIST =============== */
+function renderReassessList(){
   const wrap=$('#reassess-list'); if(!wrap) return;
   wrap.innerHTML='';
-  const list=state.wrecks.filter(w=> w?.needsReassessment===true || w?.seismicEvent===true || (w?.events && (w.events.seismic != null || (Array.isArray(w.events) && w.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||""))))));
-  if(!list.length){ wrap.innerHTML='<div class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300">None currently.</div>'; return; }
+  const list=state.wrecks.filter(w=>
+    w?.needsReassessment===true ||
+    w?.seismicEvent===true ||
+    (w?.events && (
+      w.events.seismic != null ||
+      (Array.isArray(w.events) && w.events.some(e=>/seismic|storm|cyclone|earthquake/i.test(e?.type||"")))
+    ))
+  );
+  if(!list.length){
+    wrap.innerHTML='<div class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300">None currently.</div>';
+    return;
+  }
   list.forEach(it=>{
     const cat = severityCategoryForItem(it);
-    const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30': cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30': cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30': 'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+    const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                  cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
+                  cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                  'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
     const a=document.createElement('a');
     a.href=`#/wreck/${encodeURIComponent(it.id)}`;
     a.className='block rounded-lg bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition p-3 space-y-2';
-    a.innerHTML=`<div class="flex items-center justify-between gap-3"><div class="font-medium truncate">${escapeHtml(vesselName(it))}</div><span class="px-2 py-0.5 text-xs rounded-md border ${color}">${cat.toUpperCase()}</span></div><div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>`;
+    a.innerHTML=`
+      <div class="flex items-center justify-between gap-3">
+        <div class="font-medium truncate">${escapeHtml(vesselName(it))}</div>
+        <span class="px-2 py-0.5 text-xs rounded-md border ${color}">${cat.toUpperCase()}</span>
+      </div>
+      <div class="text-xs text-slate-400 line-clamp-2">${escapeHtml(vesselSummary(it))}</div>`;
     wrap.appendChild(a);
   });
 }
 
-/* Home, List, Report renderers are same as your Version 73 (with Phase 2). To keep the reply concise, they are unchanged here. Use your last working Version 73 content. The only new behavior is: open Task Dashboard button and forceFetchLatest hooks. */
+/* =============== PHASE 2 ENTRIES & UPLOADS (v73) =============== */
+async function savePhase2Entry(){
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id) || DEFAULT_WRITE_COLLECTION;
+  const val=getText($('#phase2-notes').value);
+  if(!val){ showToast("Enter text","error"); return; }
+  $('#phase2-status').textContent='Saving...';
+  const entry={
+    entryId:crypto.randomUUID(),
+    text:val,
+    createdAtMs:Date.now(),
+    user: state.user?.email || state.user?.uid || 'anonymous'
+  };
+  try{
+    const ref=doc(db,path,state.currentWreck.id);
+    const snap=await getDoc(ref);
+    const data=snap.exists()?snap.data():{};
+    const list=Array.isArray(data?.phase2?.entries)? data.phase2.entries.slice():[];
+    list.push(entry);
+    await updateDoc(ref,{
+      "phase2.entries": list,
+      "phase2.summary": (data?.phase2?.summary || val.slice(0,240)),
+      "phase2.updatedAt": serverTimestamp()
+    });
+    $('#phase2-status').textContent='Saved.';
+    showToast("Entry saved","success");
+    $('#phase2-notes').value='';
+    appendPhase2EntryLocal(entry,true);
+  }catch(e){
+    $('#phase2-status').textContent='Error';
+    showToast("Save failed","error");
+  } finally {
+    setTimeout(()=>$('#phase2-status').textContent='',2000);
+  }
+}
+function appendPhase2EntryLocal(entry, prepend=false){
+  const list=$('#phase2-entries'); if(!list) return;
+  const ts=entry.createdAtMs? new Date(entry.createdAtMs).toLocaleString() : '';
+  const div=document.createElement('div');
+  div.className='note-item';
+  div.dataset.entryId=entry.entryId;
+  div.innerHTML=`
+    <div class="flex items-center justify-between gap-2 mb-1">
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(entry.user||'user')}</span>
+        <span class="text-[11px] text-slate-400">${escapeHtml(ts)}</span>
+      </div>
+      <button class="hidden text-[10px] px-2 py-0.5 rounded bg-rose-600/60 hover:bg-rose-600 text-white admin-btn" data-admin-only data-delete-entry="${entry.entryId}">Delete</button>
+    </div>
+    <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(entry.text)}</div>
+  `;
+  prepend? list.prepend(div): list.appendChild(div);
+  updateAuthUI();
+  div.querySelector('[data-delete-entry]')?.addEventListener('click',()=>deletePhase2Entry(entry.entryId));
+}
+async function deletePhase2Entry(entryId){
+  if(state.role!=='admin') return showToast("Admin only","error");
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id) || DEFAULT_WRITE_COLLECTION;
+  try{
+    const ref=doc(db,path,state.currentWreck.id);
+    const snap=await getDoc(ref);
+    if(!snap.exists()) return;
+    const data=snap.data();
+    const list=Array.isArray(data?.phase2?.entries)? data.phase2.entries.filter(e=>e.entryId!==entryId):[];
+    await updateDoc(ref,{ "phase2.entries": list, "phase2.updatedAt": serverTimestamp() });
+    document.querySelector(`[data-entry-id="${entryId}"]`)?.remove();
+    showToast("Entry deleted","success");
+  }catch{
+    showToast("Delete failed","error");
+  }
+}
+function sanitizeFileName(name=""){ return String(name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,140) || `file_${Date.now()}`; }
+async function handleUploadSelection(e){
+  const files=Array.from(e.target.files||[]);
+  if(!files.length || !state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id) || DEFAULT_WRITE_COLLECTION;
+  $('#phase2-status').textContent=`Uploading ${files.length} file(s)...`;
+  const basePath=`artifacts/${appId}/public/uploads/${state.currentWreck.id}/user`;
+  let ok=0, fail=0;
+  for(const f of files){
+    try{
+      if(!/^image\//i.test(f.type)){ fail++; continue; }
+      const safe=sanitizeFileName(f.name);
+      const key=`${Date.now()}_${safe}`;
+      const ref=storageRef(storage,`${basePath}/${key}`);
+      await uploadBytes(ref,f,{ contentType:f.type });
+      const url=await getDownloadURL(ref);
+      const asset={ name:f.name, path:`${basePath}/${key}`, url, contentType:f.type, bytes:f.size, source:'upload', uploadedAtMs:Date.now() };
+      const docRef=doc(db,path,state.currentWreck.id);
+      const snap=await getDoc(docRef);
+      const data=snap.exists()? snap.data(): {};
+      const assets=Array.isArray(data?.phase2?.assets)? data.phase2.assets.slice():[];
+      assets.push(asset);
+      await updateDoc(docRef,{
+        "phase2.assets": assets,
+        "phase2.assetsUpdatedAt": serverTimestamp()
+      });
+      appendUploadedImageLocal(asset,true);
+      ok++;
+    }catch{
+      fail++;
+    }
+  }
+  $('#phase2-status').textContent= ok ? `Uploaded ${ok}${fail?`, failed ${fail}`:''}` : 'Upload failed';
+  showToast($('#phase2-status').textContent, ok?'success':'error');
+  setTimeout(()=>$('#phase2-status').textContent='',2500);
+  e.target.value="";
+}
+function appendUploadedImageLocal(asset, prepend=false){
+  const g=$('#upload-gallery'); if(!g) return;
+  const wrap=document.createElement('div');
+  wrap.className='upload-thumb group';
+  wrap.dataset.assetPath=asset.path;
+  wrap.innerHTML=`
+    <img src="${asset.url}" onerror="this.src='${PLACEHOLDER_SVG}'" alt="upload">
+    <span class="img-badge">UPLOAD</span>
+    <button data-admin-only data-delete-asset="${asset.path}"
+      class="hidden absolute top-1 right-1 px-2 py-1 rounded bg-rose-600/80 hover:bg-rose-600 text-[10px] text-white admin-btn">×</button>
+  `;
+  prepend? g.prepend(wrap): g.appendChild(wrap);
+  updateAuthUI();
+  wrap.querySelector('[data-delete-asset]')?.addEventListener('click',()=>deleteAsset(asset.path));
+}
+async function deleteAsset(assetPath){
+  if(state.role!=='admin') return showToast("Admin only","error");
+  if(!state.currentWreck) return;
+  const path=state.byIdPath.get(state.currentWreck.id) || DEFAULT_WRITE_COLLECTION;
+  try{
+    const ref=doc(db,path,state.currentWreck.id);
+    const snap=await getDoc(ref);
+    if(!snap.exists()) return;
+    const data=snap.data();
+    const assets=Array.isArray(data?.phase2?.assets)? data.phase2.assets.filter(a=>a.path!==assetPath):[];
+    await updateDoc(ref,{ "phase2.assets": assets, "phase2.assetsUpdatedAt": serverTimestamp() });
+    document.querySelector(`[data-asset-path="${assetPath}"]`)?.remove();
+    showToast("Image deleted","success");
+  }catch{
+    showToast("Delete failed","error");
+  }
+}
 
+/* =============== EXPORTS (simple) =============== */
+function wireExports(it){
+  $('#btn-export-pdf')?.addEventListener('click',()=>exportPdf(it));
+  $('#btn-export-html')?.addEventListener('click',()=>exportHtml(it));
+  $('#btn-export-md')?.addEventListener('click',()=>exportMarkdown(it));
+  $('#btn-export-json')?.addEventListener('click',()=>exportJson(it));
+}
+function exportPdf(it){
+  const container = document.createElement('div');
+  container.innerHTML = `<h1>${escapeHtml(vesselName(it))}</h1><p>${escapeHtml(vesselSummary(it))}</p>`;
+  document.body.appendChild(container);
+  html2pdf().from(container).set({
+    filename: `${vesselName(it).replace(/\s+/g,'_')}.pdf`,
+    html2canvas:{ scale:1.2 },
+    jsPDF:{ unit:'pt', format:'a4', orientation:'portrait' }
+  }).save().then(()=>container.remove()).catch(()=>container.remove());
+}
+function exportHtml(it){
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(vesselName(it))}</title></head><body><h1>${escapeHtml(vesselName(it))}</h1><p>${escapeHtml(vesselSummary(it))}</p></body></html>`;
+  downloadFile(`${vesselName(it).replace(/\s+/g,'_')}.html`, new Blob([html],{type:'text/html'}));
+}
+function exportMarkdown(it){
+  const lines=[
+    `# ${vesselName(it)}`,
+    ``,
+    vesselSummary(it)
+  ];
+  downloadFile(`${vesselName(it).replace(/\s+/g,'_')}.md`, new Blob([lines.join('\n')],{type:'text/markdown'}));
+}
+function exportJson(it){
+  downloadFile(`${vesselName(it).replace(/\s+/g,'_')}.json`, new Blob([JSON.stringify(it,null,2)],{type:'application/json'}));
+}
+function downloadFile(name,blob){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+/* =============== LIST VIEW (v73) =============== */
+function renderList(){
+  const app=$('#app');
+  const term=state.filters.search.toLowerCase();
+  const items=state.wrecks.filter(it=>vesselName(it).toLowerCase().includes(term));
+  app.innerHTML=`
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <div class="bg-slate-900 border border-white/10 rounded-xl shadow-card overflow-hidden">
+      <div class="p-4 border-b border-white/10 flex flex-col md:flex-row md:items-center gap-3">
+        <div class="text-lg font-semibold text-cyan-200">All Wrecks</div>
+        <div class="md:ml-auto w-full md:w-80">
+          <input id="list-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-600"/>
+        </div>
+      </div>
+      <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        ${items.map(it=>{
+          const cat=severityCategoryForItem(it);
+          const color = cat==='critical'?'bg-rose-500/20 text-rose-200 border-rose-400/30':
+                        cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
+                        cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
+                        'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+          const imgs=Array.isArray(it?.phase2?.assets)? it.phase2.assets: [];
+          const thumb=imgs.find(a=>a?.url)?.url || PLACEHOLDER_SVG;
+          return `
+            <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
+              <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-40 object-cover border-b border-white/10" alt="">
+              <div class="p-3">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="font-medium truncate">${escapeHtml(vesselName(it))}</h3>
+                  <span class="px-2 py-0.5 rounded-md text-xs border ${color}">${cat.toUpperCase()}</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(vesselSummary(it))}</p>
+              </div>
+            </a>`;
+        }).join('') || `<div class="text-slate-400 text-sm">No wrecks loaded.</div>`}
+      </div>
+    </div>`;
+  $('#list-search')?.addEventListener('input', e=>{
+    state.filters.search=e.target.value||'';
+    renderList();
+  });
+  updateAuthUI();
+}
+
+/* =============== RADAR (v73) =============== */
+function drawRadar(vWCS,vPHS,vESI,vRPM){
+  const canvas=$('#werp-radar'); if(!canvas) return;
+  if(state.chart){ try{ state.chart.destroy(); }catch{} }
+  const max=20;
+  const dataPoints=[
+    Math.max(0,Math.min(20,Number(vWCS||0))),
+    Math.max(0,Math.min(20,(Number(vPHS||0)/10)*20)),
+    Math.max(0,Math.min(20,(Number(vESI||0)/40)*20)),
+    Math.max(0,Math.min(20,((Math.min(Math.max(Number(vRPM||1),0.5),2.5)-0.5)/2.0)*20))
+  ];
+  const sev = computeSeverityTotal({ wcs:Number(vWCS||0), phs:Number(vPHS||0), esi:Number(vESI||0), rpm:Number(vRPM||1) });
+  const catKey=categorizeSeverity(sev);
+  const cat=ACTION_MATRIX[catKey];
+  state.chart=new Chart(canvas,{
+    type:'radar',
+    data:{ labels:['WCS','PHS','ESI','RPM'], datasets:[{
+      label:'Risk Profile',
+      data:dataPoints,
+      backgroundColor:cat.color.fill,
+      borderColor:cat.color.stroke,
+      borderWidth:2,
+      pointBackgroundColor:cat.color.stroke,
+      pointRadius:3
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ r:{ beginAtZero:true, min:0, max, ticks:{ stepSize:4 }, grid:{ color:'rgba(148,163,184,0.25)' }, angleLines:{ color:'rgba(148,163,184,0.25)' }, pointLabels:{ color:'#e2e8f0', font:{ size:11 } } } },
+      plugins:{ legend:{ display:false } }
+    }
+  });
+  $('#severity-score-value') && ($('#severity-score-value').textContent=sev.toFixed(2));
+  $('#severity-category-badge') && ($('#severity-category-badge').innerHTML =
+    `<span class="severity-chip" style="background:${cat.color.fill};color:${cat.color.stroke};border:1px solid ${cat.color.stroke};">${cat.label.toUpperCase()}</span>`
+  );
+  $('#severity-action-text') && ($('#severity-action-text').textContent=cat.action);
+}
+
+/* =============== REPORT VIEW (v73) =============== */
+function buildTableRows(rows, withWeight=false){
+  if(!Array.isArray(rows) || !rows.length){
+    return `<tr><td colspan="${withWeight?4:3}" class="py-3 text-slate-500 text-sm">No data.</td></tr>`;
+  }
+  return rows.map(r=>{
+    const weight = r.weightPercent ?? r.weightPct ?? r.percentage ?? r.percent ?? r.weight;
+    return `
+      <tr>
+        <td class="py-2 pr-3 align-top">${escapeHtml(r.name || r.title || r.parameter || '')}</td>
+        <td class="py-2 pr-3 align-top text-slate-300">${escapeHtml(r.rationale || '')}</td>
+        ${withWeight? `<td class="py-2 pr-3 align-top score-right">${weight!=null? Number(weight).toFixed(0)+'%':''}</td>` : ''}
+        <td class="py-2 pr-1 align-top score-right">${toNum(r.score)?.toFixed(2) ?? (toNum(r.normalized)?.toFixed(2) ?? '')}</td>
+      </tr>`;
+  }).join('');
+}
+function collectUploadedImages(it){
+  const out=[];
+  if(Array.isArray(it?.phase2?.assets)){
+    for(const a of it.phase2.assets){
+      if(!a?.url) continue;
+      if(a.source!=='upload') continue;
+      if(!/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(a.name||a.path||a.url)) continue;
+      out.push(a);
+    }
+  }
+  return out;
+}
+function renderReport(route){
+  const app=$('#app');
+  const it=state.wrecks.find(w=>String(w.id)===String(route.id));
+  state.currentWreck=it||null;
+  if(!it){
+    app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
+    return;
+  }
+
+  const images=collectUploadedImages(it);
+  const wcsParams=Array.isArray(it?.wcs?.parameters)? it.wcs.parameters : [];
+  const phsParams=Array.isArray(it?.phs?.parameters)? it.phs.parameters : [];
+  const esiParams=Array.isArray(it?.esi?.parameters)? it.esi.parameters : [];
+  const rpmFactors=(function readRPMFactors(rpm){
+    if(!rpm) return [];
+    if(Array.isArray(rpm.parameters)) return rpm.parameters;
+    if(Array.isArray(rpm.factors)) return rpm.factors;
+    if(Array.isArray(rpm.breakdown)) return rpm.breakdown;
+    if(Array.isArray(rpm.factorBreakdown)) return rpm.factorBreakdown;
+    const maps=['factors','parameters','breakdown','factorMap'];
+    for(const k of maps){
+      const obj=rpm[k];
+      if(obj && typeof obj==='object'){
+        return Object.entries(obj).map(([name,v])=>{
+          if(v && typeof v==='object')
+            return { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" };
+          return { name, rationale:"", value:v ?? "" };
+        });
+      }
+    }
+    const skip=new Set(["finalMultiplier","multiplier","notes","rationale","comment","comments","factors","parameters"]);
+    if(rpm && typeof rpm==='object'){
+      return Object.entries(rpm).filter(([k])=>!skip.has(k)).map(([name,v])=>(
+        v&&typeof v==='object'
+          ? { name, rationale:v.rationale ?? v.reason ?? "", value:v.value ?? v.multiplier ?? v.weight ?? v.score ?? "" }
+          : { name, rationale:"", value:v ?? "" }
+      ));
+    }
+    return [];
+  })(it?.rpm);
+
+  const vWCS = toNum(it?.totals?.wcs) ?? wcsParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
+  const vPHS = toNum(it?.totals?.phs) ?? (phsParams.length? Math.min(10, phsParams.reduce((s,p)=>s+(toNum(p.score)||0),0)/phsParams.length):0);
+  const vESI = toNum(it?.totals?.esi) ?? esiParams.reduce((s,p)=>s+(toNum(p.score)||0),0);
+  const vRPM = rpmFinalMultiplier(it);
+  const sevScore = computeSeverityTotal({ wcs:vWCS, phs:vPHS, esi:vESI, rpm:vRPM });
+  const catKey = categorizeSeverity(sevScore);
+  const cat = ACTION_MATRIX[catKey];
+
+  const coords=resolveCoordinates(it);
+  const coordLine=coords? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : '';
+
+  const gallery = images.length
+    ? `<div class="grid grid-cols-1 gap-3">
+         ${images.slice(0,12).map(a=>`
+           <div class="upload-thumb group" data-asset-path="${a.path}">
+             <img src="${a.url}" onerror="this.src='${PLACEHOLDER_SVG}'" alt="upload">
+             <span class="img-badge">UPLOAD</span>
+             <button data-admin-only data-delete-asset="${a.path}"
+               class="hidden absolute top-1 right-1 px-2 py-1 rounded bg-rose-600/80 hover:bg-rose-600 text-[10px] text-white admin-btn">×</button>
+           </div>`).join('')}
+       </div>`
+    : '<div class="text-xs text-slate-500">No uploaded images yet.</div>';
+
+  function rpmTableRows(){
+    if(!rpmFactors.length)
+      return '<tr><td colspan="3" class="py-3 text-slate-500 text-sm">No factor breakdown supplied.</td></tr>';
+    return rpmFactors.map(f=>`
+      <tr>
+        <td class="py-2 pr-3 align-top">${escapeHtml(f.name||f.factor||'')}</td>
+        <td class="py-2 pr-3 align-top text-slate-300">${escapeHtml(f.rationale||'Not specified.')}</td>
+        <td class="py-2 pr-1 align-top score-right">${escapeHtml(String(f.value??f.multiplier??''))}</td>
+      </tr>`).join('');
+  }
+
+  app.innerHTML = `
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+      <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
+      <a href="#/list" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">All Wrecks</a>
+      <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
+    </div>
+    <section class="card-surface p-5 space-y-6">
+      <div class="flex flex-col md:flex-row md:items-start gap-4 justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold text-cyan-200">${escapeHtml(vesselName(it))}</h1>
+          <p class="text-slate-300 text-sm mt-1 leading-relaxed">${escapeHtml(vesselSummary(it))}</p>
+          ${coordLine? `<p class="text-xs text-slate-500 mt-1">Coordinates: ${coordLine}</p>`:''}
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          <button id="btn-export-pdf" class="pill-btn">PDF</button>
+          <button id="btn-export-html" class="pill-btn btn-neutral">HTML</button>
+          <button id="btn-export-md" class="pill-btn btn-neutral">MD</button>
+          <button id="btn-export-json" class="pill-btn btn-neutral" style="background:#f59e0b;border-color:#fbbf24;color:#1e293b;font-weight:600;">JSON</button>
+        </div>
+      </div>
+
+      <div class="report-grid-main">
+        <div class="space-y-6">
+          <div class="card-inner p-4">
+            <h3 class="font-medium mb-3 text-slate-100">Historical / Images</h3>
+            <ul class="text-xs space-y-1 text-slate-300 mb-4">
+              ${it?.historical?.vesselType? `<li><span class="text-slate-400">Type:</span> ${escapeHtml(it.historical.vesselType)}</li>`:''}
+              ${it?.historical?.vesselSizeTonnage? `<li><span class="text-slate-400">Size:</span> ${escapeHtml(it.historical.vesselSizeTonnage)}</li>`:''}
+              ${it?.historical?.ageAndSinking?.launchedYear!=null? `<li><span class="text-slate-400">Launched:</span> ${escapeHtml(String(it.historical.ageAndSinking.launchedYear))}</li>`:''}
+              ${it?.historical?.ageAndSinking?.sunkDate? `<li><span class="text-slate-400">Sunk:</span> ${escapeHtml(String(it.historical.ageAndSinking.sunkDate))}</li>`:''}
+              ${it?.historical?.location?.depthMeters!=null? `<li><span class="text-slate-400">Depth (m):</span> ${escapeHtml(String(it.historical.location.depthMeters))}</li>`:''}
+              ${coordLine? `<li><span class="text-slate-400">Coords:</span> ${coordLine}</li>`:''}
+            </ul>
+            ${gallery}
+            <div id="upload-gallery" class="grid grid-cols-2 gap-3 mt-3"></div>
+          </div>
+          <div class="card-inner p-4 no-print">
+            <h3 class="font-medium mb-3 text-slate-100">Phase 2: In-situ Report</h3>
+            <textarea id="phase2-notes" rows="4" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-600" placeholder="Enter new in-situ observation..."></textarea>
+            <div class="flex gap-2 mt-3 flex-wrap">
+              <input id="phase2-files" type="file" multiple class="hidden" />
+              <button id="btn-select-files" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm">Select Files</button>
+              <button id="btn-save-phase2" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm">Save Note</button>
+              <span id="phase2-status" class="text-xs text-slate-400 self-center"></span>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-6">
+          <div class="card-inner p-4">
+            <h3 class="font-medium mb-3 text-slate-100">Risk Overview</h3>
+            <div class="radar-flex">
+              <div class="radar-wrapper">
+                <canvas id="werp-radar"></canvas>
+              </div>
+              <div class="severity-panel-compact">
+                <div>
+                  <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Severity Score</div>
+                  <div class="severity-score text-slate-50" id="severity-score-value">--</div>
+                  <div class="mt-2" id="severity-category-badge"></div>
+                </div>
+                <div class="mt-4">
+                  <div class="text-xs uppercase tracking-wide text-slate-400 mb-1">Required Action</div>
+                  <div class="text-xs leading-relaxed text-slate-300" id="severity-action-text">${escapeHtml(cat.action)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="grid md:grid-cols-2 gap-6">
+            <div class="card-inner p-4">
+              <h4 class="font-medium mb-3 text-slate-100">WCS</h4>
+              <div class="overflow-x-auto">
+                <table class="table-mini">
+                  <thead><tr><th>Parameter</th><th>Rationale</th><th class="score-right">Score</th></tr></thead>
+                  <tbody>${buildTableRows(wcsParams,false)}</tbody>
+                </table>
+              </div>
+              <p class="text-xs text-slate-300 mt-2">Total: <span class="font-semibold">${Number(vWCS||0).toFixed(2)}</span></p>
+            </div>
+            <div class="card-inner p-4">
+              <h4 class="font-medium mb-3 text-slate-100">RPM</h4>
+              <div class="overflow-x-auto">
+                <table class="table-mini">
+                  <thead><tr><th>Factor</th><th>Rationale</th><th class="score-right">Value</th></tr></thead>
+                  <tbody>${rpmTableRows()}</tbody>
+                </table>
+              </div>
+              <p class="text-xs text-slate-300 mt-2">Final Multiplier: <span class="font-semibold">${Number(rpmFinalMultiplier(it)||1).toFixed(2)}×</span></p>
+            </div>
+          </div>
+          <div class="card-inner p-4">
+            <h4 class="font-medium mb-3 text-slate-100">PHS (Pollution Hazard)</h4>
+            <div class="overflow-x-auto">
+              <table class="table-mini">
+                <thead><tr><th>Parameter</th><th>Rationale</th><th class="score-right">Weight</th><th class="score-right">Score</th></tr></thead>
+                <tbody>${buildTableRows(phsParams,true)}</tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card-inner p-4">
+            <h4 class="font-medium mb-3 text-slate-100">ESI (Environmental Sensitivity)</h4>
+            <div class="overflow-x-auto">
+              <table class="table-mini">
+                <thead><tr><th>Parameter</th><th>Rationale</th><th class="score-right">Score</th></tr></thead>
+                <tbody>${buildTableRows(esiParams,false)}</tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card-inner p-4" id="phase2-entries-wrapper">
+            <h4 class="font-medium mb-3 text-slate-100">In-situ Note Log</h4>
+            <div id="phase2-entries" class="space-y-3 text-xs">
+              ${(Array.isArray(it?.phase2?.entries)?[...it.phase2.entries]:[])
+                 .sort((a,b)=>(b?.createdAtMs||0)-(a?.createdAtMs||0))
+                 .map(e=>{
+                   const ts=e?.createdAtMs? new Date(e.createdAtMs).toLocaleString(): '';
+                   return `<div class="note-item" data-entry-id="${e.entryId||''}">
+                     <div class="flex items-center justify-between gap-2 mb-1">
+                       <div class="flex items-center gap-2">
+                         <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-300 border border-cyan-500/30">${escapeHtml(e.user||'user')}</span>
+                         <span class="text-[11px] text-slate-400">${escapeHtml(ts)}</span>
+                       </div>
+                       <button data-admin-only data-delete-entry="${e.entryId||''}" title="Delete"
+                         class="hidden text-[10px] px-2 py-0.5 rounded bg-rose-600/60 hover:bg-rose-600 text-white admin-btn">Delete</button>
+                     </div>
+                     <div class="text-slate-200 whitespace-pre-wrap leading-relaxed">${escapeHtml(e.text||'')}</div>
+                   </div>`;
+                 }).join('') || '<div class="text-xs text-slate-500">No entries yet.</div>'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+
+  drawRadar(vWCS,vPHS,vESI,vRPM);
+  wireExports(it);
+  document.querySelectorAll('[data-delete-entry]').forEach(btn=>{
+    const id=btn.getAttribute('data-delete-entry');
+    if(id) btn.addEventListener('click',()=>deletePhase2Entry(id));
+  });
+  document.querySelectorAll('[data-delete-asset]').forEach(btn=>{
+    const path=btn.getAttribute('data-delete-asset');
+    if(path) btn.addEventListener('click',()=>deleteAsset(path));
+  });
+  if(['admin','contributor'].includes(state.role)){
+    $('#btn-save-phase2')?.addEventListener('click', savePhase2Entry);
+    $('#btn-select-files')?.addEventListener('click',()=>{ $('#phase2-files').value=""; $('#phase2-files').click(); });
+    $('#phase2-files')?.addEventListener('change', handleUploadSelection);
+  } else {
+    ['phase2-notes','btn-save-phase2','btn-select-files'].forEach(id=>$('#'+id)?.setAttribute('disabled','true'));
+  }
+  updateAuthUI();
+}
+
+/* =============== HOME RENDER (map preserved) =============== */
 function renderHome(){
   const app=$('#app');
   const existingMap = $('#map-card');
@@ -501,30 +1294,101 @@ function renderHome(){
     setTimeout(()=>ensureMapSize(),30);
   }
 
-  // Task Dashboard button opens the dedicated page (avoids loading tasks-dashboard.js here)
+  // Toggle auth section
+  $('#toggle-auth')?.addEventListener('click',()=>$('#auth-body')?.classList.toggle('hidden'));
+
+  // Auth handlers
+  $('#btn-signin')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
+    $('#auth-msg').textContent='Signing in...';
+    try{ await signInWithEmailAndPassword(auth,email,pass); $('#auth-msg').textContent='Signed in.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-create')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim(); const pass=$('#login-pass').value;
+    $('#auth-msg').textContent='Creating...';
+    try{ await createUserWithEmailAndPassword(auth,email,pass); $('#auth-msg').textContent='Account created.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-reset')?.addEventListener('click', async ()=>{
+    const email=$('#login-email').value.trim();
+    if(!email){ $('#auth-msg').textContent='Enter email first.'; return; }
+    try{ await sendPasswordResetEmail(auth,email); $('#auth-msg').textContent='Reset email sent.'; }
+    catch(e){ $('#auth-msg').textContent=e?.message||'Failed.'; }
+  });
+  $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOut(auth);}catch{} });
+
+  // Task Dashboard button opens dedicated page
   const btnTask = document.getElementById('btn-task-dashboard');
   if (btnTask && !btnTask.dataset.bound) {
     btnTask.addEventListener('click', ()=> window.open('tasks-dashboard.html','_blank','noopener'));
     btnTask.dataset.bound = '1';
   }
 
-  // ... wire auth and analyze actions (same as previous Version 73) ...
+  // Analyze/Reassess actions
+  $('#analyze-form')?.addEventListener('submit', async e=>{
+    e.preventDefault();
+    if(!['admin','contributor'].includes(state.role)){ showToast("Insufficient role","error"); return; }
+    const name=getText($('#analysis-input').value);
+    if(!name){ showToast("Enter vessel name","error"); return; }
+    $('#analyze-status').textContent='Requesting analysis...';
+    try{
+      if(!callable.analyzeWerps) throw new Error("Function not deployed");
+      await callable.analyzeWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
+      $('#analysis-input').value="";
+      $('#analyze-status').textContent='Analysis requested.';
+      showToast("Analysis requested","success");
+    }catch(e){
+      $('#analyze-status').textContent='Error: '+(e?.message||'failed');
+      showToast("Analysis failed","error");
+    }
+  });
+  $('#btn-reassess')?.addEventListener('click', async ()=>{
+    if(!['admin','contributor'].includes(state.role)){ showToast("Insufficient role","error"); return; }
+    const name=getText($('#analysis-input').value);
+    if(!name){ showToast("Enter vessel name","error"); return; }
+    $('#analyze-status').textContent='Requesting reassessment...';
+    try{
+      if(!callable.reassessWerps) throw new Error("Function not deployed");
+      await callable.reassessWerps({ vesselName:name, appId, targetPath: DEFAULT_WRITE_COLLECTION, source:"web-ui" });
+      $('#analysis-input').value="";
+      $('#analyze-status').textContent='Reassessment requested.';
+      showToast("Reassessment requested","success");
+    }catch(e){
+      $('#analyze-status').textContent='Error: '+(e?.message||'failed');
+      showToast("Reassessment failed","error");
+    }
+  });
 
-  // init map and data
+  // Filters
+  document.querySelectorAll('[data-filter-sev]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      state.filters.severity = btn.getAttribute('data-filter-sev');
+      refreshLeafletMarkers();
+    });
+  });
+  document.querySelectorAll('[data-filter-stage]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      state.filters.stage = btn.getAttribute('data-filter-stage');
+      refreshLeafletMarkers();
+    });
+  });
+  $('#map-search')?.addEventListener('input', debounce(e=>{
+    state.filters.search = e.target.value || '';
+    refreshLeafletMarkers();
+  },250));
+
+  // Init + fresh data and UI
   initLeaflet();
   refreshLeafletMarkers();
   renderReassessList();
   updateAuthUI();
 
-  // force refresh data when arriving Home
+  // Force-refresh freshest data when arriving on Home
   forceFetchLatest();
-
-  // auth form handlers and analyze/reassess wiring identical to your Version 73 ...
 }
 
-/* Report and List functions: use the Version 73 ones you had (unchanged) */
-
-/* Router */
+/* =============== ROUTER =============== */
 const routes={ home:/^#\/?$/, report:/^#\/wreck\/([^/]+)$/, list:/^#\/list\/?$/ };
 function parseRoute(){
   const h=location.hash||'#/';
@@ -535,10 +1399,22 @@ function parseRoute(){
 }
 function setActiveNav(route){
   const map={ home:'#nav-home', list:'#nav-list', report:'#nav-current-report' };
-  document.querySelectorAll('nav a').forEach(a=>{ a.classList.remove('ring-2','ring-cyan-500'); a.removeAttribute('aria-current'); });
-  const sel=map[route.name]; if(sel){ const el=document.querySelector(sel); if(el){ el.classList.add('ring-2','ring-cyan-500'); el.setAttribute('aria-current','page'); } }
+  document.querySelectorAll('nav a').forEach(a=>{
+    a.classList.remove('ring-2','ring-cyan-500');
+    a.removeAttribute('aria-current');
+  });
+  const sel=map[route.name];
+  if(sel){
+    const el=document.querySelector(sel);
+    if(el){
+      el.classList.add('ring-2','ring-cyan-500');
+      el.setAttribute('aria-current','page');
+    }
+  }
   if(route.name==='report' && state.currentWreck){
-    const cr=$('#nav-current-report'); cr?.classList.remove('hidden'); cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
+    const cr=$('#nav-current-report');
+    cr?.classList.remove('hidden');
+    cr.href=`#/wreck/${encodeURIComponent(state.currentWreck.id)}`;
   }
 }
 function renderApp(){
@@ -550,14 +1426,21 @@ function renderApp(){
   else if(route.name==='list') renderList();
   else renderHome();
 
-  if(route.name==='home'){ forceFetchLatest(); }
+  if(route.name==='home'){
+    // ensure freshest markers on return
+    forceFetchLatest();
+  }
 }
 window.addEventListener('hashchange',()=>renderApp());
 
 // Refresh on tab focus when on Home
-document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && state.currentRoute?.name === 'home') forceFetchLatest(); });
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'visible' && state.currentRoute?.name === 'home') {
+    forceFetchLatest();
+  }
+});
 
-/* Auth */
+/* =============== AUTH STATE =============== */
 onAuthStateChanged(auth, async (user)=>{
   state.user=user;
   if(!user){
@@ -566,24 +1449,16 @@ onAuthStateChanged(auth, async (user)=>{
     renderApp();
     return;
   }
-  // Role fetch identical to your Version 73 (omitted here for brevity)...
-  try{
-    const allow=await getDoc(doc(db,"system","allowlist","users",user.uid));
-    if(allow.exists()){
-      const d=allow.data()||{}; let r=(d.role||'').toString().toLowerCase();
-      state.role = r.startsWith('admin') ? 'admin' : (r.startsWith('contrib') ? 'contributor' : 'user');
-    } else {
-      state.role='user';
-    }
-  }catch{ state.role='user'; }
+  state.role=await fetchRoleFor(user.uid);
   updateAuthUI();
   renderApp();
   startData();
 });
 
+/* =============== INITIAL =============== */
 renderApp();
 </script>
 
-<!-- IMPORTANT: Do NOT load tasks-dashboard.js here. It is only for tasks-dashboard.html -->
+<!-- IMPORTANT: Do NOT load tasks-dashboard.js here. It belongs only on tasks-dashboard.html -->
 </body>
 </html>
