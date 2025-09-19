@@ -1,0 +1,77 @@
+/**
+ * Defines the `callGeminiApi` onCall function used by the web application
+ * Includes allowlist-based role access control via rbac.ts.
+ */
+
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { db } from "./admin.js";
+import { logger } from "firebase-functions/v2";
+import { getRoleByUid, isContributorRole } from "./rbac.js";
+
+const REGION = "us-central1";
+const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+const GEMINI_MODEL = "gemini-2.5-pro";
+
+function createGeminiClient() {
+  const key = GEMINI_API_KEY.value();
+  if (!key) throw new Error("GEMINI_API_KEY secret is not available at runtime.");
+  const genAI = new GoogleGenerativeAI(key);
+  return genAI.getGenerativeModel({ model: GEMINI_MODEL });
+}
+
+async function generateGeminiJSON(prompt: string) {
+  const model = createGeminiClient();
+  const res = await model.generateContent(prompt);
+  const text = res.response.text() || "";
+  // The app expects JSON; strip code fences if present
+  const cleaned = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  return cleaned;
+}
+
+export const callGeminiApi = onCall(
+  {
+    region: REGION,
+    secrets: [GEMINI_API_KEY],
+    cors: true,
+    invoker: "public",
+    timeoutSeconds: 120
+  },
+  async (req) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
+
+    const role = await getRoleByUid(db, uid);
+    if (!isContributorRole(role)) {
+      throw new HttpsError("permission-denied", "Contributor access required.");
+    }
+
+    const vesselName = String(req.data?.vesselName ?? "").trim();
+    const prompt = String(req.data?.prompt ?? "").trim();
+
+    if (!vesselName && !prompt) {
+      throw new HttpsError("invalid-argument", "Provide either 'vesselName' or 'prompt'.");
+    }
+
+    try {
+      const effectivePrompt =
+        prompt ||
+        `Produce a JSON WERP-style assessment for the WWII wreck "${vesselName}". Ensure valid JSON.`;
+
+      const jsonText = await generateGeminiJSON(effectivePrompt);
+
+      return {
+        ok: true,
+        role,
+        data: jsonText
+      };
+    } catch (e: any) {
+      logger.error("Gemini call failed", e);
+      throw new HttpsError("internal", e?.message || "Gemini call failed");
+    }
+  }
+);

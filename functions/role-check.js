@@ -1,19 +1,13 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { getFirestore } from "firebase-admin/firestore";
+/**
+ * Deprecated: callGeminiApi was consolidated into "Web App API Function.ts".
+ * This file intentionally exports no Cloud Functions now to avoid duplicate names.
+ */
+
 import { initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 
 initializeApp();
 const db = getFirestore();
 
-export const callGeminiApi = onCall({ region: "us-central1" }, async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) throw new HttpsError("unauthenticated", "Sign-in required.");
-
-  const roleSnap = await db.doc(`system/allowlist/users/${uid}`).get();
-  const role = roleSnap.exists ? roleSnap.get("Role") : "user";
-  if (!["contributor", "admin"].includes(role)) {
-    throw new HttpsError("permission-denied", "Contributor access required.");
-  }
-
-  // ...existing Gemini logic...
-});
+// No exports on purpose.
+// If you prefer, you can delete this file from the repo to keep things tidy.

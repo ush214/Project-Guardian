@@ -118,7 +118,7 @@ const exportJsonBtn = document.getElementById("exportJsonBtn");
 const monitoringBtn = document.getElementById("monitoringBtn");
 
 // State
-let currentRole = "user";
+let currentRole = "guest"; // CHANGED: default to guest
 let currentItem = null;
 let currentDocId = null;
 let currentDocPath = READ_COLLECTIONS[0];
@@ -1230,7 +1230,7 @@ analyzeBtn?.addEventListener("click", async () => {
   } catch (e) {
     statusMessage.textContent = `Analysis failed: ${e?.message || String(e)}`;
   } finally {
-    analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck";
+       analyzeBtn.disabled = false; analyzeText.textContent = "Analyze Wreck";
   }
 });
 
@@ -1297,7 +1297,8 @@ async function fetchRoleFor(uid) {
       if (d.contributor === true) return "contributor";
     }
   } catch {}
-  return "user";
+  // CHANGED: default to guest when not allowlisted
+  return "guest";
 }
 async function loadChartConfig() {
   const paths = [
