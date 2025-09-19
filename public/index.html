@@ -8,7 +8,6 @@
   <!-- Tailwind via CDN (CSP allows cdn.tailwindcss.com) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    /* inline requires 'unsafe-inline' in CSP; used for Tailwind config only */
     tailwind.config = {
       theme: {
         extend: {
@@ -77,12 +76,9 @@
       <a id="nav-list" href="#/list" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10">All Wrecks</a>
       <a id="nav-current-report" href="#/" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden">Current Report</a>
       <a id="nav-import" href="import.html" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10 hidden" title="Open Import Dashboard">Import</a>
-
-      <!-- Admin-only Approvals link -->
       <a id="nav-approvals" href="approvals.html"
          class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-slate-100 border border-white/10 hidden"
          title="Approve registrations">Approvals</a>
-
       <button id="btn-task-dashboard" type="button" title="Open Task Dashboard" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600/80 hover:bg-emerald-500 text-white border border-white/10">
         Task Dashboard
       </button>
@@ -111,7 +107,7 @@ import {
 } from "./auth-role.js";
 
 import {
-  collection, onSnapshot, doc, getDoc
+  collection, onSnapshot, getDocs
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
@@ -125,7 +121,6 @@ const READ_COLLECTIONS = [
   "artifacts/guardian-agent-default/public/data/werpassessments"
 ];
 const DEFAULT_WRITE_COLLECTION = "artifacts/guardian-agent-default/public/data/werpassessments";
-const MAP_OVERLAYS_DOC = `artifacts/${appId}/public/config/mapOverlays`; // { mpaGeoJsonUrl: "https://..." }
 
 /* Utilities */
 const $ = s => document.querySelector(s);
@@ -142,6 +137,95 @@ function showToast(msg,type='info'){
   setTimeout(()=>{ div.classList.add('opacity-0','-translate-y-1'); setTimeout(()=>div.remove(),240); },3000);
 }
 const PLACEHOLDER_SVG="data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#1e293b"/><text x="50%" y="50%" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Arial">No image</text></svg>');
+const WEB_IMG_EXT_RX = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(?:\?|#|$)/i;
+function isHttpUrl(u) {
+  if (typeof u !== "string") return false;
+  const s = u.trim();
+  if (!s || s.startsWith("data:") || s.startsWith("blob:")) return false;
+  return /^https?:\/\//i.test(s);
+}
+function looksLikeImageUrl(u) {
+  return isHttpUrl(u) && WEB_IMG_EXT_RX.test(u);
+}
+function dedupe(arr) {
+  const seen = new Set(); const out = [];
+  for (const v of arr) {
+    const k = String(v || "");
+    if (!k || seen.has(k)) continue;
+    seen.add(k); out.push(v);
+  }
+  return out;
+}
+
+/* Image helpers: prefer cached Storage assets; fallback to external URLs */
+function getExternalImageUrls(item) {
+  const urls = [];
+  const arr = Array.isArray(item?.media?.images) ? item.media.images : [];
+  for (const it of arr) {
+    if (!it) continue;
+    if (typeof it === "string" && looksLikeImageUrl(it)) {
+      urls.push(it);
+    } else if (typeof it === "object") {
+      const cands = [it.url, it.href, it.src, it.imageUrl, it.thumbnail, it.thumb, it.picture, it.pic];
+      for (const c of cands) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
+      if (it.link && typeof it.link === "object") {
+        const c2 = [it.link.url, it.link.href, it.link.src];
+        for (const c of c2) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
+      }
+    }
+  }
+  const altArrays = [
+    item?.media?.photos, item?.media?.gallery,
+    item?.images, item?.photos, item?.gallery,
+    item?.referenceMedia
+  ].filter(Array.isArray);
+  for (const arr2 of altArrays) {
+    for (const it of arr2) {
+      if (!it) continue;
+      if (typeof it === "string" && looksLikeImageUrl(it)) urls.push(it);
+      else if (typeof it === "object") {
+        const cands = [it.url, it.href, it.src, it.imageUrl, it.thumbnail, it.thumb, it.picture, it.pic];
+        for (const c of cands) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
+        if (it.link && typeof it.link === "object") {
+          const c2 = [it.link.url, it.link.href, it.link.src];
+          for (const c of c2) if (c && looksLikeImageUrl(String(c))) urls.push(String(c));
+        }
+      }
+    }
+  }
+  return dedupe(urls);
+}
+function getMarkerImageUrl(item) {
+  const webExt = /\.(png|jpe?g|webp|gif)$/i;
+  const assets = Array.isArray(item?.phase2?.assets) ? item.phase2.assets : [];
+  const img = assets.find(a => a?.url && webExt.test(String(a?.name || a?.path || "")));
+  if (img?.url) return img.url;
+  const extUrls = getExternalImageUrls(item);
+  return extUrls[0] || null;
+}
+
+/* Vessel helpers */
+function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
+function vesselNationality(it){
+  const cands = [
+    it?.nationality, it?.flag, it?.country, it?.flagState, it?.flag_state,
+    it?.metadata?.nationality, it?.metadata?.flag, it?.metadata?.country, it?.metadata?.flagState,
+    it?.meta?.nationality, it?.meta?.flag, it?.meta?.country, it?.meta?.flagState,
+    it?.historical?.nationality, it?.historical?.flag, it?.historical?.country, it?.historical?.vesselNationality, it?.historical?.vesselFlag,
+    it?.vessel?.nationality, it?.vessel?.flag, it?.vessel?.country
+  ];
+  for (const v of cands) {
+    const t = getText(v);
+    if (t) return t;
+  }
+  return "";
+}
+function vesselSummary(it){
+  return getText(it?.historical?.circumstancesOfLoss) ||
+         getText(it?.historical?.summary) ||
+         getText(it?.phase2?.summary) ||
+         "No summary available.";
+}
 
 /* Severity helpers */
 const ACTION_THRESHOLDS = { critical: 60, high: 45, medium: 30 };
@@ -162,28 +246,6 @@ function severityCategoryForItem(it){
   const esi = Number(it?.totals?.esi||0);
   const rpm = rpmFinalMultiplier(it);
   return categorizeSeverity(computeSeverityTotal({wcs, phs, esi, rpm}));
-}
-
-/* Data helpers */
-function vesselName(it){ return getText(it?.name || it?.title || it?.vesselName || it?.metadata?.vesselName || it?.id || "Unknown"); }
-function vesselNationality(it){
-  const cands = [
-    it?.nationality, it?.flag, it?.country,
-    it?.historical?.nationality, it?.historical?.flag, it?.historical?.country,
-    it?.vessel?.nationality, it?.vessel?.flag, it?.vessel?.country,
-    it?.metadata?.nationality, it?.meta?.nationality
-  ];
-  for (const v of cands) {
-    const t = getText(v);
-    if (t) return t;
-  }
-  return "";
-}
-function vesselSummary(it){
-  return getText(it?.historical?.circumstancesOfLoss) ||
-         getText(it?.historical?.summary) ||
-         getText(it?.phase2?.summary) ||
-         "No summary available.";
 }
 function resolveCoordinates(item){
   const toNumL=v=>{ const n=Number(v); return Number.isFinite(n)?n:null; };
@@ -234,12 +296,7 @@ const state = {
   filters: { severity:'all', stage:'all', search:'' },
   leafletMap: null,
   leafletMarkers: new Map(),
-  mapStatus: 'init',
-  overlays: {
-    mpaUrl: null,
-    mpaLayer: null,
-    mpaLoading: false
-  }
+  mapStatus: 'init'
 };
 window.pgState = state;
 
@@ -286,13 +343,15 @@ function refreshLeafletMarkers(){
     const nat = vesselNationality(it);
     const natLine = nat ? `<div style="font-size:11px;color:#64748b;margin:2px 0;">Nationality: ${nat}</div>` : "";
 
-    const thumb=PLACEHOLDER_SVG;
+    const thumb = getMarkerImageUrl(it) || PLACEHOLDER_SVG;
+    const imgAttr = thumb.startsWith('data:') ? thumb : thumb; // already URL
     marker.bindPopup(`
       <div style="min-width:220px">
         <div style="font-weight:600">${vesselName(it)}</div>
         <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Stage: ${it?.stage||'initial'} • ${cat.toUpperCase()}</div>
         ${natLine}
-        <img src="${thumb}" onerror="this.src='${PLACEHOLDER_SVG}'" style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin:6px 0 6px"/>
+        <img src="${imgAttr}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'"
+             style="width:100%;max-height:120px;object-fit:cover;border:1px solid #334155;border-radius:6px;margin:6px 0 6px"/>
         <a href="#/wreck/${encodeURIComponent(it.id)}" style="font-size:12px;color:#0ea5e9;text-decoration:underline;">Open Report</a>
       </div>`);
     marker.addTo(state.leafletMap);
@@ -341,71 +400,7 @@ function initLeaflet(){
 function ensureMapSize(){ if(state.leafletMap) state.leafletMap.invalidateSize(); }
 window.addEventListener('resize', debounce(ensureMapSize,200));
 
-/* MPA Overlay */
-async function ensureOverlayConfig() {
-  if (state.overlays.mpaUrl) return state.overlays.mpaUrl;
-  try {
-    const snap = await getDoc(doc(sharedDb, MAP_OVERLAYS_DOC));
-    if (snap.exists()) {
-      const data = snap.data() || {};
-      if (data.mpaGeoJsonUrl && typeof data.mpaGeoJsonUrl === 'string') {
-        state.overlays.mpaUrl = data.mpaGeoJsonUrl.trim();
-        return state.overlays.mpaUrl;
-      }
-    }
-  } catch (e) {
-    console.warn('[map] overlay config fetch failed', e);
-  }
-  return null;
-}
-async function toggleMpaLayer(on) {
-  if (!state.leafletMap) return;
-  if (!on) {
-    if (state.overlays.mpaLayer) {
-      try { state.leafletMap.removeLayer(state.overlays.mpaLayer); } catch {}
-      state.overlays.mpaLayer = null;
-    }
-    return;
-  }
-  if (state.overlays.mpaLayer || state.overlays.mpaLoading) return;
-  state.overlays.mpaLoading = true;
-
-  try {
-    const url = await ensureOverlayConfig();
-    if (!url) {
-      showToast("MPA dataset URL not configured", "error");
-      state.overlays.mpaLoading = false;
-      const cb = $('#mpa-toggle'); if (cb) cb.checked = false;
-      return;
-    }
-    const res = await fetch(url, { credentials: 'omit', mode: 'cors' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const gj = await res.json();
-    const style = {
-      color: '#34d399',
-      weight: 1,
-      fillColor: '#10b981',
-      fillOpacity: 0.15
-    };
-    const layer = L.geoJSON(gj, {
-      style,
-      onEachFeature: (feature, lyr) => {
-        const name = feature?.properties?.NAME || feature?.properties?.name || feature?.properties?.designation || '';
-        if (name) lyr.bindTooltip(String(name), { sticky: true, direction: 'top' });
-      }
-    });
-    layer.addTo(state.leafletMap);
-    state.overlays.mpaLayer = layer;
-  } catch (e) {
-    console.error('[map] failed to load MPA layer', e);
-    showToast("Failed to load MPA layer", "error");
-    const cb = $('#mpa-toggle'); if (cb) cb.checked = false;
-  } finally {
-    state.overlays.mpaLoading = false;
-  }
-}
-
-/* Listeners (Firestore) */
+/* Data listeners + forced refresh */
 function detachListeners(){ for(const u of state.listeners){ try{u();}catch{} } state.listeners=[]; }
 function startData(){
   detachListeners();
@@ -433,7 +428,7 @@ function startData(){
       }
     }
   };
-  for(const p of READ_COLLECTIONS){
+  for (const p of READ_COLLECTIONS){
     try{
       const un=onSnapshot(collection(sharedDb,p),(snap)=>applySnap(snap,p),
         e=>console.error("Listener error",p,e));
@@ -441,12 +436,31 @@ function startData(){
     }catch(e){ console.error("Failed to listen",p,e); }
   }
 }
+/* Force a one-shot fetch to avoid stale markers when returning to Home */
+async function forceFetchLatest() {
+  try {
+    const accumulator = new Map();
+    for (const p of READ_COLLECTIONS) {
+      const snap = await getDocs(collection(sharedDb, p));
+      snap.forEach(docSnap => {
+        const raw = docSnap.data() || {};
+        const rec = { ...raw, id: raw.id || docSnap.id, _path: p };
+        accumulator.set(`${p}::${rec.id}`, rec);
+        state.byIdPath.set(rec.id, p);
+      });
+    }
+    state.wrecks = Array.from(accumulator.values());
+    refreshLeafletMarkers();
+    renderReassessList();
+  } catch (e) {
+    console.warn('[forceFetchLatest] failed', e);
+  }
+}
 
-/* Auto-refresh when returning to Home or tab gets focus */
+/* Auto-refresh when returning to Home (hash change) or tab gets focus */
 window.addEventListener('visibilitychange', ()=>{
   if (document.visibilityState === 'visible' && state.currentRoute?.name === 'home') {
-    startData();            // reattach listeners to ensure fresh data
-    refreshLeafletMarkers(); // rerender markers with any new data
+    forceFetchLatest();
   }
 });
 
@@ -513,12 +527,6 @@ function buildMapCard(){
         <span class="mr-2 font-medium text-slate-200">Stage:</span>
         ${['all','initial','completed','reassess'].map(r=>`<button data-filter-stage="${r}" class="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
       </div>
-      <div class="flex flex-wrap items-center gap-3 text-sm">
-        <label class="inline-flex items-center gap-2">
-          <input type="checkbox" id="mpa-toggle" class="rounded border-white/20 bg-slate-800">
-          <span class="text-slate-200">MPA layer</span>
-        </label>
-      </div>
       <div class="xl:ml-auto w-full xl:w-72">
         <input id="map-search" type="text" placeholder="Search..." class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-600" />
       </div>
@@ -545,7 +553,6 @@ function updateAuthUI(){
   const importLink = document.getElementById('nav-import');
   if (importLink) importLink.classList.toggle('hidden', !contributor);
 
-  // Show Approvals for admins
   const approvalsLink = document.getElementById('nav-approvals');
   if (approvalsLink) approvalsLink.classList.toggle('hidden', !isAdmin());
 
@@ -625,7 +632,6 @@ function renderHome(){
   });
   $('#btn-signout')?.addEventListener('click', async ()=>{ try{ await signOutUser(); }catch{} });
 
-  // Task dashboard button (admin only)
   const taskBtn = document.getElementById('btn-task-dashboard');
   if (taskBtn && !taskBtn.dataset.bound) {
     taskBtn.addEventListener('click', (e)=>{
@@ -636,7 +642,6 @@ function renderHome(){
     taskBtn.dataset.bound = '1';
   }
 
-  // Analyze/Reassess
   $('#analyze-form')?.addEventListener('submit', async e=>{
     e.preventDefault();
     if(!isContributor()){ showToast("Insufficient role","error"); return; }
@@ -671,7 +676,6 @@ function renderHome(){
     }
   });
 
-  // Filters
   document.querySelectorAll('[data-filter-sev]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       state.filters.severity = btn.getAttribute('data-filter-sev');
@@ -689,18 +693,17 @@ function renderHome(){
     refreshLeafletMarkers();
   },250));
 
-  // MPA toggle
-  $('#mpa-toggle')?.addEventListener('change', (e)=> toggleMpaLayer(!!e.target.checked));
-
-  // Ensure map and latest data on entering Home
   initLeaflet();
-  startData();             // re-attach snapshot listeners upon arriving Home
-  refreshLeafletMarkers(); // render markers now
+
+  // Ensure latest data and markers when entering Home
+  startData();
+  forceFetchLatest();
+  refreshLeafletMarkers();
   renderReassessList();
   updateAuthUI();
 }
 
-/* Simple List + Report */
+/* Simple List + Report (enhanced: show image gallery) */
 function renderReport(route){
   const app=$('#app');
   const it=state.wrecks.find(w=>String(w.id)===String(route.id));
@@ -709,6 +712,17 @@ function renderReport(route){
     app.innerHTML='<div class="text-slate-300">Wreck not found. <a href="#/" class="text-cyan-400 underline">Back</a></div>';
     return;
   }
+  const assets = Array.isArray(it?.phase2?.assets) ? it.phase2.assets : [];
+  const webExt = /\.(png|jpe?g|gif|webp)$/i;
+  let urls = assets.filter(a => a?.url && webExt.test(String(a?.name || a?.path || ""))).map(a => a.url);
+  if (!urls.length) urls = getExternalImageUrls(it);
+  const gallery = urls.length
+    ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">${urls.slice(0,9).map(u=>`<img src="${u}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-32 md:h-36 object-cover rounded border border-white/10" />`).join('')}</div>`
+    : `<div class="text-xs text-slate-400">No images available.</div>`;
+
+  const nat = vesselNationality(it);
+  const natBadge = nat ? `<span class="ml-2 px-2 py-0.5 text-xs rounded-md bg-white/5 border border-white/10">${nat}</span>` : '';
+
   app.innerHTML=`
     <div class="flex flex-wrap items-center gap-3 mb-5">
       <a href="#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm">← Home</a>
@@ -716,8 +730,12 @@ function renderReport(route){
       <span class="ml-auto text-xs px-2 py-1 rounded-md bg-slate-800 border border-white/10 text-slate-300">Role: ${state.role}</span>
     </div>
     <section class="card-surface p-5 space-y-4">
-      <h1 class="text-2xl font-semibold text-cyan-200">${vesselName(it)}</h1>
+      <h1 class="text-2xl font-semibold text-cyan-200 flex items-center">${vesselName(it)} ${natBadge}</h1>
       <p class="text-sm text-slate-300">${vesselSummary(it)}</p>
+      <div>
+        <h3 class="text-sm font-semibold text-slate-200">Images</h3>
+        ${gallery}
+      </div>
     </section>`;
 }
 function renderList(){
@@ -743,9 +761,12 @@ function renderList(){
                         cat==='high'?'bg-orange-500/20 text-orange-200 border-orange-400/30':
                         cat==='medium'?'bg-amber-400/20 text-amber-200 border-amber-300/30':
                         'bg-emerald-400/20 text-emerald-200 border-emerald-300/30';
+          const thumb = getMarkerImageUrl(it) || PLACEHOLDER_SVG;
           return `
             <a href="#/wreck/${encodeURIComponent(it.id)}" class="block rounded-xl bg-slate-800/60 border border-white/10 hover:bg-slate-800 transition overflow-hidden">
-              <div class="w-full h-40 bg-slate-700 border-b border-white/10 flex items-center justify-center text-slate-300 text-xs">No image</div>
+              <div class="w-full h-40 bg-slate-700 border-b border-white/10 flex items-center justify-center text-slate-300 text-xs">
+                <img src="${thumb}" referrerpolicy="no-referrer" onerror="this.src='${PLACEHOLDER_SVG}'" class="w-full h-full object-cover"/>
+              </div>
               <div class="p-3">
                 <div class="flex items-center justify-between gap-3">
                   <h3 class="font-medium truncate">${vesselName(it)}</h3>
@@ -807,7 +828,6 @@ onAuthChanged(user=>{
 onRoleResolved(({ role })=>{
   state.role = role;
   updateAuthUI();
-  // ensure listeners are active when role resolves
   startData();
   renderApp();
 });
@@ -827,8 +847,8 @@ function renderApp(){
     renderHome();
   }
   if(route.name==='home'){
-    // when navigating back to Home, ensure we re-fetch and re-render
-    startData();
+    // ensure latest data whenever navigating back to Home
+    forceFetchLatest();
     refreshLeafletMarkers();
     renderReassessList();
   }
