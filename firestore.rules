@@ -5,45 +5,48 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-    // Admin via allowlist (not just custom claims)
+
+    // Admin via allowlist
     function isAdmin() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true;
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true;
     }
-    // Contributor via allowlist
+
+    // Contributor via allowlist (admins are contributors by superset)
     function isContributor() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)) &&
-        (
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
+        && (
           get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.contributor == true ||
           get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true
         );
     }
-    // Any allowlisted user (allowed true OR contributor/admin)
+
+    // Any allowlisted user: allowed OR contributor OR admin
     function isAllowlisted() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)) &&
-        (
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid))
+        && (
           get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.allowed == true ||
           get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.contributor == true ||
           get(/databases/$(database)/documents/system/allowlist/users/$(request.auth.uid)).data.admin == true
         );
     }
 
-    // Users may submit an approval request for themselves
+    // Registration approvals queue
     match /system/approvals/users/{uid} {
+      // user can file a request for themselves
       allow create: if isSignedIn() && request.auth.uid == uid;
       allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow list: if isAdmin();
-      allow update, delete: if isAdmin();
+      allow list, update, delete: if isAdmin();
     }
 
-    // Admin-maintained allowlist (authoritative source of roles)
+    // Admin-maintained allowlist
     match /system/allowlist/users/{uid} {
-      // Users can read their own allowlist entry (optional; remove if you prefer to hide)
+      // let a user read their own allowlist entry (for role resolution UX)
       allow get: if isSignedIn() && request.auth.uid == uid;
-      // Only admins list and modify allowlist
+      // only admins can list or modify
       allow list: if isAdmin();
       allow create, update, delete: if isAdmin();
     }
@@ -54,10 +57,17 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Task manager (approved users can read; contributors/admin can write; delete stays admin)
+    // Task data: allowlisted users can read/create/update; admin-only delete
     match /artifacts/{appId}/private/admin/tasks/{taskId} {
       allow get, list: if isAllowlisted();
-      allow create, update: if isContributor();
+      allow create, update: if isAllowlisted();
+      allow delete: if isAdmin();
+    }
+
+    // Task meta/sequence for ID allocation (same allowlist as tasks)
+    match /artifacts/{appId}/private/admin/tasks_meta/{docId} {
+      allow read: if isAllowlisted();
+      allow create, update: if isAllowlisted();
       allow delete: if isAdmin();
     }
   }

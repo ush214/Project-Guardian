@@ -1,8 +1,8 @@
-// Firestore-persisted Task Dashboard (approved users can write; admins can also delete in future).
-// Requires: auth-role.js (exports db, isAdmin, isContributor, onAuthChanged, onRoleResolved)
+// Firestore-persisted Task Dashboard (allowlisted users can write; admins can also delete in future).
+// Requires: auth-role.js (exports db, isAdmin, isContributor, isAllowlisted, onAuthChanged, onRoleResolved)
 
 import {
-  onAuthChanged, onRoleResolved, isAdmin, isContributor, db
+  onAuthChanged, onRoleResolved, isAdmin, isAllowlisted, db
 } from './auth-role.js';
 
 import {
@@ -13,9 +13,9 @@ import {
 const $ = (s) => document.querySelector(s);
 
 /* ---------- Access helpers ---------- */
-const CAN_READ = () => (isContributor() || isAdmin());
-const CAN_WRITE = () => (isContributor() || isAdmin());
-// If you later want delete-only-admin UI, you can add CAN_DELETE = () => isAdmin()
+const CAN_READ = () => isAllowlisted();
+const CAN_WRITE = () => isAllowlisted(); // approved users can add/move
+// const CAN_DELETE = () => isAdmin(); // for future administrative deletes
 
 /* ---------- Gate ---------- */
 let currentUser = null;
@@ -31,7 +31,7 @@ function setGate(allowed) {
     denied.classList.remove('hidden');
   }
   $('#header-user').textContent = currentUser?.email || '';
-  $('#header-role').textContent = allowed ? (isAdmin() ? 'admin' : 'contributor') : (currentRole || 'guest');
+  $('#header-role').textContent = allowed ? (isAdmin() ? 'admin' : 'approved') : (currentRole || 'guest');
 }
 
 /* ---------- App constants ---------- */
@@ -59,8 +59,9 @@ function rebuildCharts(tasks) {
   const byStatus = tasks.reduce((acc, t) => { acc[t.status||'Not Started'] = (acc[t.status||'Not Started'] || 0) + 1; return acc; }, {});
   const byPriority = tasks.reduce((acc, t) => { acc[t.priority||'Low'] = (acc[t.priority||'Low'] || 0) + 1; return acc; }, {});
 
-  const ctxStatus = document.getElementById('statusChart').getContext('2d');
-  const ctxPriority = document.getElementById('priorityChart').getContext('2d');
+  const ctxStatus = document.getElementById('statusChart')?.getContext('2d');
+  const ctxPriority = document.getElementById('priorityChart')?.getContext('2d');
+  if(!ctxStatus || !ctxPriority) return;
 
   const common = {
     responsive: true,
@@ -196,7 +197,7 @@ function closeAddModal() { addTaskModal.classList.add('hidden'); addTaskModal.cl
 $('#cancelAddTaskBtn')?.addEventListener('click', closeAddModal);
 addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ closeViewModal(); closeAddModal(); }});
 
-/* ---------- Add Task (approved or admin) ---------- */
+/* ---------- Add Task (allowlisted) ---------- */
 $('#addTaskBtn')?.addEventListener('click', openAddModal);
 
 $('#addTaskForm')?.addEventListener('submit', async (e)=>{
@@ -228,7 +229,7 @@ $('#addTaskForm')?.addEventListener('submit', async (e)=>{
   }
 });
 
-/* ---------- Drag & Drop status update (approved or admin) ---------- */
+/* ---------- Drag & Drop status update (allowlisted) ---------- */
 let draggingId = null;
 function handleDragStart(e) {
   draggingId = e.currentTarget?.dataset?.id || null;
@@ -265,7 +266,6 @@ function subscribeTasks() {
   unsubTasks = onSnapshot(collection(db, TASKS_PATH), (snap)=>{
     const list = snap.docs.map(d=>{
       const data = d.data() || {};
-      // Ensure id mirrors doc ID (PG-XXX)
       return { id: d.id, ...data };
     });
     renderBoard(list);

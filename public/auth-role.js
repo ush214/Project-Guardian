@@ -66,6 +66,8 @@ export function getCurrentUser(){ return currentUser; }
 export function getCurrentRole(){ return currentRole; }
 export function isAdmin(){ return currentRole === 'admin'; }
 export function isContributor(){ return currentRole === 'admin' || currentRole === 'contributor'; }
+// NEW: allowlisted = admin OR contributor OR user (user is min allowlisted)
+export function isAllowlisted(){ return ['admin','contributor','user'].includes(currentRole); }
 
 // Auth helpers
 export async function signInWithGooglePopup(){
@@ -125,6 +127,7 @@ async function resolveRole(user){
         const rr = tokenResult.claims.role.toLowerCase();
         if (rr === 'admin') return 'admin';
         if (rr === 'contributor') return 'contributor';
+        if (rr === 'user') return 'user';
       }
     } catch(e){}
 
@@ -132,8 +135,8 @@ async function resolveRole(user){
     const al = await fetchAllowlistRole(user.uid);
     if (al) return al;
 
-    // Default
-    return 'user';
+    // Default when NOT allowlisted: stay guest
+    return 'guest';
   })();
 
   try {
