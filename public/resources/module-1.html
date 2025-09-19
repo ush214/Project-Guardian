@@ -1,279 +1,279 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Project Guardian - Spill Response SOPs</title>
+  <title>Project Guardian – Spill Response SOPs</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {} } }
+  </script>
   <style>
-    body { background-color: #050816; }
-    .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-in-out; }
-    .progress-bar-fill { transition: width 0.5s ease-in-out; }
+    .accordion-content { max-height: 0; overflow: hidden; transition: max-height .5s ease-in-out; }
+    .progress-bar-fill { transition: width .5s ease-in-out; }
     .sop-item input:checked + label span { text-decoration: line-through; color: #94a3b8; }
-    .sop-item .checkmark { transition: background-color 0.2s, border-color 0.2s; }
-    .sop-item input:checked + label .checkmark { background-color: #0891b2; border-color: #22d3ee; }
+    .sop-item .checkmark { transition: background-color .2s, border-color .2s; }
+    .sop-item input:checked + label .checkmark { background-color: #0891b2; border-color: #06b6d4; }
     .sop-item input:checked + label .checkmark > div { opacity: 1; }
     .accordion-header.active .icon { transform: rotate(180deg); }
-    .icon { transition: transform 0.3s ease-in-out; }
+    .icon { transition: transform .3s ease-in-out; }
+    .card-surface { background: rgba(15,23,42,0.70); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; }
   </style>
 </head>
-<body class="text-slate-100">
-  <div id="app" class="max-w-5xl mx-auto p-4 md:p-8">
-    <header class="mb-8 border-b border-white/10 pb-6">
-      <div class="flex items-center justify-between">
-        <a href="./index.html" class="text-sm text-slate-300 hover:text-slate-100">&larr; Resource Center</a>
-        <h1 class="text-2xl md:text-3xl font-semibold text-cyan-200">Spill Response SOPs</h1>
-      </div>
-      <p class="text-slate-300 mt-2 max-w-3xl">Interactive phased guide for responding to a potential or confirmed oil pollution event. Track your progress through each phase.</p>
-    </header>
+<body class="bg-[#050816] text-slate-100">
+  <header class="sticky top-0 z-50 backdrop-blur bg-[#050816]/90 border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center gap-3">
+      <a href="/resources/index.html" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-100">&larr; Resources</a>
+      <a href="/#/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-100">Home</a>
+      <div class="ml-auto text-cyan-200 font-semibold">Spill Response SOPs</div>
+    </div>
+  </header>
 
-    <main class="space-y-6">
-      <!-- Phase 1 -->
-      <div class="sop-phase bg-slate-900 rounded-xl border border-white/10 shadow-card" data-phase="1">
-        <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
-          <div>
-            <h2 class="text-xl font-semibold text-cyan-200">Phase 1: Immediate Actions</h2>
-            <p class="text-xs text-slate-400">(First 6 Hours from Initial Alert)</p>
-          </div>
-          <div class="icon text-cyan-200 text-2xl font-bold">▼</div>
+  <main class="max-w-5xl mx-auto p-4 md:p-8 space-y-6">
+    <!-- Phase 1 -->
+    <div class="sop-phase card-surface" data-phase="1">
+      <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-semibold text-cyan-200">Phase 1: Immediate Actions</h2>
+          <p class="text-xs text-slate-400">(First 6 Hours from Initial Alert)</p>
         </div>
-        <div class="accordion-content">
-          <div class="px-6 pb-6">
-            <div class="mb-4">
-              <div class="flex justify-between text-xs font-medium text-slate-300 mb-1">
-                <span>Phase Progress</span><span class="progress-label">0%</span>
-              </div>
-              <div class="w-full bg-slate-800 rounded-full h-2">
-                <div class="progress-bar-fill bg-cyan-600 h-2 rounded-full" style="width: 0%"></div>
-              </div>
+        <div class="icon text-cyan-200 text-2xl font-bold">▼</div>
+      </div>
+      <div class="accordion-content">
+        <div class="px-6 pb-6">
+          <div class="mb-4">
+            <div class="flex justify-between text-xs font-medium text-slate-300 mb-1">
+              <span>Phase Progress</span><span class="progress-label">0%</span>
+            </div>
+            <div class="w-full bg-slate-700 rounded-full h-2.5">
+              <div class="progress-bar-fill bg-cyan-600 h-2.5 rounded-full" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="sop-item">
+              <input type="checkbox" id="task1-1" class="hidden">
+              <label for="task1-1" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">1.1: Verify the Alert</span>
+                  <p class="text-sm text-slate-300 mt-1">Cross-reference platform data, check AIS traffic, and seek visual confirmation.</p>
+                </div>
+              </label>
             </div>
 
-            <div class="space-y-4 text-slate-200">
-              <div class="sop-item">
-                <input type="checkbox" id="task1-1" class="hidden">
-                <label for="task1-1" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">1.1: Verify the Alert</span>
-                    <p class="text-xs text-slate-400 mt-1">Cross-reference platform data, check AIS traffic, and notify assets of opportunity for visual confirmation.</p>
-                  </div>
-                </label>
-              </div>
+            <div class="sop-item">
+              <input type="checkbox" id="task1-2" class="hidden">
+              <label for="task1-2" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">1.2: Execute Initial Notification Chain</span>
+                  <p class="text-sm text-slate-300 mt-1">Notify lead agency and secondary agencies (Environment, Disaster Mgmt, etc.).</p>
+                </div>
+              </label>
+            </div>
 
-              <div class="sop-item">
-                <input type="checkbox" id="task1-2" class="hidden">
-                <label for="task1-2" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">1.2: Execute Initial Notification Chain</span>
-                    <p class="text-xs text-slate-400 mt-1">Activate national response: lead agency and secondary agencies (Environment, Disaster Mgmt, etc.).</p>
-                  </div>
-                </label>
-              </div>
+            <div class="sop-item">
+              <input type="checkbox" id="task1-3" class="hidden">
+              <label for="task1-3" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">1.3: Preliminary Impact Assessment</span>
+                  <p class="text-sm text-slate-300 mt-1">Use spill trajectory model to identify threatened MPAs, coastlines, fisheries.</p>
+                </div>
+              </label>
+            </div>
 
-              <div class="sop-item">
-                <input type="checkbox" id="task1-3" class="hidden">
-                <label for="task1-3" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">1.3: Run Preliminary Impact Assessment</span>
-                    <p class="text-xs text-slate-400 mt-1">Use trajectory model to identify threatened MPAs, coastlines, and fisheries. Review metocean conditions.</p>
-                  </div>
-                </label>
-              </div>
-
-              <div class="sop-item">
-                <input type="checkbox" id="task1-4" class="hidden">
-                <label for="task1-4" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">1.4: Issue Navigation & Safety Warning</span>
-                    <p class="text-xs text-slate-400 mt-1">Broadcast via NAVTEX, SafetyNet, or VHF; detail location and advise stand-off distance.</p>
-                  </div>
-                </label>
-              </div>
+            <div class="sop-item">
+              <input type="checkbox" id="task1-4" class="hidden">
+              <label for="task1-4" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">1.4: Navigation & Safety Warning</span>
+                  <p class="text-sm text-slate-300 mt-1">Broadcast a warning to mariners (NAVTEX, SafetyNet, VHF) with location and stand-off.</p>
+                </div>
+              </label>
             </div>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- Phase 2 -->
-      <div class="sop-phase bg-slate-900 rounded-xl border border-white/10 shadow-card" data-phase="2">
-        <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
-          <div>
-            <h2 class="text-xl font-semibold text-cyan-200">Phase 2: Initial Assessment & Planning</h2>
-            <p class="text-xs text-slate-400">(6–24 Hours)</p>
-          </div>
-          <div class="icon text-cyan-200 text-2xl font-bold">▼</div>
+    <!-- Phase 2 -->
+    <div class="sop-phase card-surface" data-phase="2">
+      <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-semibold text-cyan-200">Phase 2: Initial Assessment & Planning</h2>
+          <p class="text-xs text-slate-400">(6–24 Hours)</p>
         </div>
-        <div class="accordion-content">
-          <div class="px-6 pb-6">
-            <div class="mb-4">
-              <div class="flex justify-between text-xs font-medium text-slate-300 mb-1">
-                <span>Phase Progress</span><span class="progress-label">0%</span>
-              </div>
-              <div class="w-full bg-slate-800 rounded-full h-2">
-                <div class="progress-bar-fill bg-cyan-600 h-2 rounded-full" style="width: 0%"></div>
-              </div>
+        <div class="icon text-cyan-200 text-2xl font-bold">▼</div>
+      </div>
+      <div class="accordion-content">
+        <div class="px-6 pb-6">
+          <div class="mb-4">
+            <div class="flex justify-between text-xs font-medium text-slate-300 mb-1">
+              <span>Phase Progress</span><span class="progress-label">0%</span>
+            </div>
+            <div class="w-full bg-slate-700 rounded-full h-2.5">
+              <div class="progress-bar-fill bg-cyan-600 h-2.5 rounded-full" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="sop-item">
+              <input type="checkbox" id="task2-1" class="hidden">
+              <label for="task2-1" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">2.1: Designate OSC & Mobilize Team</span>
+                  <p class="text-sm text-slate-300 mt-1">Activate ICS sections: Operations, Planning, Logistics, Finance.</p>
+                </div>
+              </label>
             </div>
 
-            <div class="space-y-4 text-slate-200">
-              <div class="sop-item">
-                <input type="checkbox" id="task2-1" class="hidden">
-                <label for="task2-1" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">2.1: Designate On-Scene Commander (OSC) & Mobilize Team</span>
-                    <p class="text-xs text-slate-400 mt-1">Activate core ICS team (Operations, Planning, Logistics, Finance).</p>
-                  </div>
-                </label>
-              </div>
+            <div class="sop-item">
+              <input type="checkbox" id="task2-2" class="hidden">
+              <label for="task2-2" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">2.2: First-Light Overflight / On-Site Survey</span>
+                  <p class="text-sm text-slate-300 mt-1">Confirm substance, extent, volume, movement; capture photo/video.</p>
+                </div>
+              </label>
+            </div>
 
-              <div class="sop-item">
-                <input type="checkbox" id="task2-2" class="hidden">
-                <label for="task2-2" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">2.2: First-Light Overflight / On-Site Survey</span>
-                    <p class="text-xs text-slate-400 mt-1">Document substance, extent, volume, movement, with photos/video.</p>
-                  </div>
-                </label>
-              </div>
+            <div class="sop-item">
+              <input type="checkbox" id="task2-3" class="hidden">
+              <label for="task2-3" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">2.3: Activate NOSCP</span>
+                  <p class="text-sm text-slate-300 mt-1">Escalate to national incident to unlock funding and resources.</p>
+                </div>
+              </label>
+            </div>
 
-              <div class="sop-item">
-                <input type="checkbox" id="task2-3" class="hidden">
-                <label for="task2-3" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">2.3: Activate NOSCP</span>
-                    <p class="text-xs text-slate-400 mt-1">Formally escalate to national-level incident to unlock resources.</p>
-                  </div>
-                </label>
-              </div>
-
-              <div class="sop-item">
-                <input type="checkbox" id="task2-4" class="hidden">
-                <label for="task2-4" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">2.4: Refine Trajectory Models & Targets</span>
-                    <p class="text-xs text-slate-400 mt-1">Update models, produce prioritized at-risk sites list.</p>
-                  </div>
-                </label>
-              </div>
+            <div class="sop-item">
+              <input type="checkbox" id="task2-4" class="hidden">
+              <label for="task2-4" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">2.4: Refine Trajectory & Targets</span>
+                  <p class="text-sm text-slate-300 mt-1">Re-run models with ground-truth; prioritize at-risk sites.</p>
+                </div>
+              </label>
             </div>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- Phase 3 -->
-      <div class="sop-phase bg-slate-900 rounded-xl border border-white/10 shadow-card" data-phase="3">
-        <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
-          <div>
-            <h2 class="text-xl font-semibold text-yellow-200">Phase 3: Sustained Operations</h2>
-            <p class="text-xs text-slate-400">(24+ Hours)</p>
-          </div>
-          <div class="icon text-yellow-200 text-2xl font-bold">▼</div>
+    <!-- Phase 3 -->
+    <div class="sop-phase card-surface" data-phase="3">
+      <div class="accordion-header cursor-pointer p-6 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-semibold text-cyan-200">Phase 3: Sustained Operations</h2>
+          <p class="text-xs text-slate-400">(24+ Hours)</p>
         </div>
-        <div class="accordion-content">
-          <div class="px-6 pb-6">
-            <div class="mb-4">
-              <div class="flex justify-between text-xs font-medium text-slate-300 mb-1">
-                <span>Phase Progress</span><span class="progress-label">0%</span>
-              </div>
-              <div class="w-full bg-slate-800 rounded-full h-2">
-                <div class="progress-bar-fill bg-amber-500 h-2 rounded-full" style="width: 0%"></div>
-              </div>
+        <div class="icon text-cyan-200 text-2xl font-bold">▼</div>
+      </div>
+      <div class="accordion-content">
+        <div class="px-6 pb-6">
+          <div class="mb-4">
+            <div class="flex justify-between text-xs font-medium text-slate-300 mb-1">
+              <span>Phase Progress</span><span class="progress-label">0%</span>
+            </div>
+            <div class="w-full bg-slate-700 rounded-full h-2.5">
+              <div class="progress-bar-fill bg-cyan-600 h-2.5 rounded-full" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="sop-item">
+              <input type="checkbox" id="task3-1" class="hidden">
+              <label for="task3-1" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">3.1: Incident Action Plan (IAP)</span>
+                  <p class="text-sm text-slate-300 mt-1">Issue an IAP each period with objectives, strategies, assignments.</p>
+                </div>
+              </label>
             </div>
 
-            <div class="space-y-4 text-slate-200">
-              <div class="sop-item">
-                <input type="checkbox" id="task3-1" class="hidden">
-                <label for="task3-1" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">3.1: Incident Action Plan (IAP)</span>
-                    <p class="text-xs text-slate-400 mt-1">Create for each 12/24h period with objectives, strategies, assignments.</p>
-                  </div>
-                </label>
-              </div>
-
-              <div class="sop-item">
-                <input type="checkbox" id="task3-2" class="hidden">
-                <label for="task3-2" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">3.2: Implement Response Strategy</span>
-                    <p class="text-xs text-slate-400 mt-1">Deploy assets. See Remediation Techniques (Module 2). Stand up staging areas.</p>
-                  </div>
-                </label>
-              </div>
-
-              <div class="sop-item">
-                <input type="checkbox" id="task3-3" class="hidden">
-                <label for="task3-3" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">3.3: Environmental Monitoring & Sampling</span>
-                    <p class="text-xs text-slate-400 mt-1">Water/sediment sampling, SCAT surveys, wildlife management.</p>
-                  </div>
-                </label>
-              </div>
-
-              <div class="sop-item">
-                <input type="checkbox" id="task3-4" class="hidden">
-                <label for="task3-4" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">3.4: Waste & Decontamination</span>
-                    <p class="text-xs text-slate-400 mt-1">Plan for recovered oil and contaminated materials storage through disposal.</p>
-                  </div>
-                </label>
-              </div>
-
-              <div class="sop-item">
-                <input type="checkbox" id="task3-5" class="hidden">
-                <label for="task3-5" class="flex items-start cursor-pointer">
-                  <div class="flex items-center justify-center w-6 h-6 mr-4 mt-0.5 bg-slate-900 border-2 border-white/20 rounded checkmark flex-shrink-0 relative">
-                    <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
-                  </div>
-                  <div>
-                    <span class="font-semibold">3.5: Public & Stakeholder Communications</span>
-                    <p class="text-xs text-slate-400 mt-1">Establish JIC, regular briefings, maintain stakeholder contact.</p>
-                  </div>
-                </label>
-              </div>
+            <div class="sop-item">
+              <input type="checkbox" id="task3-2" class="hidden">
+              <label for="task3-2" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">3.2: Implement Response Strategy</span>
+                  <p class="text-sm text-slate-300 mt-1">Deploy assets for cleanup. See Remediation Techniques guide for options.</p>
+                </div>
+              </label>
             </div>
 
+            <div class="sop-item">
+              <input type="checkbox" id="task3-3" class="hidden">
+              <label for="task3-3" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">3.3: Environmental Monitoring & Sampling</span>
+                  <p class="text-sm text-slate-300 mt-1">Water/sediment sampling, SCAT teams, affected wildlife response.</p>
+                </div>
+              </label>
+            </div>
+
+            <div class="sop-item">
+              <input type="checkbox" id="task3-4" class="hidden">
+              <label for="task3-4" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">3.4: Waste & Decontamination</span>
+                  <p class="text-sm text-slate-300 mt-1">Manage recovered oil and contaminated materials from storage to disposal.</p>
+                </div>
+              </label>
+            </div>
+
+            <div class="sop-item">
+              <input type="checkbox" id="task3-5" class="hidden">
+              <label for="task3-5" class="flex items-start cursor-pointer">
+                <div class="flex items-center justify-center w-6 h-6 mr-4 mt-1 bg-slate-900 border-2 border-white/10 rounded checkmark flex-shrink-0 relative">
+                  <div class="absolute w-1.5 h-3 border-r-2 border-b-2 border-white transform rotate-45 -translate-y-px opacity-0"></div>
+                </div>
+                <div>
+                  <span class="font-semibold">3.5: Public & Stakeholder Comms</span>
+                  <p class="text-sm text-slate-300 mt-1">Stand up JIC, schedule briefings, maintain stakeholder communication.</p>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
       </div>
-    </main>
-  </div>
+    </div>
+  </main>
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
@@ -282,11 +282,7 @@
         accordion.addEventListener('click', () => {
           accordion.classList.toggle('active');
           const content = accordion.nextElementSibling;
-          if (content.style.maxHeight) {
-            content.style.maxHeight = null;
-          } else {
-            content.style.maxHeight = content.scrollHeight + 'px';
-          }
+          content.style.maxHeight = content.style.maxHeight ? null : content.scrollHeight + 'px';
         });
       });
 
@@ -299,11 +295,10 @@
 
         const updateProgress = () => {
           const checkedTasks = phase.querySelectorAll('.sop-item input[type="checkbox"]:checked').length;
-          const percentage = totalTasks > 0 ? Math.round((checkedTasks / totalTasks) * 100) : 0;
+          const percentage = totalTasks ? Math.round((checkedTasks / totalTasks) * 100) : 0;
           progressBar.style.width = percentage + '%';
           progressLabel.textContent = percentage + '%';
         };
-
         checkboxes.forEach(cb => cb.addEventListener('change', updateProgress));
         updateProgress();
       });

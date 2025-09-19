@@ -8,9 +8,18 @@
     ],
     "cleanUrls": true,
     "trailingSlash": false,
+
+    "redirects": [
+      { "source": "/resources", "destination": "/resources/index.html", "type": 301 },
+      { "source": "/approvals", "destination": "/approvals.html", "type": 301 },
+      { "source": "/import", "destination": "/import.html", "type": 301 },
+      { "source": "/tasks-dashboard", "destination": "/tasks-dashboard.html", "type": 301 }
+    ],
+
     "rewrites": [
       { "source": "**", "destination": "/index.html" }
     ],
+
     "headers": [
       {
         "source": "**",
@@ -23,6 +32,12 @@
       },
       {
         "source": "/index.html",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        ]
+      },
+      {
+        "source": "/resources/**/*.html",
         "headers": [
           { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
         ]
@@ -47,17 +62,21 @@
       }
     ]
   },
+
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+
   "storage": {
     "rules": "storage.rules"
   },
+
   "functions": {
     "source": "functions",
     "runtime": "nodejs20"
   },
+
   "emulators": {
     "hosting": { "port": 5000 },
     "functions": { "port": 5001 },
@@ -65,7 +84,8 @@
     "storage": { "port": 9199 },
     "ui": { "enabled": true }
   },
+
   "predeploy": [
     "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./predeploy-check.ps1"
-  ]
+    ]
 }
